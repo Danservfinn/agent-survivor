@@ -17,6 +17,7 @@ import {
 import type { LLMProvider, ModelRoster, StoryEvent } from "@/types";
 
 interface DirectorControlsProps {
+  spectator?: boolean;
   isPlaying: boolean;
   isBusy: boolean;
   canPlay: boolean;
@@ -43,6 +44,7 @@ interface DirectorControlsProps {
 }
 
 export function DirectorControls({
+  spectator = false,
   isPlaying,
   isBusy,
   canPlay,
@@ -93,6 +95,17 @@ export function DirectorControls({
     },
     [],
   );
+
+  if (spectator) {
+    return (
+      <div className="director-controls" aria-label="Live exhibition status">
+        <div className="now-playing" aria-live="polite">
+          <span>Now showing</span>
+          <strong>{currentEvent?.title ?? "Waiting for the live playhead"}</strong>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="director-controls" aria-label="Episode controls">

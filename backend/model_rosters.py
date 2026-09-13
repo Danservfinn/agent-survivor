@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from .fixtures import DEMO_AGENTS
+from .frontier_roster import FrontierRosterError, agents_from_snapshot, load_frontier_snapshot
 
 
 CHEAP_RECENT_OPENROUTER_MODELS = [
@@ -117,7 +118,7 @@ ZAI_GLM_MODELS = [
 
 
 def list_model_rosters() -> list[dict[str, Any]]:
-    return [
+    rosters = [
         {
             "id": "default",
             "name": "Default Benchmark Models",
@@ -128,6 +129,18 @@ def list_model_rosters() -> list[dict[str, Any]]:
                     "status": "default",
                 }
                 for agent in DEMO_AGENTS
+            ],
+        },
+        {
+            "id": "frontier_live",
+            "name": "Live OpenRouter Frontier",
+            "models": [
+                {
+                    "model_id": seat["model_id"],
+                    "display_name": seat["display_name"],
+                    "status": "frontier_live",
+                }
+                for seat in ((load_frontier_snapshot() or {}).get("seats") or [])
             ],
         },
         {
@@ -151,9 +164,15 @@ def list_model_rosters() -> list[dict[str, Any]]:
             "models": ZAI_GLM_MODELS,
         },
     ]
+    return rosters
 
 
 def agents_for_roster(roster_preset: str | None = None) -> list[dict[str, Any]]:
+    if roster_preset == "frontier_live":
+        snapshot = load_frontier_snapshot()
+        if snapshot is None:
+            raise FrontierRosterError("no locked frontier roster")
+        return agents_from_snapshot(snapshot, deepcopy(DEMO_AGENTS))
     if roster_preset == "cheap_recent_openrouter":
         return _agents_for_models(CHEAP_RECENT_OPENROUTER_MODELS)
     if roster_preset == "all_free_openrouter":

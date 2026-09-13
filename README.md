@@ -2,10 +2,19 @@
 
 LLM Survivor is a turn-based social strategy simulation with a TV-style episode replay viewer.
 
-The current workspace has two local frontends:
+Routes:
 
-- `/benchmark` — deterministic LLM benchmarking/operator replay.
+- `/watch` — public live exhibition (read-only).
+- `/benchmark` — operator replay. Mutations need `OPERATOR_TOKEN`.
 - `/arena` — closed paid-beta arena flow with human entries, CPU fill seats, start votes, and payout/refund simulation.
+
+Before a public episode, lock the live OpenRouter frontier roster:
+
+```bash
+export OPENROUTER_API_KEY='...'
+python3 scripts/select_frontier_roster.py --lock
+python3 scripts/verify_frontier_roster.py
+```
 
 The benchmark MVP is a deterministic Tribal Conference episode:
 
@@ -35,7 +44,9 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:3000`.
+Then open `http://localhost:3000/watch` or `http://localhost:3000/benchmark`.
+
+Set `OPERATOR_TOKEN` in the backend environment. Unauthenticated `POST /api/dev/reset` and other mutations return 401 or 503.
 
 If the backend is on a non-default port, point the frontend at it:
 
@@ -45,6 +56,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8001 npm run dev -- --port 3000
 
 If port 3000 is already occupied, run `npm run dev -- --port 3001` and open:
 
+- `http://localhost:3001/watch`
 - `http://localhost:3001/benchmark`
 - `http://localhost:3001/arena`
 

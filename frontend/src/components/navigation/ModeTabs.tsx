@@ -2,20 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, FlaskConical } from "lucide-react";
+import { FlaskConical, Radio } from "lucide-react";
 
 const tabs = [
+  {
+    href: "/watch",
+    label: "Watch",
+    description: "Live exhibition",
+    icon: Radio,
+  },
   {
     href: "/benchmark",
     label: "Benchmarking",
     description: "LLM replay lab",
     icon: FlaskConical,
-  },
-  {
-    href: "/arena",
-    label: "Arena",
-    description: "Paid room beta",
-    icon: Bot,
   },
 ];
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,7 +20,18 @@ from .arena import (
     start_room,
     vote_to_start,
 )
+from .auth import require_operator
 from .database import ensure_database, seed_demo
+from .frontier_roster import (
+    FrontierRosterError,
+    fetch_openrouter_models,
+    load_frontier_snapshot,
+    save_frontier_snapshot,
+    select_frontier_roster,
+    snapshot_is_fresh,
+    verify_roster_against_catalog,
+)
+from .public_view import public_payload
 from .llm_config import PROVIDER_OLLAMA, PROVIDER_ZAI, get_llm_settings, redact_secrets as redact_llm_secrets
 from .model_rosters import list_model_rosters
 from .round_preloader import get_next_round_preload_status, run_next_round_preload, start_next_round_preload
@@ -120,7 +131,7 @@ def api_llm_settings() -> dict:
 
 
 @app.post("/api/llm/settings")
-def api_llm_settings_update(request: LLMSettingsRequest) -> dict:
+def api_llm_settings_update(request: LLMSettingsRequest, _: None = Depends(require_operator)) -> dict:
     os.environ["LLM_PROVIDER"] = request.provider
     if request.provider == PROVIDER_OLLAMA:
         seed_demo(reset=True, roster_preset="local_ollama")
@@ -130,8 +141,9 @@ def api_llm_settings_update(request: LLMSettingsRequest) -> dict:
 
 
 @app.get("/api/state")
-def api_state() -> dict:
-    return get_state()
+def api_state(view: str | None = None) -> dict:
+    payload = get_state()
+    return public_payload(payload) if view == "public" else payload
 
 
 @app.get("/api/game/summary")
@@ -150,7 +162,7 @@ def api_viewer_state() -> dict:
 
 
 @app.post("/api/viewer-state")
-def api_viewer_state_update(request: ViewerStateRequest) -> dict:
+def api_viewer_state_update(request: ViewerStateRequest, _: None = Depends(require_operator)) -> dict:
     try:
         return {
             "viewer_state": update_viewer_state(
@@ -169,8 +181,10 @@ def api_episode_current(
     round_number: int | None = Query(default=None, alias="round"),
     phase: str | None = None,
     include_audio: bool = False,
+    view: str | None = None,
 ) -> dict:
-    return get_episode(round_number, phase, include_audio=include_audio)
+    payload = get_episode(round_number, phase, include_audio=include_audio)
+    return public_payload(payload) if view == "public" else payload
 
 
 @app.get("/api/story-events")
@@ -178,8 +192,10 @@ def api_story_events(
     round_number: int | None = Query(default=None, alias="round"),
     from_sequence: int = 0,
     phase: str | None = None,
+    view: str | None = None,
 ) -> dict:
-    return {"events": list_story_events(round_number, from_sequence, phase)}
+    payload = {"events": list_story_events(round_number, from_sequence, phase)}
+    return public_payload(payload) if view == "public" else payload
 
 
 @app.get("/api/rounds/preload-next")
@@ -188,7 +204,7 @@ def api_next_round_preload_status() -> dict:
 
 
 @app.post("/api/rounds/preload-next")
-def api_next_round_preload(background_tasks: BackgroundTasks) -> dict:
+def api_next_round_preload(background_tasks: BackgroundTasks, _: None = Depends(require_operator)) -> dict:
     try:
         preload = start_next_round_preload(run_inline=False)
         if preload["status"] == "pending":
@@ -199,7 +215,7 @@ def api_next_round_preload(background_tasks: BackgroundTasks) -> dict:
 
 
 @app.post("/api/rounds/next")
-def api_start_next_round() -> dict:
+def api_start_next_round(_: None = Depends(require_operator)) -> dict:
     try:
         return start_next_round()
     except Exception as exc:
@@ -207,7 +223,7 @@ def api_start_next_round() -> dict:
 
 
 @app.post("/api/turns/advance")
-def api_advance_turn() -> dict:
+def api_advance_turn(_: None = Depends(require_operator)) -> dict:
     try:
         return advance_turn()
     except Exception as exc:
@@ -215,7 +231,7 @@ def api_advance_turn() -> dict:
 
 
 @app.post("/api/turns/auto-run")
-def api_auto_run(request: AutoRunRequest) -> dict:
+def api_auto_run(request: AutoRunRequest, _: None = Depends(require_operator)) -> dict:
     try:
         return auto_run(request.max_turns)
     except Exception as exc:
@@ -223,7 +239,7 @@ def api_auto_run(request: AutoRunRequest) -> dict:
 
 
 @app.post("/api/game/auto-run-to-end")
-def api_auto_run_to_end(request: AutoRunToEndRequest) -> dict:
+def api_auto_run_to_end(request: AutoRunToEndRequest, _: None = Depends(require_operator)) -> dict:
     try:
         return auto_run_to_end(
             max_rounds=request.max_rounds,
@@ -239,6 +255,7 @@ def api_auto_run_to_end(request: AutoRunToEndRequest) -> dict:
 def api_voice_build_episode(
     round_number: int = Query(default=7, alias="round"),
     phase: str = "tribal",
+    _: None = Depends(require_operator),
 ) -> dict:
     try:
         return build_episode_voice(round_number, phase)
@@ -262,14 +279,17 @@ def api_voice_status(
 
 
 @app.post("/api/dev/reset")
-def api_reset(request: ResetRequest | None = None) -> dict:
+def api_reset(request: ResetRequest | None = None, _: None = Depends(require_operator)) -> dict:
     roster_preset = request.roster_preset if request else None
     settings = get_llm_settings()
     if settings.provider == PROVIDER_OLLAMA and not roster_preset:
         roster_preset = "local_ollama"
     if settings.provider == PROVIDER_ZAI and not roster_preset:
         roster_preset = "zai_glm"
-    seed_demo(reset=True, roster_preset=roster_preset)
+    try:
+        seed_demo(reset=True, roster_preset=roster_preset)
+    except FrontierRosterError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return get_state()
 
 
@@ -287,7 +307,7 @@ def api_arena_room(room_id: str) -> dict:
 
 
 @app.post("/api/arena/rooms/{room_id}/entry")
-def api_arena_entry(room_id: str, request: ArenaEntryRequest) -> dict:
+def api_arena_entry(room_id: str, request: ArenaEntryRequest, _: None = Depends(require_operator)) -> dict:
     try:
         return lock_human_entry(
             room_id=room_id,
@@ -303,7 +323,7 @@ def api_arena_entry(room_id: str, request: ArenaEntryRequest) -> dict:
 
 
 @app.post("/api/arena/rooms/{room_id}/start-vote")
-def api_arena_start_vote(room_id: str, request: ArenaStartVoteRequest) -> dict:
+def api_arena_start_vote(room_id: str, request: ArenaStartVoteRequest, _: None = Depends(require_operator)) -> dict:
     try:
         return vote_to_start(room_id, request.wallet_address)
     except Exception as exc:
@@ -311,7 +331,7 @@ def api_arena_start_vote(room_id: str, request: ArenaStartVoteRequest) -> dict:
 
 
 @app.post("/api/arena/rooms/{room_id}/start")
-def api_arena_start(room_id: str) -> dict:
+def api_arena_start(room_id: str, _: None = Depends(require_operator)) -> dict:
     try:
         return start_room(room_id)
     except Exception as exc:
@@ -332,7 +352,7 @@ def api_arena_broadcast_events(season_id: str, from_sequence: int = 0) -> dict:
 
 
 @app.post("/api/arena/seasons/{season_id}/resolve")
-def api_arena_resolve(season_id: str, request: ArenaResolveRequest) -> dict:
+def api_arena_resolve(season_id: str, request: ArenaResolveRequest, _: None = Depends(require_operator)) -> dict:
     try:
         return resolve_season(season_id, request.winner_entry_id)
     except Exception as exc:
@@ -340,9 +360,48 @@ def api_arena_resolve(season_id: str, request: ArenaResolveRequest) -> dict:
 
 
 @app.post("/api/arena/dev/reset")
-def api_arena_reset() -> dict:
+def api_arena_reset(_: None = Depends(require_operator)) -> dict:
     seed_arena_demo(reset=True)
     return {"rooms": list_rooms()}
+
+
+@app.get("/api/operator/frontier-roster")
+def api_frontier_roster_current(_: None = Depends(require_operator)) -> dict:
+    snapshot = load_frontier_snapshot()
+    if snapshot is None:
+        return {"snapshot": None, "stale": True, "fresh": False}
+    catalog = fetch_openrouter_models(os.environ.get("OPENROUTER_API_KEY"))
+    findings = verify_roster_against_catalog(snapshot, catalog)
+    return {
+        "snapshot": snapshot,
+        "stale": bool(findings) or not snapshot_is_fresh(snapshot),
+        "findings": findings,
+        "fresh": snapshot_is_fresh(snapshot) and not findings,
+    }
+
+
+@app.post("/api/operator/frontier-roster/preview")
+def api_frontier_roster_preview(_: None = Depends(require_operator)) -> dict:
+    try:
+        catalog = fetch_openrouter_models(os.environ.get("OPENROUTER_API_KEY"))
+        return select_frontier_roster(catalog)
+    except FrontierRosterError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/operator/frontier-roster/lock")
+def api_frontier_roster_lock(_: None = Depends(require_operator)) -> dict:
+    try:
+        catalog = fetch_openrouter_models(os.environ.get("OPENROUTER_API_KEY"))
+        snapshot = select_frontier_roster(catalog)
+        findings = verify_roster_against_catalog(snapshot, catalog)
+        if findings:
+            raise FrontierRosterError("freshness check failed before lock")
+        save_frontier_snapshot(snapshot)
+        seed_demo(reset=True, roster_preset="frontier_live")
+        return {"snapshot": snapshot, "state": get_state()}
+    except FrontierRosterError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _resolve_frontend_file(frontend_path: str) -> Path | None:

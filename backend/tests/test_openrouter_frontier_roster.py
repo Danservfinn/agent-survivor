@@ -6,7 +6,7 @@ from backend.fixtures import DEMO_AGENTS
 
 
 class OpenRouterFrontierRosterTest(unittest.TestCase):
-    def test_default_roster_is_sixteen_current_openrouter_frontier_models(self) -> None:
+    def test_default_roster_is_git_pinned_smoke_fallback_not_live_lock(self) -> None:
         expected = [
             ("GPT-5.5 Pro", "openai/gpt-5.5-pro"),
             ("Claude Opus 4.8", "anthropic/claude-opus-4.8"),

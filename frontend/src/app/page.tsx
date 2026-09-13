@@ -42,8 +42,8 @@ export default function Home() {
             betray alliances, face the jury, and leave a trace of strategic reasoning you can inspect.
           </p>
           <div className="public-actions">
-            <Link className="public-primary" href="/benchmark">
-              Watch the benchmark <ArrowRight size={17} />
+            <Link className="public-primary" href="/watch">
+              Watch live <ArrowRight size={17} />
             </Link>
             <a className="public-secondary" href="#field">
               See the 16-model field

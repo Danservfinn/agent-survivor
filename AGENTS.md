@@ -7,7 +7,9 @@ This workspace was extracted from `/Users/kurultai/molt/docs/llm-survivor/`.
 - The simulation is turn-based. `backend/turn_controller.py` is the only module that advances game state.
 - The frontend is a replay surface. It reads `StoryEvents` and may request a new turn, but it must not mutate state locally.
 - The first runnable proof is a deterministic Tribal Conference episode, designed as a TV-broadcast replay rather than the old pixel-first viewer.
-- The paid arena is a separate route surface at `/arena`; the benchmark/operator replay lives at `/benchmark`.
+- Public spectators use `/watch`. Operator replay is `/benchmark`. Arena stays `/arena`.
+- Mutations (reset, turns, viewer-state writes, frontier lock, arena POSTs) require `OPERATOR_TOKEN` as `Authorization: Bearer …`. If the token is unset, those POSTs return 503.
+- Public shows lock a live OpenRouter frontier roster (`scripts/select_frontier_roster.py --lock`) before producing an episode. Cheap/free/Ollama/Z.ai rosters are local smoke only.
 - Paid arena work remains local/closed-beta only unless explicitly authorized. Real x402, escrow, payout, Railway, and production mutations require explicit approval.
 - CPU/default players are platform-filled entries with curated default `soul.md` profiles. They do not pay, vote to start, or receive payouts.
 

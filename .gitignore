@@ -28,3 +28,6 @@ frontend/out/
 
 # Dev screenshots and scratch
 tmp/
+
+# Live frontier snapshots (no secrets, but host-local)
+artifacts/rosters/*.json

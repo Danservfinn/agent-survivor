@@ -10,6 +10,7 @@ interface GameMetricsPanelProps {
   events: StoryEvent[];
   currentIndex: number;
   runtimeLabel: string;
+  publicSafe?: boolean;
 }
 
 interface DynamicNote {
@@ -200,7 +201,7 @@ function buildDynamics(state: ApiStateResponse, events: StoryEvent[], currentEve
   return notes.slice(0, 5);
 }
 
-export function GameMetricsPanel({ state, summary, events, currentIndex, runtimeLabel }: GameMetricsPanelProps) {
+export function GameMetricsPanel({ state, summary, events, currentIndex, runtimeLabel, publicSafe = false }: GameMetricsPanelProps) {
   if (!state) {
     return <div className="empty-panel">Waiting for backend state.</div>;
   }
@@ -472,32 +473,36 @@ export function GameMetricsPanel({ state, summary, events, currentIndex, runtime
         </div>
       </section>
 
-      <section className="debug-card god-feed">
-        <h2>
-          <Brain size={16} />
-          Private Signal
-        </h2>
-        {state.messages.length === 0 ? (
-          <p>No inner thoughts recorded yet.</p>
-        ) : (
-          state.messages.slice(0, 12).map((message) => (
-            <article key={message.id}>
-              <header>
-                <MessageCircle size={13} />
-                <strong>{getAgentName(message.sender_id, state.agents)}</strong>
-                <span>Turn {message.turn_index}</span>
-              </header>
-              <p>{message.content}</p>
-              {message.inner_thought && <blockquote>{message.inner_thought}</blockquote>}
-            </article>
-          ))
-        )}
-      </section>
+      {!publicSafe && (
+        <section className="debug-card god-feed">
+          <h2>
+            <Brain size={16} />
+            Private Signal
+          </h2>
+          {state.messages.length === 0 ? (
+            <p>No inner thoughts recorded yet.</p>
+          ) : (
+            state.messages.slice(0, 12).map((message) => (
+              <article key={message.id}>
+                <header>
+                  <MessageCircle size={13} />
+                  <strong>{getAgentName(message.sender_id, state.agents)}</strong>
+                  <span>Turn {message.turn_index}</span>
+                </header>
+                <p>{message.content}</p>
+                {message.inner_thought && <blockquote>{message.inner_thought}</blockquote>}
+              </article>
+            ))
+          )}
+        </section>
+      )}
 
-      <section className="debug-card">
-        <h2>Recent Story Events</h2>
-        <pre>{JSON.stringify(events.slice(-5), null, 2)}</pre>
-      </section>
+      {!publicSafe && (
+        <section className="debug-card">
+          <h2>Recent Story Events</h2>
+          <pre>{JSON.stringify(events.slice(-5), null, 2)}</pre>
+        </section>
+      )}
     </div>
   );
 }

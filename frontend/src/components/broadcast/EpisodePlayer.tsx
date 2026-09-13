@@ -25,6 +25,9 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(typeof window !== "undefined" && window.localStorage.getItem("llmSurvivorOperatorToken")
+        ? { Authorization: `Bearer ${window.localStorage.getItem("llmSurvivorOperatorToken")}` }
+        : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -45,7 +48,7 @@ function playableTimeline(event: StoryEvent): VoiceTimelineLine[] {
   );
 }
 
-export function EpisodePlayer() {
+export function EpisodePlayer({ mode = "operator" }: { mode?: "operator" | "spectator" }) {
   const reducedMotion = useReducedMotion();
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const nextRoundPreloadRequestedRef = useRef(false);
@@ -63,8 +66,8 @@ export function EpisodePlayer() {
 
   const refresh = useCallback(async () => {
     const [episodeData, stateData, summaryData, rosterData] = await Promise.all([
-      fetchJson<EpisodeResponse>("/api/episode/current?include_audio=true"),
-      fetchJson<ApiStateResponse>("/api/state"),
+      fetchJson<EpisodeResponse>(`/api/episode/current?include_audio=true${mode === "spectator" ? "&view=public" : ""}`),
+      fetchJson<ApiStateResponse>(`/api/state${mode === "spectator" ? "?view=public" : ""}`),
       fetchJson<GameSummary>("/api/game/summary"),
       fetchJson<{ rosters: ModelRoster[] }>("/api/model-rosters"),
     ]);
@@ -95,7 +98,7 @@ export function EpisodePlayer() {
       );
     }
     return episodeData;
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     refresh().catch((refreshError: Error) => setError(refreshError.message));
@@ -106,6 +109,16 @@ export function EpisodePlayer() {
   const nextRoundPreload = state?.next_round_preload ?? null;
 
   const persistViewerState = useCallback(async (replayIndex: number, playing: boolean) => {
+    if (mode === "spectator") {
+      return {
+        season_id: 1,
+        round: episode?.round ?? state?.game.current_round ?? 7,
+        phase: episode?.phase ?? state?.game.phase ?? "round",
+        replay_index: replayIndex,
+        is_playing: playing,
+        updated_at: new Date().toISOString(),
+      } satisfies ViewerState;
+    }
     const viewerResponse = await fetchJson<{ viewer_state: ViewerState }>("/api/viewer-state", {
       method: "POST",
       body: JSON.stringify({
@@ -120,7 +133,7 @@ export function EpisodePlayer() {
       previousState ? { ...previousState, viewer_state: viewerResponse.viewer_state } : previousState,
     );
     return viewerResponse.viewer_state;
-  }, [episode?.phase, episode?.round, state?.game.current_round, state?.game.phase]);
+  }, [episode?.phase, episode?.round, mode, state?.game.current_round, state?.game.phase]);
 
   const setSharedPlayback = useCallback((nextIndex: number, playing: boolean) => {
     const clampedIndex = events.length === 0 ? 0 : Math.min(Math.max(0, nextIndex), events.length - 1);
@@ -352,7 +365,7 @@ export function EpisodePlayer() {
         <div>
           <div className="eyebrow">
             <Radio size={14} />
-            Episode Replay
+            {mode === "spectator" ? "Live exhibition" : "Episode Replay"}
           </div>
           <h1>{episode?.title ?? "Round 7: Challenge to Tribal Conference"}</h1>
         </div>
@@ -422,10 +435,12 @@ export function EpisodePlayer() {
             events={events}
             currentIndex={currentIndex}
             runtimeLabel={runtimeLabel}
+            publicSafe={mode === "spectator"}
           />
         </aside>
       </section>
       <DirectorControls
+        spectator={mode === "spectator"}
         isPlaying={isPlaying}
         isBusy={isBusy}
         canPlay={events.length > 0}
