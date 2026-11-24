@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__REPORT_TITLE__</title>
+__REPORT_HEAD__
 <meta name="description" content="After-action report and benchmark results for one LLM Survivor season: scores, votes, challenges, promises and the jury.">
 <style>
 /* Theme cloned from LiveBench 2.0 (livebench.ai): its tokens, type scale, table, chips, cards and chart
@@ -268,6 +269,72 @@ footer p { margin: 0; }
 #tip.on { opacity: 1; }
 [data-tip] { cursor: default; }
 
+/* moments, players and sharing */
+.k-lab { color: var(--muted); font-family: var(--mono); font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; }
+.k-val { font-family: var(--mono); font-weight: 700; letter-spacing: -.01em; }
+.moment-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
+.moment, .player { display: flex; flex-direction: column; scroll-margin-top: 70px; min-width: 0; }
+.moment-t { font-size: 18px; letter-spacing: -.01em; line-height: 1.25; margin: 0 0 6px; text-wrap: balance; }
+.moment-x { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+.receipt { margin: 0 0 10px; }
+.receipt figcaption { color: var(--faint); font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 3px; }
+.receipt blockquote { margin: 0; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.share-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: auto; padding-top: 10px; }
+a.chip { display: inline-block; }
+.chip-x, .chip-x:hover { background: var(--ink); border-color: var(--ink); color: var(--ground); font-weight: 600; }
+.chip-x:hover { filter: brightness(1.2); }
+.player-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); margin-top: 24px; }
+.player.hl { border-color: var(--live); }
+.player-h { display: flex; align-items: center; gap: 8px; }
+.player-n { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.player-f { color: var(--muted); font-size: 12.5px; margin: 2px 0 10px; }
+.player .tags { margin: 0 0 12px; }
+.player-s { display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.player-s .k-lab { font-size: 9.5px; }
+.player-s .k-val { font-size: 15px; margin-top: 2px; }
+.player blockquote { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* share images: one fixed 1200 by 675 card */
+html.card-mode, html.card-mode body { width: 1200px; height: 675px; overflow: hidden; }
+.sc { width: 1200px; height: 675px; padding: 42px 56px 34px; display: flex; flex-direction: column; background: var(--ground); }
+.sc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+.sc .brand { font-size: 24px; }
+.sc .pulse { width: 12px; height: 12px; animation: none; }
+.sc-season { color: var(--muted); font-family: var(--mono); font-size: 15px; }
+.sc .kicker { font-size: 15px; margin: 0 0 12px; }
+.sc-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+.sc-h { font-size: 48px; max-width: 24ch; }
+.sc-big { font-size: 62px; max-width: 18ch; }
+.sc-dot { width: 22px; height: 22px; margin-right: 14px; vertical-align: 4px; }
+.sc-h .alias { font-size: 30px; }
+.sc-x { color: var(--muted); font-size: 23px; line-height: 1.4; margin: 0; max-width: 52ch; }
+.sc-qs { margin-top: auto; display: grid; gap: 10px; }
+.sc-qs.two blockquote { -webkit-line-clamp: 2; }
+.sc-stats.sc-four { grid-template-columns: repeat(4, 1fr); }
+.sc-lead { font-family: var(--sans); font-size: 21px !important; line-height: 1.2; }
+.sc-rounds { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 10px; border-top: 1px solid var(--border-strong); padding-top: 12px; font-size: 13.5px; line-height: 1.4; }
+.sc-rounds .sc-r1 { font-weight: 700; margin-top: 3px; }
+.sc-rounds .sc-r2, .sc-rounds .sc-r3 { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-rounds .sc-r2.yes { color: var(--live); font-weight: 600; }
+.sc-q { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 16px 22px; }
+.sc-q blockquote { border: 0; padding: 0; margin: 0; color: var(--ink); font-size: 19px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sc-q figcaption { color: var(--faint); font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; margin-top: 8px; }
+.sc-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+.sc-stats .card { padding: 14px 16px; }
+.sc-stats .k-lab { font-size: 11px; }
+.sc-stats .k-val { font-size: 26px; margin-top: 4px; }
+.sc-board { display: grid; gap: 7px; }
+.sc-row { display: grid; grid-template-columns: 26px 12px 300px 1fr 64px; align-items: center; gap: 12px; font-size: 18px; font-weight: 600; }
+.sc-row .rk { font-size: 15px; width: auto; }
+.sc-row .mdot { width: 12px; height: 12px; }
+.sc-row .track { height: 20px; }
+.sc-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-val { font-family: var(--mono); font-weight: 700; text-align: right; }
+.sc-order { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 12px; margin-top: auto; border-top: 2px solid var(--accent); padding-top: 14px; }
+.sc-out { font-size: 16px; font-weight: 700; line-height: 1.25; margin-top: 3px; }
+.sc-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 20px; color: var(--accent); font-family: var(--mono); font-size: 16px; }
+.sc-follow { color: var(--ink); font-weight: 700; }
+
 @media (min-width: 900px) { .grid2 { grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); } }
 @media (max-width: 860px) { .top-in { flex-wrap: wrap; row-gap: 2px; } .top nav { flex-wrap: nowrap; gap: 2px; overflow-x: auto; scrollbar-width: none; } .top nav a, .btn { font-size: 12.5px; padding: 5px 8px; } }
 @media (max-width: 720px) { .terms li { gap: 6px; grid-template-columns: 1fr; } }
@@ -347,7 +414,7 @@ function usd(x) { return x == null ? "–" : "$" + (x >= 1 ? x.toFixed(2) : x >=
 function mix(color, share) { return "rgba(var(--accent-rgb)," + Math.round(share * 100) / 100 + ")"; }
 function sourceLine() {
   return h("div", { class: "attrib" }, h("span", null, "Source: ", h("b", { text: "LLM Survivor" }), " season " + (S.date || S.season_id)),
-    LINKS.site ? h("span", { class: "url", text: LINKS.site.replace(/^https?:\/\//, "") }) : null);
+    LINKS.site || LINKS.handle ? h("span", { class: "url", text: [LINKS.site ? LINKS.site.replace(/^https?:\/\//, "") : null, LINKS.handle].filter(Boolean).join(" · ") }) : null);
 }
 /* sections are full-width bands with a rule under them; content sits in the inner wrap that callers fill */
 function section(id, n, title, sub) {
@@ -447,7 +514,7 @@ var PARTS = COMP.map(function (key) {
 var lbState = { sort: "survivor_index", dir: -1, parts: false, ids: false, q: "", open: {} };
 
 function leaderboard() {
-  var sec = section("leaderboard", "01", "Leaderboard", "One row per model, sortable by any column. Click a row for its round-by-round record. Shading marks the top three in a column." + (Object.keys(ALIAS).length ? " The name in brackets is the one the other players knew the model by." : ""));
+  var sec = section("leaderboard", "02", "Leaderboard", "One row per model, sortable by any column. Click a row for its round-by-round record. Shading marks the top three in a column." + (Object.keys(ALIAS).length ? " The name in brackets is the one the other players knew the model by." : ""));
   var wrap = h("div", { class: "card tbl-wrap" });
   function draw() {
     var cols = lbState.parts ? COLS.slice(0, 3).concat(PARTS, COLS.slice(3)) : COLS;
@@ -726,7 +793,7 @@ function voteMap() {
 }
 
 function insights() {
-  var sec = section("insights", "02", "Insights", "Six views of the same season: where each score came from, what it cost, how the puzzles went and who voted with whom.");
+  var sec = section("insights", "04", "Insights", "Six views of the same season: where each score came from, what it cost, how the puzzles went and who voted with whom.");
   var grid = h("div", { class: "grid2" }, composition(), radar(), scatter(),
     hasCost ? ranked("Cost, ranked", "Estimated cost per round played, cheapest first. Hover for calls.", function (m) { return m.est_cost_per_round_usd; }, usd, true, true)
             : ranked("Votes against, ranked", "Votes cast against each model over the season.", function (m) { return m.votes_received; }, String, false),
@@ -791,7 +858,7 @@ function roundCard(r, open) {
     h("summary", null, h("span", { class: "round-t", text: "Round " + r.round }), h("span", { class: "round-s", text: line }), h("span", { class: "round-m", text: r.in_play.length + " players" + (imm ? " · " + imm : "") })), body);
 }
 function rounds() {
-  var sec = section("rounds", "03", "Round by round", "The after-action record: each round's challenge, every vote with the reason the model gave, promises, idols and the last words of the player who left."
+  var sec = section("rounds", "05", "Round by round", "The after-action record: each round's challenge, every vote with the reason the model gave, promises, idols and the last words of the player who left."
     + (Object.keys(ALIAS).length ? " Players knew each other only by the names in brackets, so their own words use those names." : ""));
   if (!D.rounds.length) return add(sec, [h("div", { class: "empty", text: "No round has been played yet." })]);
   var all = false;
@@ -805,7 +872,7 @@ function rounds() {
 /* ---------- finale */
 function finale() {
   var F = D.finale;
-  var sec = section("finale", "04", "Finale", "The finalists' closing pitches and how each juror voted.");
+  var sec = section("finale", "06", "Finale", "The finalists' closing pitches and how each juror voted.");
   if (!F) return add(sec, [h("div", { class: "empty", text: "This season has not reached a jury vote." })]);
   var pitchOf = {}; F.pitches.forEach(function (p) { pitchOf[p.agent_id] = p.text; });
   var cards = h("div", { class: "fin-grid" }, F.finalist_ids.map(function (id) {
@@ -822,7 +889,7 @@ function finale() {
 function allSeasons() {
   var C = D.cross_season;
   var rulesName = C.rules === "social-game" ? "the one-group rules (since 2026-11-24)" : "the rules before 2026-11-24";
-  var sec = section("seasons", "05", "All seasons", "Every finished live season played under " + rulesName + ", totalled by model. Seasons under other rules are scored differently and are left out.");
+  var sec = section("seasons", "07", "All seasons", "Every finished live season played under " + rulesName + ", totalled by model. Seasons under other rules are scored differently and are left out.");
   if (C.season_count < 2) return add(sec, [h("div", { class: "empty", text: C.season_count === 1 ? "One finished live season exists under these rules so far. Totals across seasons appear here from the second season on." : "No finished live season exists under these rules yet. Totals across seasons appear here once there are two." })]);
   var top = Math.max.apply(null, C.models.map(function (m) { return m.max_index; }));
   var table = h("table", { class: "lb" }, h("thead", null, h("tr", { class: "cols single" }, h("th", { class: "name", text: "Model" }),
@@ -844,7 +911,7 @@ function allSeasons() {
 
 /* ---------- method */
 function method() {
-  var sec = section("method", "06", "Method", "How to read the numbers, and what they do not show.");
+  var sec = section("method", "08", "Method", "How to read the numbers, and what they do not show.");
   var social = S.rules === "social-game";
   var w = function (k) { return Math.round(S.weights[k] * 100); };
   var defs = [
@@ -884,15 +951,140 @@ function download() {
   var a = h("a", { href: URL.createObjectURL(blob), download: "llm-survivor-" + S.season_id + ".json" });
   document.body.appendChild(a); a.click(); a.remove();
 }
+/* ---------- sharing: every moment and player card can be posted with its image and its credit */
+var HANDLE = LINKS.handle, SHARE = LINKS.share, REPORT_URL = LINKS.report;
+var KIND = { result: "The result", promise: "Broken promise", vote: "Close vote", idol: "Hidden idol", read: "Vote read", puzzle: "Puzzles", target: "Target" };
+function withCredit(text) { return text + (HANDLE ? "\n\nvia " + HANDLE : ""); }
+function intentUrl(text, anchor) {
+  return "https://x.com/intent/post?text=" + encodeURIComponent(withCredit(text)) + (REPORT_URL ? "&url=" + encodeURIComponent(REPORT_URL + (anchor ? "#" + anchor : "")) : "");
+}
+function copyButton(label, getText) {
+  var b = h("button", { class: "chip", type: "button", text: label, onclick: function () {
+    var text = getText();
+    function done(ok) { b.textContent = ok ? "Copied" : "Copy failed"; setTimeout(function () { b.textContent = label; }, 1600); }
+    function fallback() {
+      var area = h("textarea", { style: "position:fixed;left:-999px;top:0" }); area.value = text; document.body.appendChild(area); area.select();
+      var ok = false; try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+      area.remove(); done(ok);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, fallback); else fallback();
+  } });
+  return b;
+}
+function shareRow(id, post) {
+  return h("div", { class: "share-row" },
+    h("a", { class: "chip chip-x", href: intentUrl(post, id), target: "_blank", rel: "noopener", text: "Post on X" }),
+    copyButton("Copy text", function () { return withCredit(post) + (REPORT_URL ? "\n" + REPORT_URL + "#" + id : ""); }),
+    SHARE ? h("a", { class: "chip", href: SHARE + id + ".png", target: "_blank", rel: "noopener", text: "Image" }) : null);
+}
+function tagName(id) { return nm(id) + (ALIAS[id] ? " (" + ALIAS[id] + ")" : ""); }
+function receiptLabel(r) { return tagName(r.who) + ", " + r.context + (r.to ? " " + tagName(r.to) : ""); }
+function receipt(r) {
+  return h("figure", { class: "receipt" }, h("figcaption", { text: receiptLabel(r) }), h("blockquote", { text: r.text }));
+}
+
+function moments() {
+  var sec = section("moments", "01", "Moments", "What happened this season, picked by fixed rules from the votes, promises and idols on record. Each one shows its evidence and can be posted as it stands.");
+  var list = D.moments || [];
+  if (!list.length) return add(sec, [h("div", { class: "empty", text: "No moment stands out yet. They appear once votes have been cast." })]);
+  var thread = (D.thread || []).map(function (p, i) { return (i + 1) + "/" + D.thread.length + "\n" + p.text; }).join("\n\n");
+  return add(sec, [
+    h("div", { class: "controls" }, copyButton("Copy the draft thread (" + (D.thread || []).length + " posts)", function () { return thread; }),
+      SHARE ? h("a", { class: "chip", href: SHARE + "season.png", target: "_blank", rel: "noopener", text: "Season image" }) : null,
+      SHARE ? h("a", { class: "chip", href: SHARE + "leaderboard.png", target: "_blank", rel: "noopener", text: "Leaderboard image" }) : null),
+    h("div", { class: "moment-grid" }, list.map(function (m) {
+      return h("article", { class: "card card-pad moment", id: m.id },
+        h("p", { class: "sub-l", text: (KIND[m.kind] || m.kind) + (m.round ? " · round " + m.round : "") }),
+        h("h3", { class: "moment-t", text: m.title }), h("p", { class: "moment-x", text: m.text }),
+        m.receipts.map(receipt), shareRow(m.id, m.post));
+    }))]);
+}
+
+function playerPost(m) {
+  var bits = [m.model + (m.alias ? " (played as " + m.alias + ")" : "") + ": " + (m.tags.length ? m.tags.join(", ").toLowerCase() : m.fate.toLowerCase()) + "."];
+  bits.push("Survivor Index " + f1(m.survivor_index) + ", " + (m.place_known ? ordinal(m.place) + " of " + M.length : "still in play") + ".");
+  return bits.join(" ");
+}
+function ordinal(n) { var t = n % 100; return n + (t >= 10 && t <= 20 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" })[n % 10] || "th"); }
+function playerStats(m) {
+  var stats = [["Index", f1(m.survivor_index)], ["Place", m.place_known ? ordinal(m.place) : "–"], ["Puzzles", frac(m.challenge_correct, m.challenge_attempts)], ["With the vote", m.votes_decided ? m.voted_with_outcome + "/" + m.votes_decided : "–"]];
+  if (m.promises_made) stats.push(["Promises kept", m.promises_kept + "/" + m.promises_made]);
+  else stats.push(["Votes against", String(m.votes_received)]);
+  return stats;
+}
+function players() {
+  var sec = section("players", "03", "Players", "One card per model: how it finished, what set it apart, and its own words." + (Object.keys(ALIAS).length ? " The name in brackets is the one it played under." : ""));
+  var order = M.slice().sort(function (a, b) { return a.place - b.place; });
+  return add(sec, [h("div", { class: "player-grid" }, order.map(function (m) {
+    var id = "model-" + m.agent_id;
+    return h("article", { class: "card card-pad player" + (m.is_winner ? " hl" : ""), id: id },
+      h("div", { class: "player-h" }, mdot(m), h("span", { class: "player-n" }, m.model, m.alias ? h("span", { class: "alias", text: " (" + m.alias + ")" }) : null)),
+      h("p", { class: "player-f", text: (m.org ? m.org + " · " : "") + m.fate }),
+      m.tags.length ? h("div", { class: "tags" }, m.tags.map(function (t) { return h("span", { class: "tag", text: t }); })) : null,
+      h("div", { class: "player-s" }, playerStats(m).map(function (st) { return h("div", null, h("div", { class: "k-lab", text: st[0] }), h("div", { class: "k-val", text: st[1] })); })),
+      m.quote ? h("blockquote", { text: m.quote }) : null,
+      shareRow(id, playerPost(m)));
+  }))]);
+}
+
+/* ---------- share images: ?card=<id> shows one 1200 by 675 card and nothing else, for a screenshot */
+function shareCard(id) {
+  var body, kicker;
+  var moment = (D.moments || []).filter(function (m) { return m.id === id; })[0];
+  var model = id.indexOf("model-") === 0 ? byId[id.slice(6)] : null;
+  if (moment) {
+    kicker = (KIND[moment.kind] || moment.kind) + (moment.round ? " · round " + moment.round : "");
+    body = [h("h1", { class: "sc-h", text: moment.title }), h("p", { class: "sc-x", text: moment.text }),
+      h("div", { class: "sc-qs" + (moment.receipts.length > 1 ? " two" : "") }, moment.receipts.slice(0, 2).map(function (r) { return h("figure", { class: "sc-q" }, h("blockquote", { text: r.text }), h("figcaption", { text: receiptLabel(r) })); }))];
+  } else if (model) {
+    kicker = "Player card · " + (model.org || "model");
+    body = [h("h1", { class: "sc-h" }, h("span", { class: "mdot sc-dot", style: "background:" + orgColor(model.org) }), model.model, model.alias ? h("span", { class: "alias", text: " (" + model.alias + ")" }) : null),
+      h("p", { class: "sc-x", text: model.fate + (model.tags.length ? " · " + model.tags.join(" · ") : "") }),
+      h("div", { class: "sc-stats" }, playerStats(model).map(function (st) { return h("div", { class: "card" }, h("div", { class: "k-lab", text: st[0] }), h("div", { class: "k-val", text: st[1] })); })),
+      h("div", { class: "sc-rounds" }, model.per_round.slice(0, 9).map(function (r) {
+        return h("div", null, h("div", { class: "k-lab", text: "Round " + r.round }),
+          h("div", { class: "sc-r1", text: r.challenge_of ? r.challenge_correct + "/" + r.challenge_of + " puzzles" + (r.immune ? ", immune" : "") : "no challenge" }),
+          h("div", { class: "sc-r2" + (r.with_outcome ? " yes" : ""), text: r.voted_id ? "voted " + nm(r.voted_id) : "no vote" }),
+          h("div", { class: "sc-r3", text: r.eliminated ? "voted out" : r.votes_against + (r.votes_against === 1 ? " vote against" : " votes against") }));
+      })),
+      model.quote ? h("div", { class: "sc-qs two" }, h("figure", { class: "sc-q" }, h("blockquote", { text: model.quote }))) : null];
+  } else if (id === "leaderboard") {
+    kicker = "Survivor Index · " + M.length + " models";
+    body = [h("h1", { class: "sc-h", text: "Season leaderboard" }), h("div", { class: "sc-board" }, M.map(function (m) {
+      return h("div", { class: "sc-row" }, h("span", { class: "rk", text: m.rank }), mdot(m), h("span", { class: "sc-name" }, m.model, m.is_winner ? h("span", { class: "badge", text: "winner" }) : null),
+        h("div", { class: "track single" }, h("span", { style: "width:" + m.survivor_index + "%;background:var(--accent)" })), h("span", { class: "sc-val", text: f1(m.survivor_index) }));
+    }))];
+  } else {
+    var out = D.rounds.filter(function (r) { return r.eliminated_id; });
+    kicker = S.players + " models · " + out.length + (out.length === 1 ? " council" : " councils");
+    body = [h("h1", { class: "sc-h sc-big", text: S.winner ? S.winner + " won the season." : "Season in progress." }),
+      h("p", { class: "sc-x", text: (D.moments[0] && D.moments[0].kind === "result" ? D.moments[0].text : (D.takeaways[0] || {}).text) || "" }),
+      h("div", { class: "sc-stats sc-four" }, D.takeaways.slice(1, 5).map(function (t) { return h("div", { class: "card" }, h("div", { class: "k-lab", text: t.label }), h("div", { class: "k-val sc-lead", text: t.models && t.models.length ? nm(t.models[0]) : "–" })); })),
+      h("div", { class: "sc-order" }, out.map(function (r) { return h("div", null, h("div", { class: "k-lab", text: "Out, round " + r.round }), h("div", { class: "sc-out", text: nm(r.eliminated_id) })); }))];
+  }
+  return h("div", { class: "sc" },
+    h("div", { class: "sc-top" }, h("span", { class: "brand" }, h("span", { class: "pulse" }), "LLM Survivor"), h("span", { class: "sc-season", text: "Season " + (S.date || S.season_id) })),
+    h("p", { class: "kicker", text: kicker }), h("div", { class: "sc-body" }, body),
+    h("div", { class: "sc-foot" }, h("span", { text: LINKS.site ? LINKS.site.replace(/^https?:\/\//, "") : "" }), h("span", { class: "sc-follow", text: HANDLE ? "Follow " + HANDLE + " for the next season" : "" })));
+}
+
 var app = document.getElementById("app");
+var cardWanted = /[?&]card=([a-z0-9-]+)/.exec(location.search);
+if (cardWanted) {
+  document.documentElement.className = "card-mode";
+  app.appendChild(shareCard(cardWanted[1]));
+  return;
+}
 app.appendChild(h("div", { class: "top" }, h("div", { class: "wrap top-in" },
   h("a", { class: "brand", href: LINKS.site || "#" }, h("span", { class: "pulse" }), "LLM Survivor", h("span", { class: "sub", text: "-  Season Report" })),
-  h("nav", { "aria-label": "Report sections" }, [["leaderboard", "Leaderboard"], ["insights", "Insights"], ["rounds", "Rounds"], ["finale", "Finale"], ["seasons", "All seasons"], ["method", "Method"]].map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
-  h("button", { class: "btn", type: "button", text: "Download data", onclick: download }))));
-var main = h("main", null, hero(), [leaderboard(), insights(), rounds(), finale(), allSeasons(), method()].map(function (inner) { return inner.band; }));
+  h("nav", { "aria-label": "Report sections" }, [["moments", "Moments"], ["leaderboard", "Leaderboard"], ["players", "Players"], ["insights", "Insights"], ["rounds", "Rounds"], ["finale", "Finale"], ["seasons", "All seasons"], ["method", "Method"]].map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
+  h("button", { class: "btn", type: "button", text: "Download data", onclick: download }),
+  HANDLE ? h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE }) : null)));
+var main = h("main", null, hero(), [moments(), leaderboard(), players(), insights(), rounds(), finale(), allSeasons(), method()].map(function (inner) { return inner.band; }));
 app.appendChild(main);
 app.appendChild(h("footer", null, h("div", { class: "wrap" },
-  LINKS.contact ? h("div", { class: "card cta" }, h("p", { text: "Want a model in the next season, or the full data for every season?" }), h("a", { class: "btn btn-solid", href: LINKS.contact, text: "Get in touch" })) : null,
+  HANDLE ? h("div", { class: "card cta" }, h("p", { text: "A new season runs with new models. The results and the best moments are posted on X first." }), h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE })) : null,
+  LINKS.contact ? h("div", { class: "card cta" }, h("p", { text: "Want a model in the next season, or the full data for every season?" }), h("a", { class: "btn-solid", href: LINKS.contact, text: "Get in touch" })) : null,
   h("p", { text: "LLM Survivor season " + S.season_id + " · report format v" + D.report_version + " · built from the season's own database with no model calls." }))));
 })();
 </script>

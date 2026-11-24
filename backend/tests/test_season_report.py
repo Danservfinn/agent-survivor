@@ -163,7 +163,8 @@ class SeasonReportTest(unittest.TestCase):
         self.assertEqual(page["season"]["season_id"], SEASON)
         reasons = [v["reason"] for r in page["rounds"] for v in r["votes"]]
         self.assertIn(HOSTILE, reasons)  # the text survives as data
-        self.assertEqual(page["links"], {"contact": None, "site": "https://example.test"})
+        self.assertEqual(page["links"]["contact"], None)
+        self.assertEqual(page["links"]["site"], "https://example.test")
         self.assertNotIn("innerHTML", html.split("<script>", 1)[1].split("/*", 1)[0])
 
     def test_page_makes_no_outside_requests(self) -> None:
@@ -174,10 +175,56 @@ class SeasonReportTest(unittest.TestCase):
         self.assertNotIn("fetch(", html.rsplit("</script>", 2)[1])
 
     def test_writes_json_and_html_beside_the_database(self) -> None:
-        paths = write_report_files(self.season_dir)
+        paths = write_report_files(self.season_dir, cards=False)
         self.assertEqual(Path(paths["json"]).parent, self.season_dir)
+        self.assertTrue(Path(paths["thread"]).is_file())
+        self.assertEqual(paths["cards"]["written"], [])
         self.assertEqual(json.loads(Path(paths["json"]).read_text())["season"]["season_id"], SEASON)
         self.assertTrue(Path(paths["html"]).read_text().startswith("<!doctype html>"))
+
+    def test_share_kit_files_and_route(self) -> None:
+        from backend import season_story
+
+        def fake_render(html_path, out_dir, ids, **_):
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for card in ids:
+                (out_dir / f"{card}.png").write_bytes(b"\x89PNG fake")
+            return {"written": list(ids), "skipped": [], "reason": ""}
+
+        with patch.object(season_story, "find_chrome", return_value="/fake/chrome"), patch.object(season_story, "render_cards", side_effect=fake_render):
+            paths = write_report_files(self.season_dir, site_url="https://example.test", handle="someone")
+        try:
+            self.assertEqual(paths["cards"]["written"][:2], ["season", "leaderboard"])
+            self.assertIn("model-" + self.report["models"][0]["agent_id"], paths["cards"]["written"])
+            thread = Path(paths["thread"]).read_text()
+            self.assertIn("Follow @someone for the next season.", thread)
+            self.assertIn(f"https://example.test/report/{SEASON}", thread)
+            page = json.loads(re.search(r'<script id="report-data" type="application/json">(.*?)</script>', Path(paths["html"]).read_text(), re.S).group(1))
+            self.assertEqual(page["links"]["handle"], "@someone")
+            self.assertEqual(page["links"]["share"], "share/")
+            self.assertEqual(page["links"]["report"], f"https://example.test/report/{SEASON}")
+            with patch.object(live_season, "SEASONS_DIR", self.seasons_dir), patch.dict(os.environ, {"SURVIVOR_PUBLIC_URL": "https://example.test", "SURVIVOR_X_HANDLE": "@someone"}):
+                image = api.season_report_share_image(SEASON, "season.png")
+                self.assertEqual(image.media_type, "image/png")
+                html = api.season_report_page(SEASON).body.decode()
+                self.assertIn(f'<meta property="og:image" content="https://example.test/report/{SEASON}/share/season.png">', html)
+                self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
+                self.assertIn('<meta name="twitter:creator" content="@someone">', html)
+                for bad in ("thread.md", "..%2Fseason.db", "nope.png"):
+                    with self.assertRaises(HTTPException):
+                        api.season_report_share_image(SEASON, bad)
+        finally:
+            import shutil
+
+            shutil.rmtree(self.season_dir / "share", ignore_errors=True)
+
+    def test_page_has_moments_tags_and_a_thread(self) -> None:
+        self.assertTrue(self.report["moments"])
+        self.assertTrue(all("tags" in m and "quote" in m for m in self.report["models"]))
+        page = json.loads(re.search(r'<script id="report-data" type="application/json">(.*?)</script>', render_report_html(self.report), re.S).group(1))
+        self.assertGreaterEqual(len(page["thread"]), 3)
+        self.assertEqual(page["links"], {"contact": None, "site": None, "handle": None, "share": None, "report": None})
+        self.assertNotIn("og:image", render_report_html(self.report))
 
     def test_report_routes(self) -> None:
         with patch.object(live_season, "SEASONS_DIR", self.seasons_dir):
@@ -202,6 +249,129 @@ class SeasonReportTest(unittest.TestCase):
     def test_latest_reportable_season(self) -> None:
         self.assertEqual(reportable_season_dir(self.seasons_dir), self.season_dir)
         self.assertIsNone(reportable_season_dir(self.seasons_dir / "missing"))
+
+
+class SeasonStoryTest(unittest.TestCase):
+    """Moments, tags and the draft thread, on a small hand-built season."""
+
+    def _report(self) -> dict:
+        names = {"a": "Model A", "b": "Model B", "c": "Model C", "d": "Model D"}
+        aliases = {"a": "Ash", "b": "Birch", "c": "Cedar", "d": "Dogwood"}
+
+        def model(aid, rank, place, **over):
+            base = {
+                "agent_id": aid, "model": names[aid], "alias": aliases[aid], "org": "Org", "rank": rank, "place": place, "place_known": True,
+                "is_winner": False, "fate": "Voted out, round 1", "eliminated_round": 1, "rounds_played": 2, "survivor_index": 50.0 - rank,
+                "challenge_correct": 5, "challenge_attempts": 10, "challenge_accuracy": 0.5, "immunity_wins": 0,
+                "votes_received": 0, "votes_survived": 0, "voted_with_outcome": 1, "votes_decided": 2, "prediction_accuracy": None,
+                "promises_made": 0, "promises_kept": 0, "promises_broken": 0, "jury_votes": 0, "per_round": [],
+            }
+            base.update(over)
+            return base
+
+        models = [
+            model("b", 1, 2, fate="Finalist", eliminated_round=None, survivor_index=70.0, challenge_correct=9, challenge_accuracy=0.9),
+            model("a", 2, 1, is_winner=True, fate="Winner", eliminated_round=None, survivor_index=60.0, challenge_correct=0, challenge_accuracy=0.0,
+                  promises_made=2, promises_broken=2, votes_received=4, votes_survived=4),
+            model("c", 3, 3, eliminated_round=2, fate="Voted out, round 2", promises_made=2, promises_kept=2),
+            model("d", 4, 4),
+        ]
+        rounds = [
+            {
+                "round": 1, "eliminated_id": "d", "tally": {"d": 2, "c": 1, "a": 1}, "revote_tally": None, "idol": None, "idols_played": [], "idol_negated_votes": {},
+                "exit_words": "I did not see that coming.",
+                "votes": [
+                    {"voter_id": "a", "target_id": "d", "revote": False, "reason": "Breaking my word to Dogwood is the safer move.", "predicted_right": 3, "predicted_of": 4},
+                    {"voter_id": "b", "target_id": "d", "revote": False, "reason": "", "predicted_right": None, "predicted_of": None},
+                ],
+                "promises": [{"by_id": "a", "to_id": "d", "target_id": "c", "actual_id": "d", "status": "broken"}],
+                "talks": [{"participants": ["a", "d"], "lines": [
+                    {"agent_id": "a", "text": "Good to talk."},
+                    {"agent_id": "a", "text": "Dogwood, I am voting Cedar with you."},
+                    {"agent_id": "d", "text": "Deal."},
+                ]}],
+            },
+            {
+                "round": 2, "eliminated_id": "c", "tally": {"c": 2, "a": 1}, "revote_tally": None, "idol": None, "idols_played": ["a"], "idol_negated_votes": {"a": 1},
+                "exit_words": "", "votes": [{"voter_id": "a", "target_id": "c", "revote": False, "reason": "Playing the idol now.", "predicted_right": None, "predicted_of": None}],
+                "promises": [], "talks": [],
+            },
+        ]
+        finale = {"finalist_ids": ["a", "b"], "tally": {"a": 2, "b": 0}, "winner_id": "a", "pitches": [{"agent_id": "a", "text": "I earned this."}],
+                  "jury": [{"juror_id": "c", "finalist_id": "a", "reason": "A controlled every vote."}]}
+        season = {"season_id": "20261201-120000-test", "players": 4, "finished": True, "last_round": 3, "winner": "Model A"}
+        from backend import season_story
+
+        season_story.add_player_tags(models, rounds, finale)
+        moments = season_story.build_moments(season, models, rounds, finale, names, aliases)
+        return {"season": season, "models": models, "rounds": rounds, "moments": moments, "takeaways": [{"label": "Winner", "text": "Model A won the jury 2-0 over Model B.", "models": ["a"]}]}
+
+    def test_moments_are_picked_and_carry_their_evidence(self) -> None:
+        moments = {m["kind"]: m for m in self._report()["moments"]}
+        self.assertEqual(moments["result"]["title"], "Model A won without solving a puzzle")
+        self.assertEqual(moments["result"]["receipts"][0], {"who": "c", "context": "voting as a juror", "text": "A controlled every vote."})
+        promise = moments["promise"]
+        self.assertEqual(promise["title"], "Model A broke its word to Model D")
+        self.assertIn("It voted for Model D instead.", promise["text"])
+        # the quoted line is the one that names the promised target, not the first thing said
+        self.assertEqual(promise["receipts"][0], {"who": "a", "context": "in private to", "to": "d", "text": "Dogwood, I am voting Cedar with you."})
+        self.assertEqual(promise["receipts"][1]["context"], "casting the vote")
+        self.assertEqual(moments["vote"]["title"], "Round 1 was decided by one vote")
+        self.assertIn("the 1 votes against it did not count", moments["idol"]["text"])
+        self.assertEqual(moments["read"]["title"], "Model A called 3 of 4 votes in round 1")
+        self.assertEqual(moments["target"]["title"], "Model A took 4 votes and survived 4")
+
+    def test_moments_are_numbered_capped_and_fit_a_post(self) -> None:
+        moments = self._report()["moments"]
+        self.assertLessEqual(len(moments), 6)
+        self.assertEqual([m["id"] for m in moments], [f"moment-{i}" for i in range(1, len(moments) + 1)])
+        for moment in moments:
+            self.assertLessEqual(len(moment["post"]), 240)
+
+    def test_player_tags_come_from_the_numbers(self) -> None:
+        tags = {m["agent_id"]: m["tags"] for m in self._report()["models"]}
+        self.assertEqual(tags["a"], ["Won the season", "Broke the most promises", "Never solved a puzzle"])
+        self.assertIn("Best at puzzles", tags["b"])
+        self.assertIn("Kept every promise", tags["c"])
+        self.assertEqual(tags["d"][0], "First out")
+        quotes = {m["agent_id"]: m["quote"] for m in self._report()["models"]}
+        self.assertEqual(quotes["d"], "I did not see that coming.")
+        self.assertEqual(quotes["a"], "I earned this.")
+
+    def test_thread_posts_fit_and_end_with_the_link_and_the_follow_line(self) -> None:
+        from backend import season_story
+
+        report = self._report()
+        posts = season_story.build_thread(report, handle="@someone", report_url="https://example.test/report/x")
+        self.assertGreaterEqual(len(posts), 4)
+        for post in posts:
+            self.assertLessEqual(len(post["text"]), 280)
+        self.assertEqual(posts[0]["image"], "season.png")
+        self.assertIn("4 AI models played Survivor", posts[0]["text"])
+        self.assertIn("https://example.test/report/x", posts[-1]["text"])
+        self.assertTrue(posts[-1]["text"].endswith("Follow @someone for the next season."))
+        text = season_story.thread_markdown(posts)
+        self.assertIn("Nothing here has been posted.", text)
+        self.assertIn(f"## 1/{len(posts)} (image: season.png)", text)
+
+    def test_handle_must_be_a_real_handle(self) -> None:
+        from backend.season_story import SHARE_NAME, safe_handle
+
+        self.assertEqual(safe_handle("someone"), "@someone")
+        self.assertEqual(safe_handle(" @Some_One1 "), "@Some_One1")
+        for bad in ("", None, "@way_too_long_for_a_handle", "a b", "x/../y", "<script>"):
+            self.assertIsNone(safe_handle(bad))
+        self.assertTrue(SHARE_NAME.fullmatch("model-agent-03.png"))
+        for bad in ("../season.png", "season.PNG", "thread.md", "a/b.png", ".png"):
+            self.assertIsNone(SHARE_NAME.fullmatch(bad))
+
+    def test_cards_are_skipped_without_a_browser(self) -> None:
+        from backend import season_story
+
+        with tempfile.TemporaryDirectory() as td, patch.object(season_story, "find_chrome", return_value=None):
+            result = season_story.render_cards(Path(td) / "report.html", Path(td) / "share", ["season"])
+        self.assertEqual(result["written"], [])
+        self.assertEqual(result["skipped"], ["season"])
 
 
 class ReportHelpersTest(unittest.TestCase):

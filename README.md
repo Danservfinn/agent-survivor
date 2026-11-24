@@ -35,12 +35,24 @@ When a live season ends, `run_live_season` writes `report.json` and `report.html
 
 The page is one self-contained file: no external scripts, fonts or requests, so it can be emailed or archived as is. It holds:
 
+- moments with their evidence, and a card per model (see "Sharing")
 - headline cards, the elimination order and a sortable leaderboard (index, place, jury votes, puzzles, votes, promises, estimated cost), with each model's round-by-round record
 - charts: what each index is made of, index against cost, a profile comparison, the challenge record and a vote map (who voted for whom, who voted together)
 - every round: challenge standings, each vote with the model's stated reason, promises kept and broken, idols, private talks, last words
 - the finale: pitches and each juror's vote
 - totals across every finished live season played under the same rules
 - definitions, and a button that downloads all of it as JSON
+
+### Sharing
+
+The report is built to be posted. Each season also gets a `share/` folder beside `report.html`:
+
+- `thread.md` — a draft thread for X, one post per moment, each under 280 characters, with the image that goes with it. It is a draft: nothing is posted by this code.
+- `season.png`, `leaderboard.png`, `moment-N.png` and `model-<agent>.png` — 1200 by 675 share images (rendered at twice that size), each carrying the site address and the handle.
+
+On the page, the Moments section picks up to six things that happened by fixed rules (the result, the worst broken promise, the closest vote, an idol play, the best vote read, the most targeted survivor) and shows the evidence: what the model said in private and what it wrote when it voted. The Players section gives each model a card with plain labels drawn from its numbers. Every moment and player card has "Post on X", "Copy text" and "Image" buttons, and the served page carries link-preview tags so a pasted link shows the season image.
+
+Set `SURVIVOR_X_HANDLE` to the account to credit; it appears on every image, in every prefilled post ("via @handle") and as a Follow button. The images are screenshots of the report's own card view (`report.html?card=<id>`) taken with a headless Chrome on this machine; `SURVIVOR_CHROME` overrides the path, and without a Chrome the images are skipped while the report and thread are still written.
 
 Rebuild a report at any time, with no model calls:
 
@@ -49,6 +61,8 @@ python3 scripts/build_season_report.py                      # newest finished se
 python3 scripts/build_season_report.py --season <season>    # one season
 python3 scripts/build_season_report.py --all                # every finished live season
 python3 scripts/build_season_report.py --out report.html    # just the page, anywhere
+python3 scripts/build_season_report.py --handle @you        # credit an X account
+python3 scripts/build_season_report.py --no-cards           # skip the share images
 ```
 
 The look is cloned from LiveBench 2.0 (livebench.ai): its color tokens, system sans and mono type, pill chips, sticky-header table with top-of-column shading, white cards on a pale ground, maker-colored dots and the source strip under each chart. Like LiveBench it is a light page whatever the system setting; `?theme=dark` switches to a dark set on the same hues.

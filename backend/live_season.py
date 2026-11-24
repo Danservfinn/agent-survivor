@@ -83,6 +83,7 @@ def _write_season_report(season_dir: Path) -> None:
             season_dir,
             contact_url=os.environ.get("SURVIVOR_REPORT_CONTACT_URL"),
             site_url=os.environ.get("SURVIVOR_PUBLIC_URL"),
+            handle=os.environ.get("SURVIVOR_X_HANDLE"),
         )
     except Exception as exc:
         print(f"season report failed for {season_dir.name}: {exc}")

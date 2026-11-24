@@ -6,7 +6,10 @@
     python3 scripts/build_season_report.py --out ~/Desktop/report.html
 
 Writes report.json and report.html beside the season database (or the page to
---out). No model calls and no network: it reads only the season's own files.
+--out), plus a share folder: a draft thread (share/thread.md) and one image per
+moment, per model, the season and the leaderboard. Nothing is posted anywhere.
+No model calls and no network: it reads only the season's own files. The images
+need a Chrome or Chromium on this machine (SURVIVOR_CHROME overrides the path).
 """
 from __future__ import annotations
 
@@ -36,6 +39,8 @@ def main() -> int:
     parser.add_argument("--out", help="write only the HTML page to this path")
     parser.add_argument("--contact-url", default=os.environ.get("SURVIVOR_REPORT_CONTACT_URL"))
     parser.add_argument("--site-url", default=os.environ.get("SURVIVOR_PUBLIC_URL"))
+    parser.add_argument("--handle", default=os.environ.get("SURVIVOR_X_HANDLE"), help="X handle credited on the page and the share images")
+    parser.add_argument("--no-cards", action="store_true", help="skip the share images (they need a local Chrome)")
     args = parser.parse_args()
 
     seasons_dir = Path(args.seasons_dir).expanduser()
@@ -57,11 +62,16 @@ def main() -> int:
         if args.out and len(targets) == 1:
             report = build_season_report(season_dir, seasons_dir=seasons_dir)
             out = Path(args.out).expanduser()
-            out.write_text(render_report_html(report, contact_url=args.contact_url, site_url=args.site_url))
+            out.write_text(render_report_html(report, contact_url=args.contact_url, site_url=args.site_url, handle=args.handle))
             print(out)
         else:
-            paths = write_report_files(season_dir, seasons_dir=seasons_dir, contact_url=args.contact_url, site_url=args.site_url)
+            paths = write_report_files(
+                season_dir, seasons_dir=seasons_dir, contact_url=args.contact_url, site_url=args.site_url, handle=args.handle, cards=not args.no_cards
+            )
             print(paths["html"])
+            print(paths["thread"])
+            cards = paths["cards"]
+            print(f"share images: {len(cards['written'])} written" + (f", {len(cards['skipped'])} skipped ({cards['reason']})" if cards["skipped"] or cards["reason"] else ""))
     return 0
 
 

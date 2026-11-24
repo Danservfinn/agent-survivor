@@ -21,7 +21,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
-from . import live_cost
+from . import live_cost, season_story
 from .benchmark_scoring import LADDER_RUNGS, WEIGHTS, score_season
 
 REPORT_VERSION = 1
@@ -199,6 +199,9 @@ def _final_votes(round_votes: list[dict[str, Any]]) -> dict[str, str]:
 
 def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str, Any]]:
     agents = data["agents"]
+    # the engine records idol plays by in-game name; the report works in agent ids
+    id_by_label = {a["agent_id"]: a["agent_id"] for a in agents}
+    id_by_label.update({a["pseudonym"]: a["agent_id"] for a in agents if a.get("pseudonym")})
     events_by_round: dict[int, list[dict[str, Any]]] = {}
     for event in data["events"]:
         events_by_round.setdefault(event["round"], []).append(event)
@@ -379,8 +382,8 @@ def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str,
                 "tally": tally,
                 "revote_tally": revote_tally or None,
                 "eliminated_id": eliminated_id,
-                "idols_played": elimination_payload.get("idols_played") or [],
-                "idol_negated_votes": elimination_payload.get("idol_negated_votes") or {},
+                "idols_played": [id_by_label.get(x, x) for x in elimination_payload.get("idols_played") or []],
+                "idol_negated_votes": {id_by_label.get(k, k): v for k, v in (elimination_payload.get("idol_negated_votes") or {}).items()},
                 "exit_words": exit_words,
                 "promises": promises,
                 "plans": plans,
@@ -833,6 +836,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
     rounds = _build_rounds(data, names)
     finale = _build_finale(data, names)
     models = _build_models(data, scorecard, rounds, finale, table)
+    season_story.add_player_tags(models, rounds, finale)
     rules = _rules_of(data["agents"])
 
     winner_id = data["game"].get("winner")
@@ -872,6 +876,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "aliases": aliases,
         "component_labels": COMPONENT_LABELS,
         "takeaways": _takeaways(season, models, finale, names),
+        "moments": season_story.build_moments(season, models, rounds, finale, names, aliases),
         "models": models,
         "rounds": rounds,
         "finale": finale,
@@ -932,16 +937,44 @@ def safe_link(url: str | None) -> str | None:
     return url if re.match(r"^(https?://|mailto:)[^\s\"'<>]+$", url) else None
 
 
-def render_report_html(report: dict[str, Any], *, contact_url: str | None = None, site_url: str | None = None) -> str:
-    """The report as one self-contained HTML page."""
+def render_report_html(
+    report: dict[str, Any],
+    *,
+    contact_url: str | None = None,
+    site_url: str | None = None,
+    handle: str | None = None,
+    share_base: str | None = None,
+) -> str:
+    """The report as one self-contained HTML page.
+
+    `handle` is the X account credited on the page and on every share card.
+    `share_base` is where the page finds the share images ("share/" beside a
+    written file, "/report/<season>/share/" when served); None hides the links."""
     template = TEMPLATE_PATH.read_text()
+    season = report.get("season") or {}
+    site = safe_link(site_url)
+    handle = season_story.safe_handle(handle)
+    report_url = f"{site.rstrip('/')}/report/{season['season_id']}" if site and site.startswith("http") and season.get("season_id") else None
     page = dict(report)
-    page["links"] = {"contact": safe_link(contact_url), "site": safe_link(site_url)}
+    page["links"] = {"contact": safe_link(contact_url), "site": site, "handle": handle, "share": share_base or None, "report": report_url}
+    page["thread"] = season_story.build_thread(report, handle=handle, report_url=report_url)
     # "</" must not appear inside the inline JSON or a model's own text could close the script tag
     blob = json.dumps(page, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
-    season = report.get("season") or {}
     title = f"LLM Survivor season report {season.get('date') or season.get('season_id') or ''}".strip()
-    return template.replace("__REPORT_TITLE__", _html_escape(title)).replace("__REPORT_DATA__", blob)
+    head = ""
+    if report_url:
+        # link previews on X and elsewhere; the image tag only when the share image can be fetched
+        lead = (report.get("takeaways") or [{}])[0].get("text") or "After-action report and benchmark results."
+        tags = {"og:type": "article", "og:title": title, "og:description": lead, "og:url": report_url, "twitter:card": "summary"}
+        if share_base and share_base.startswith("/"):
+            tags["og:image"] = f"{site.rstrip('/')}{share_base}season.png"
+            tags["twitter:card"] = "summary_large_image"
+        if handle:
+            tags["twitter:creator"] = handle
+        head = "\n".join(
+            f'<meta {"name" if key.startswith("twitter:") else "property"}="{key}" content="{_html_escape(value)}">' for key, value in tags.items()
+        )
+    return template.replace("__REPORT_TITLE__", _html_escape(title)).replace("__REPORT_HEAD__", head).replace("__REPORT_DATA__", blob)
 
 
 def _html_escape(text: str) -> str:
@@ -954,12 +987,23 @@ def write_report_files(
     seasons_dir: Path | str | None = None,
     contact_url: str | None = None,
     site_url: str | None = None,
-) -> dict[str, str]:
-    """Write report.json and report.html beside the season database."""
+    handle: str | None = None,
+    cards: bool = True,
+) -> dict[str, Any]:
+    """Write report.json and report.html beside the season database, and a share
+    folder with the draft thread and, when a Chrome is installed, the share images."""
     season_dir = Path(season_dir)
     report = build_season_report(season_dir, seasons_dir=seasons_dir)
     json_path = season_dir / "report.json"
     html_path = season_dir / "report.html"
+    share_dir = season_dir / "share"
+    share_dir.mkdir(exist_ok=True)
+    can_render = cards and season_story.find_chrome() is not None
     json_path.write_text(json.dumps(report, indent=1, ensure_ascii=False))
-    html_path.write_text(render_report_html(report, contact_url=contact_url, site_url=site_url))
-    return {"json": str(json_path), "html": str(html_path)}
+    html_path.write_text(render_report_html(report, contact_url=contact_url, site_url=site_url, handle=handle, share_base="share/" if can_render else None))
+    site = safe_link(site_url)
+    report_url = f"{site.rstrip('/')}/report/{report['season']['season_id']}" if site and site.startswith("http") else None
+    thread = season_story.build_thread(report, handle=season_story.safe_handle(handle), report_url=report_url)
+    (share_dir / "thread.md").write_text(season_story.thread_markdown(thread))
+    rendered = season_story.render_cards(html_path, share_dir, season_story.card_ids(report)) if can_render else {"written": [], "skipped": [], "reason": "images not requested" if not cards else "no Chrome or Chromium found; set SURVIVOR_CHROME"}
+    return {"json": str(json_path), "html": str(html_path), "thread": str(share_dir / "thread.md"), "cards": rendered}
