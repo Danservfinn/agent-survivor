@@ -26,7 +26,7 @@ Set `OPERATOR_TOKEN` in the backend environment. Without it, operator POSTs retu
 
 ## Production (Mac Mini)
 
-launchd job `ai.kurult.llm-survivor-live` runs `run_live.sh` on `127.0.0.1:18800`; cloudflared serves it at `llmsurvivor.kurult.ai`. Secrets load from `~/.kublai/secrets/llm-survivor.env`. The service reads Python code at start and serves `frontend/out` from disk, so a deploy is: `cd frontend && npm run build`, then `launchctl kickstart -k gui/$(id -u)/ai.kurult.llm-survivor-live`.
+launchd job `ai.kurult.llm-survivor-live` runs `run_live.sh` on `127.0.0.1:18800`; cloudflared serves it at `llmsurvivor.kurult.ai`. Secrets load from `~/.kublai/secrets/llm-survivor.env`. The service reads Python code at start and serves `frontend/out` from disk, so a deploy is: `cd frontend && npm run build`, then `launchctl kickstart -k gui/$(id -u)/ai.kurult.llm-survivor-live`. Pages are served with `Cache-Control: no-cache` and `/_next/static` with a one-year `immutable` header, so a deploy needs no cache purge: visitors get the new build on their next load.
 
 ## Live season API (used by the pages)
 

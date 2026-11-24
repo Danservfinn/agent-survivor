@@ -11,10 +11,11 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.staticfiles import NotModifiedResponse
 from pydantic import BaseModel, Field
 
 from .arena import (
@@ -118,7 +119,23 @@ FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST", APP_ROOT / "frontend" / "ou
 
 app = FastAPI(title="LLM Survivor Turn API")
 app.mount("/media/voice", StaticFiles(directory=str(MEDIA_ROOT), check_dir=False), name="voice-media")
-app.mount("/_next", StaticFiles(directory=str(FRONTEND_DIST / "_next"), check_dir=False), name="next-static")
+PAGE_CACHE_CONTROL = "no-cache"
+ROOT_FILE_CACHE_CONTROL = "public, max-age=3600"
+IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+class ImmutableStaticFiles(StaticFiles):
+    """Next.js /_next files: every name carries a content hash or the build id,
+    so a new build gets new URLs and old ones never change."""
+
+    def file_response(self, full_path, stat_result, scope, status_code: int = 200) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = IMMUTABLE_CACHE_CONTROL
+        return response
+
+
+app.mount("/_next", ImmutableStaticFiles(directory=str(FRONTEND_DIST / "_next"), check_dir=False), name="next-static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -723,22 +740,39 @@ def _resolve_frontend_file(frontend_path: str) -> Path | None:
     return None
 
 
-def _frontend_response(frontend_path: str) -> FileResponse:
+def _page_cache_control(path: Path) -> str:
+    # Page HTML and Next's RSC payloads (.txt) keep the same names across
+    # builds, so browsers must revalidate them or a deploy stays invisible.
+    return PAGE_CACHE_CONTROL if path.suffix in {".html", ".txt"} else ROOT_FILE_CACHE_CONTROL
+
+
+def _frontend_response(frontend_path: str, request: Request) -> Response:
     candidate = _resolve_frontend_file(frontend_path)
-    if candidate:
-        return FileResponse(candidate)
-    # static export: there is no client-side router to hand unknown paths to
-    not_found = FRONTEND_DIST / "404.html"
-    if not frontend_path.startswith(("api/", "media/")) and not_found.is_file():
-        return FileResponse(not_found, status_code=404)
-    raise HTTPException(status_code=404, detail="Not Found")
+    status_code = 200
+    if candidate is None:
+        # static export: there is no client-side router to hand unknown paths to
+        not_found = FRONTEND_DIST / "404.html"
+        if frontend_path.startswith(("api/", "media/")) or not not_found.is_file():
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate, status_code = not_found, 404
+    response = FileResponse(
+        candidate,
+        status_code=status_code,
+        headers={"Cache-Control": _page_cache_control(candidate)},
+        # stat now so etag/last-modified exist before the not-modified check
+        stat_result=os.stat(candidate),
+    )
+    # StaticFiles.is_not_modified reads no instance state; reuse its etag/date check
+    if status_code == 200 and StaticFiles.is_not_modified(None, response.headers, request.headers):  # type: ignore[arg-type]
+        return NotModifiedResponse(response.headers)
+    return response
 
 
 @app.get("/{frontend_path:path}", include_in_schema=False)
-def serve_frontend(frontend_path: str = ""):
-    return _frontend_response(frontend_path)
+def serve_frontend(request: Request, frontend_path: str = ""):
+    return _frontend_response(frontend_path, request)
 
 
 @app.head("/{frontend_path:path}", include_in_schema=False)
-def head_frontend(frontend_path: str = ""):
-    return _frontend_response(frontend_path)
+def head_frontend(request: Request, frontend_path: str = ""):
+    return _frontend_response(frontend_path, request)
