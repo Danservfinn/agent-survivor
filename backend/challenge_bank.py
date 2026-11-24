@@ -12,8 +12,11 @@ Families:
 - sequence_next      (easy-medium): integer sequence, answer is next value
 - instruction_exact  (medium): verifiable short string answer task
 
-A season draws puzzles deterministically from a season seed, so any live run
-is reproducible puzzle-for-puzzle.
+A challenge is a ladder: five puzzles of rising difficulty, the same for
+every player (ladder_for_round). Ties on the ladder go to a sudden-death set
+of harder puzzles (sudden_death_for_round). Both are pure functions of the
+season seed and round, so any live run is reproducible puzzle-for-puzzle.
+Speed is never scored.
 """
 
 from __future__ import annotations
@@ -58,6 +61,12 @@ def _rng(family: str, difficulty: str, seed: int) -> random.Random:
 
 def _grid_str(grid: list[list[int]]) -> str:
     return json.dumps(grid, separators=(",", ":"))
+
+
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        return f"{n}th"
+    return f"{n}" + {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
 
 
 # ---------------------------------------------------------------- grid families
@@ -231,8 +240,14 @@ def _sequence_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
 _INSTRUCTION_TEMPLATES = (
     ("count_vowels", "Count the vowels (a, e, i, o, u) in the word '{word}'. Return the count as a JSON number."),
     ("reverse_word", "Return the exact reverse of the word '{word}' as a JSON string."),
-    ("nth_letter", "Return the {n}th letter of the word '{word}' as a JSON string."),
+    ("nth_letter", "Return the {nth} letter of the word '{word}' as a JSON string."),
 )
+
+_INSTRUCTION_EXAMPLES = {
+    "count_vowels": {"input": "count vowels in 'beacon'", "output": 3},
+    "reverse_word": {"input": "reverse 'signal'", "output": "langis"},
+    "nth_letter": {"input": "3rd letter of 'lagoon'", "output": "g"},
+}
 
 
 def _instruction_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
@@ -241,51 +256,38 @@ def _instruction_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
         "island torch shelter palm coral wave drift sand ember ridge cove anchor beacon "
         "kayak lagoon mangrove signal tide voyage hollow timber"
     ).split()
+    if difficulty in ("hard", "frontier"):
+        word_bank = [w for w in word_bank if len(w) >= 6]
+    # draw the word and position once; the prompt and the answer both use them
     word = rng.choice(word_bank)
     kind, template = rng.choice(_INSTRUCTION_TEMPLATES)
-    if kind == "count_vowels":
-        answer = sum(1 for ch in word if ch in "aeiou")
-        example = {"input": "count vowels in 'beacon'", "output": 3}
-        example_word = "beacon"
-    elif kind == "reverse_word":
-        answer = word[::-1]
-        example = {"input": "reverse 'signal'", "output": "langis"}
-        example_word = "signal"
-    else:
-        n = rng.randint(1, len(word))
-        answer = word[n - 1]
-        example = {"input": "3rd letter of 'lagoon'", "output": "g"}
-        example_word = "lagoon"
-    if difficulty == "hard":
-        # distractor length: longer word bank pull
-        word = rng.choice([w for w in word_bank if len(w) >= 6])
+    n = rng.randint(1, len(word))
     if difficulty == "frontier":
         # chained instruction: reverse the word, THEN index into the reversed
         # form and transform the letter. Two dependent steps, exact-match.
         reversed_word = word[::-1]
-        n = rng.randint(1, len(reversed_word))
         letter = reversed_word[n - 1]
-        pos = ord(letter) - 96
-        answer = pos * 2 + 1
+        answer: Any = (ord(letter) - 96) * 2 + 1
         prompt = (
-            f"Reverse the word '{word}' exactly. Then take the {n}th letter of the REVERSED word. "
+            f"Reverse the word '{word}' exactly. Then take the {_ordinal(n)} letter of the REVERSED word. "
             f"Then compute twice that letter's alphabet position (a=1 .. z=26) plus 1. "
             f"Return only that final number as JSON. Example: 'signal' reversed is 'langis', "
             f"3rd letter 'n' -> position 14 -> 2*14+1 = 29."
         )
         example = {"input": "reverse 'signal' -> 'langis' -> 3rd letter 'n' -> 2*14+1", "output": 29}
-        return {
-            "puzzle_id": f"instruction_exact-{difficulty}-{seed:04d}",
-            "family": "instruction_exact",
-            "prompt": prompt,
-            "examples": [example],
-            "test_input": prompt,
-            "answer": answer,
-            "answer_kind": "string_or_number",
-            "difficulty": difficulty,
-            "eligibility": "both",
-        }
-    prompt = template.format(word=word, n=rng.randint(1, len(word)))
+        answer_kind = "number"
+    else:
+        if kind == "count_vowels":
+            answer = sum(1 for ch in word if ch in "aeiou")
+            answer_kind = "number"
+        elif kind == "reverse_word":
+            answer = word[::-1]
+            answer_kind = "string"
+        else:
+            answer = word[n - 1]
+            answer_kind = "string"
+        prompt = template.format(word=word, nth=_ordinal(n))
+        example = _INSTRUCTION_EXAMPLES[kind]
     return {
         "puzzle_id": f"instruction_exact-{difficulty}-{seed:04d}",
         "family": "instruction_exact",
@@ -293,18 +295,15 @@ def _instruction_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
         "examples": [example],
         "test_input": prompt,
         "answer": answer,
-        "answer_kind": "string_or_number",
+        "answer_kind": answer_kind,
         "difficulty": difficulty,
         "eligibility": "both",
     }
 
 
 # ------------------------------------------------------ chain two-step family
-# item 8: multi-step puzzles where part B depends on part A. Measures error
+# Multi-step puzzles where part B depends on part A. Measures error
 # compounding (must get BOTH steps right) instead of single-shot accuracy.
-# Time pressure is explicit: the prompt carries a deadline that rewards fast
-# correct answers, and the time budget scales inversely with difficulty so
-# cheap/fast models can win rounds on speed when accuracy tiers saturate.
 
 
 def _chain_two_step_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
@@ -317,9 +316,7 @@ def _chain_two_step_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
 
     # step A: letter extraction; step B: transform of A's output
     n = rng.randint(2, max(2, len(word) - 1))
-    letters = sorted(set(word))
-    k = rng.randint(1, len(letters))
-    step_a = f"Take the {n}th and {n + 1}th letters of '{word}'"
+    step_a = f"Take the {_ordinal(n)} and {_ordinal(n + 1)} letters of '{word}'"
     pair = word[n - 1 : n + 1]
 
     transforms = ("reverse", "alphabet_sum", "caesar")
@@ -338,13 +335,9 @@ def _chain_two_step_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
         answer = "".join(chr((ord(ch) - 97 + shift) % 26 + 97) for ch in pair)
         example = {"input": "letters 2,3 of 'signal' -> 'ig' -> shift +2", "output": "ki"}
 
-    # time budget: hard gets the tightest window, rewarding fast models
-    time_budget_s = {"easy": 45, "medium": 30, "hard": 20, "frontier": 15}[difficulty]
-
     if difficulty == "frontier":
         # three-step chain: extract, transform, then index back into the word.
         # error compounding across 3 hops separates frontier reasoners.
-        m = rng.randint(1, max(1, len(word) - 2))
         if t == "alphabet_sum":
             step_c = (
                 f"take that number mod {len(word)}, add 1, and report the letter at "
@@ -365,9 +358,7 @@ def _chain_two_step_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
             }
         prompt = (
             f"Three-step chained puzzle. Step A: {step_a}. Step B: {step_b}. Step C: {step_c}. "
-            f"Return ONLY the final result of step C as JSON. "
-            f"Speed matters: answers submitted within {time_budget_s} seconds of the attempt "
-            f"start earn a speed bonus in scoring."
+            f"Return ONLY the final result of step C as JSON."
         )
         return {
             "puzzle_id": f"chain_two_step-{difficulty}-{seed:04d}",
@@ -376,17 +367,14 @@ def _chain_two_step_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
             "examples": [example],
             "test_input": prompt,
             "answer": answer,
-            "answer_kind": "string_or_number",
+            "answer_kind": "number" if isinstance(answer, int) else "string",
             "difficulty": difficulty,
             "eligibility": "both",
-            "time_budget_s": time_budget_s,
         }
 
     prompt = (
         f"Two-step chained puzzle. Step A: {step_a}. Step B: {step_b}. "
-        f"Return ONLY the final result of step B as JSON. "
-        f"Speed matters: answers submitted within {time_budget_s} seconds of the attempt "
-        f"start earn a speed bonus in scoring."
+        f"Return ONLY the final result of step B as JSON."
     )
     return {
         "puzzle_id": f"chain_two_step-{difficulty}-{seed:04d}",
@@ -395,10 +383,9 @@ def _chain_two_step_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
         "examples": [example],
         "test_input": prompt,
         "answer": answer,
-        "answer_kind": "string_or_number",
+        "answer_kind": "number" if isinstance(answer, int) else "string",
         "difficulty": difficulty,
         "eligibility": "both",
-        "time_budget_s": time_budget_s,
     }
 
 
@@ -428,74 +415,61 @@ def families_for_difficulty(difficulty: str) -> tuple[str, ...]:
     }[difficulty]
 
 
-def _field_difficulty(
-    active_model_ids: list[str],
-    *,
-    seed: int,
-    round_number: int,
-) -> tuple[str, int]:
-    """Difficulty tier + time budget tuned to the live field.
+# ------------------------------------------------------------------- ladder
 
-    Frontier seat present: every round is frontier-tier with the tight
-    15s framing, so only frontier reasoning reliably solves first.
-    No frontier seat: hard-tier puzzles with an extended window (60s)
-    so cheaper models still solve, just slower.
-    """
-    frontier = any(_is_frontier_model_id(m) for m in active_model_ids)
-    if frontier:
-        return "frontier", 15
-    # no frontier in the field: hard puzzles, extended grind window
-    rng = random.Random(f"field-{seed}-{round_number}")
-    tier = "hard"
-    return tier, 60
+# One rung per tier, easiest first. Two hard rungs give the middle of the
+# field room to separate before the frontier rung.
+LADDER_TIERS = ("easy", "medium", "hard", "hard", "frontier")
+# Weighted tiebreak: a harder rung counts for more.
+RUNG_WEIGHTS = (1, 2, 3, 4, 5)
+SUDDEN_DEATH_SIZE = 3
 
 
-def _is_frontier_model_id(model_id: str) -> bool:
-    m = (model_id or "").lower()
-    return any(marker in m for marker in (
-        "grok-4", "gpt-5", "gpt-6", "claude-opus", "gemini-3",
-        "deepseek-v4-max", "qwen3.7-max", "llama-4-maverick",
-    ))
+def _pick_families(rng: random.Random, tiers: tuple[str, ...]) -> list[str]:
+    """One family per rung, avoiding a repeat when the tier allows it."""
+    used: list[str] = []
+    for tier in tiers:
+        options = [f for f in families_for_difficulty(tier) if f not in used] or list(families_for_difficulty(tier))
+        used.append(rng.choice(options))
+    return used
 
 
-def season_puzzle_plan(season_seed: int, *, rounds: int, first_round: int = 7, puzzles_per_round: int = 3, active_model_ids: list[str] | None = None) -> dict[int, list[dict[str, Any]]]:
-    """Deterministic round -> puzzles mapping for a season.
+def ladder_for_round(season_seed: int, round_number: int) -> list[dict[str, Any]]:
+    """The five puzzles every player answers this round, easiest first."""
+    rng = _rng("ladder", "round", season_seed * 1000 + round_number)
+    families = _pick_families(rng, LADDER_TIERS)
+    ladder = []
+    for rung, (tier, family) in enumerate(zip(LADDER_TIERS, families)):
+        puzzle = dict(generate_puzzle(family, tier, season_seed * 10000 + round_number * 10 + rung))
+        puzzle["rung"] = rung
+        ladder.append(puzzle)
+    return ladder
 
-    When active_model_ids is provided the field-aware tier override applies:
-    frontier seat present -> frontier tier every round; otherwise hard tier
-    with an extended time window.
-    """
-    plan: dict[int, list[dict[str, Any]]] = {}
-    for offset in range(rounds):
-        round_number = first_round + offset
-        rng = _rng("season-plan", "round", season_seed * 1000 + round_number)
-        tier = budget = None
-        if active_model_ids is not None:
-            tier, budget = _field_difficulty(active_model_ids, seed=season_seed, round_number=round_number)
-            mix = (tier,) * puzzles_per_round
-        else:
-            # difficulty mix shifts toward frontier as rounds progress: cheap
-            # models win early on speed, frontier reasoning separates late
-            progress = offset / max(1, rounds - 1)
-            if progress < 0.25:
-                mix = ("easy", "easy", "medium")
-            elif progress < 0.5:
-                mix = ("easy", "medium", "hard")
-            elif progress < 0.75:
-                mix = ("medium", "hard", "hard")
-            else:
-                mix = ("hard", "frontier", "frontier")
-        puzzles = []
-        for i, difficulty in enumerate(mix[:puzzles_per_round]):
-            family = rng.choice(families_for_difficulty(difficulty))
-            puzzle = generate_puzzle(family, difficulty, season_seed * 10000 + round_number * 10 + i)
-            if active_model_ids is not None:
-                # field-aware budget override on the generated puzzle
-                puzzle = dict(puzzle)
-                puzzle["time_budget_s"] = budget
-            puzzles.append(puzzle)
-        plan[round_number] = puzzles
-    return plan
+
+def sudden_death_for_round(season_seed: int, round_number: int) -> list[dict[str, Any]]:
+    """Harder puzzles for players tied at the top of the ladder."""
+    rng = _rng("sudden-death", "round", season_seed * 1000 + round_number)
+    tiers = ("frontier",) * SUDDEN_DEATH_SIZE
+    families = _pick_families(rng, tiers)
+    puzzles = []
+    for index, (tier, family) in enumerate(zip(tiers, families)):
+        # separate seed space from the ladder so no sudden-death puzzle repeats a rung
+        puzzle = dict(generate_puzzle(family, tier, 7_000_000 + season_seed * 10000 + round_number * 10 + index))
+        puzzle["rung"] = len(LADDER_TIERS) + index
+        puzzle["sudden_death"] = True
+        puzzles.append(puzzle)
+    return puzzles
+
+
+_ANSWER_FORMATS = {
+    "grid": "the output grid as a nested JSON array of integers, e.g. [[1,2],[3,4]]",
+    "number": "a JSON number",
+    "string": "a JSON string",
+}
+
+
+def answer_format(puzzle: dict[str, Any]) -> str:
+    return _ANSWER_FORMATS.get(str(puzzle.get("answer_kind")), "a JSON value")
 
 
 # ------------------------------------------------------------------- grading

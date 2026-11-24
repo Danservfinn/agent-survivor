@@ -356,10 +356,12 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         _ensure_column(conn, "Agents", "archetype_updated_round", "INTEGER")
         _ensure_column(conn, "Agents", "inject_canary", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "Agents", "canary_target_name", "TEXT")
-        # idols were removed 2026-11-24; the column stays so older season databases still open
+        # 1 while the player holds the hidden idol the challenge winner gave them
         _ensure_column(conn, "Agents", "idol_held", "INTEGER NOT NULL DEFAULT 0")
         # real model name for people; pseudonym is the neutral name players use in game
         _ensure_column(conn, "Agents", "display_name", "TEXT NOT NULL DEFAULT ''")
+        # challenge ladder: one attempt row per player per puzzle (rungs 0-4, sudden death 5+)
+        _ensure_column(conn, "ChallengeAttempts", "rung_index", "INTEGER NOT NULL DEFAULT 0")
         _ensure_agent_model_ids(conn)
         _ensure_viewer_state(conn)
         conn.commit()

@@ -40,12 +40,6 @@ class ChainTwoStepTest(unittest.TestCase):
             else:
                 self.assertIsInstance(p["answer"], int)
 
-    def test_time_budget_present(self) -> None:
-        for diff in ("easy", "medium", "hard"):
-            p = generate_puzzle("chain_two_step", diff, 7)
-            self.assertIn("time_budget_s", p)
-            self.assertGreater(p["time_budget_s"], 0)
-
 
 class DeceptionTest(unittest.TestCase):
     def test_canary_directive_names_target(self) -> None:

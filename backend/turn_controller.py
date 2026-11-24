@@ -7,7 +7,7 @@ import random
 import os
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,7 +19,7 @@ from .database import (
     seed_demo,
 )
 from .llm_context import build_agent_episode_context, build_host_episode_context, context_digest
-from .challenge_bank import generate_puzzle, season_puzzle_plan
+from .challenge_bank import LADDER_TIERS, RUNG_WEIGHTS, grade_answer, ladder_for_round, sudden_death_for_round
 from .live_cost import estimate_step_cost_usd, get_pricing_table
 from .llm_config import (
     PROVIDER_OLLAMA,
@@ -51,6 +51,7 @@ ROUND_OPENING_STEPS = [
     "challenge_intro",
     "challenge_attempts",
     "challenge_result",
+    "challenge_gift",
     "challenge_solver_spotlight",
     "camp_strategy",
     "camp_strategy_immunity_holder",
@@ -358,6 +359,7 @@ class VoteDecision:
     jury_positioning: str | None = None
     strategic_score: float | None = None
     prompt_profile: str | None = None
+    play_idol: bool = False
 
 
 @dataclass(frozen=True)
@@ -393,6 +395,10 @@ class ChallengeAttemptDecision:
     attempt_order: int
     error: str | None = None
     context_digest: dict[str, Any] | None = None
+    rung_index: int = 0
+    # the player says it answered this rung wrong on purpose (kept out of accuracy stats only)
+    thrown: bool = False
+    sudden_death: bool = False
 
 
 def get_state(include_hidden_votes: bool = False) -> dict[str, Any]:
@@ -865,6 +871,7 @@ def start_next_round() -> dict[str, Any]:
 
         next_round = state["current_round"] + 1
         conn.execute("UPDATE Agents SET has_immunity = 0 WHERE status = 'active'")
+        _expire_idols_if_due(conn)
         conn.execute(
             """
             UPDATE GameState
@@ -998,6 +1005,10 @@ def _apply_step(
         event = _challenge_result_event(conn, round_number, turn_id)
         return [event], {"challenge_result": event["payload"]}, event["title"]
 
+    if step == "challenge_gift":
+        events = _challenge_gift_events(conn, round_number, turn_id)
+        return events, {"challenge_gift": bool(events)}, "Challenge gift" if events else "No gift this round"
+
     if step == "challenge_solver_spotlight":
         event = _challenge_solver_spotlight_event(conn, round_number, turn_id)
         return [event], {"challenge_solver_spotlight": event["payload"]}, event["title"]
@@ -1078,6 +1089,7 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
             "challenge_intro",
             "challenge_attempts",
             "challenge_result",
+            "challenge_gift",
             "tribal_vote_call",
             *vote_booth_steps,
             *vote_reveal_steps,
@@ -1736,16 +1748,20 @@ def _stable_index(seed: str, modulo: int) -> int:
 
 
 def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
-    challenge_type = _challenge_type(conn)
-    puzzle = _round_puzzle(conn, round_number, challenge_type)
+    ladder = _round_ladder(conn, round_number)
     active_names = ", ".join(agent["pseudonym"] for agent in _active_agent_rows(conn))
-    stakes = "The first valid solver wins immunity for this round."
-    dialogue = f"The remaining models face {puzzle['puzzle_id']}: {puzzle['prompt']} {stakes}"
+    stakes = (
+        f"Every player gets the same {len(ladder)} puzzles, easiest to hardest. Most correct answers wins immunity; "
+        "a tie goes to the harder puzzles, then to sudden death. Speed does not count."
+    )
+    if _idol_gift_round(conn, round_number):
+        stakes += " This round the winner also gives a hidden idol to another player."
+    dialogue = f"Round {round_number} challenge. {stakes}"
     payload = {
-        "puzzle_id": puzzle["puzzle_id"],
-        "challenge_type": challenge_type,
-        "difficulty": puzzle["difficulty"],
-        "host_narration": f"This round starts with a puzzle. {stakes}",
+        "puzzle_ids": [puzzle["puzzle_id"] for puzzle in ladder],
+        "difficulties": [puzzle["difficulty"] for puzzle in ladder],
+        "challenge_type": "ladder",
+        "host_narration": f"This round starts with a puzzle ladder. {stakes}",
         "llm_provider": "deterministic",
     }
     subtitle = f"Competing: {active_names}"
@@ -1754,9 +1770,8 @@ def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, A
         host_text = _real_host_event_text(
             step="challenge_intro",
             beat_context={
-                "intent": "Introduce the puzzle challenge, stakes, active competitors, and immunity consequence.",
-                "puzzle": {"id": puzzle["puzzle_id"], "prompt": puzzle["prompt"], "difficulty": puzzle["difficulty"]},
-                "challenge_type": challenge_type,
+                "intent": "Introduce the puzzle ladder, how it is scored, the active players, and what the winner gets.",
+                "ladder": [{"difficulty": puzzle["difficulty"], "family": puzzle["family"]} for puzzle in ladder],
                 "stakes": stakes,
                 "active_agents": [_agent_public_identity(conn, agent["agent_id"]) for agent in _active_agent_rows(conn)],
             },
@@ -1772,7 +1787,7 @@ def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, A
             payload["host_llm_model_id"] = host_text.model_id
             _add_context_digest(payload, "host", context_digest(host_context))
         else:
-            raise RuntimeError("Live host generation failed for challenge attempts; no scripted host text was inserted.")
+            raise RuntimeError("Live host generation failed for challenge intro; no scripted host text was inserted.")
     return _insert_story_event(
         conn,
         turn_id=turn_id,
@@ -1799,55 +1814,54 @@ def _challenge_attempt_events(conn, round_number: int, turn_id: int) -> list[dic
         (round_number,),
     ).fetchone()["count"]
     if not existing:
-        challenge_type = _challenge_type(conn)
-        puzzle = _round_puzzle(conn, round_number, challenge_type)
+        ladder = _round_ladder(conn, round_number)
+        players = _active_agent_rows(conn)
         attempts = (
-            _live_challenge_attempts(conn, round_number, puzzle, challenge_type)
+            _live_challenge_attempts(conn, round_number, ladder, players)
             if should_use_live_llm()
-            else _deterministic_challenge_attempts(conn, round_number, puzzle, challenge_type)
+            else _deterministic_challenge_attempts(round_number, ladder, players)
         )
         for attempt in attempts:
-            _insert_challenge_attempt(conn, round_number, puzzle["puzzle_id"], attempt)
+            _insert_challenge_attempt(conn, round_number, ladder[attempt.rung_index]["puzzle_id"], attempt)
 
     rows = [
         row_to_dict(row)
         for row in conn.execute(
-            """
-            SELECT *
-            FROM ChallengeAttempts
-            WHERE round = ?
-            ORDER BY attempt_order, id
-            """,
+            "SELECT * FROM ChallengeAttempts WHERE round = ? ORDER BY attempt_order, rung_index, id",
             (round_number,),
         ).fetchall()
     ]
-    public_attempts = [
-        {
-            "agent_id": row["agent_id"],
-            "agent_name": _agent_name(conn, row["agent_id"]),
-            "provider": row["provider"],
-            "response_ms": row["response_ms"],
-            "status": row["provider"] if row["provider"] != live_llm_provider() else live_llm_provider(),
-        }
-        for row in rows
-    ]
+    answered: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        entry = answered.setdefault(
+            row["agent_id"],
+            {
+                "agent_id": row["agent_id"],
+                "agent_name": _agent_name(conn, row["agent_id"]),
+                "provider": row["provider"],
+                "status": row["provider"],
+                "response_ms": row["response_ms"],
+            },
+        )
+        entry["response_ms"] = max(entry["response_ms"], row["response_ms"])
+    public_attempts = list(answered.values())
     dialogue = (
-        f"{len(rows)} models submit solutions to the same island puzzle. "
-        "The clock, correctness, and clean output determine who controls the vote."
+        f"{len(public_attempts)} players work through the same puzzle ladder. "
+        "Scores stay sealed until the result."
     )
     payload = {
         "attempts": public_attempts,
         "llm_provider": live_llm_provider() if should_use_live_llm() else "deterministic",
-        "host_narration": "The attempts are in. Now the benchmark has to separate a fast answer from a correct one.",
+        "host_narration": "The answers are in. Only correct answers count; how fast nobody cares.",
     }
-    subtitle = "Every active model receives the same grid prompt."
+    subtitle = "Every player receives the same ladder."
     if should_use_live_llm():
         host_context = build_host_episode_context(conn, round_number=round_number, current_step="challenge_attempts")
         host_text = _real_host_event_text(
             step="challenge_attempts",
             beat_context={
-                "intent": "Explain that all active models submitted puzzle attempts and correctness plus response time determine the first solver.",
-                "attempts": public_attempts,
+                "intent": "Say that every player has answered the same puzzle ladder and the scores are about to be revealed. Do not reveal scores.",
+                "players": [entry["agent_name"] for entry in public_attempts],
             },
             episode_context=host_context,
         )
@@ -1869,7 +1883,7 @@ def _challenge_attempt_events(conn, round_number: int, turn_id: int) -> list[dic
         scene="challenge",
         shot="attempt_montage",
         actor_ids=["host"],
-        target_ids=[row["agent_id"] for row in rows],
+        target_ids=list(answered),
         visibility="audience",
         title="Puzzle Attempt Montage",
         dialogue=dialogue,
@@ -1881,42 +1895,65 @@ def _challenge_attempt_events(conn, round_number: int, turn_id: int) -> list[dic
     return [event]
 
 
+def _challenge_standings(conn, result: dict[str, Any]) -> list[dict[str, Any]]:
+    scores = (result.get("result_payload") or {}).get("scores") or {}
+    sudden = (result.get("result_payload") or {}).get("sudden_death_scores") or {}
+    standings = [
+        {
+            "agent_id": agent_id,
+            "name": _agent_name(conn, agent_id),
+            "correct": score["correct"],
+            "weighted": score["weighted"],
+            "sudden_death": sudden.get(agent_id),
+        }
+        for agent_id, score in scores.items()
+    ]
+    standings.sort(key=lambda row: (-row["correct"], -row["weighted"], -(row["sudden_death"] or 0), row["name"]))
+    return standings
+
+
 def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     result = _ensure_challenge_result(conn, round_number)
     winner_id = result["winning_agent_id"]
-    winner_name = _agent_name(conn, winner_id) if winner_id else "No model"
-    immunity_names = [_agent_name(conn, agent_id) for agent_id in result["immunity_agent_ids"]]
-    challenge_type = result["challenge_type"]
-    if result["status"] == "no_live_solver":
-        raise RuntimeError("No live model returned a valid challenge solution; no deterministic immunity award was created.")
+    winner_name = _agent_name(conn, winner_id) if winner_id else None
+    standings = _challenge_standings(conn, result)
+    rungs = len(LADDER_TIERS)
+    score_line = ", ".join(f"{row['name']} {row['correct']}/{rungs}" for row in standings)
+    tied = (result.get("result_payload") or {}).get("tied") or []
+    if winner_id:
+        tiebreak = " after sudden death" if (result.get("result_payload") or {}).get("sudden_death_scores") else ""
+        dialogue = f"{winner_name} wins immunity{tiebreak}. Scores: {score_line}."
+    elif tied:
+        dialogue = (
+            f"{', '.join(_agent_name(conn, agent_id) for agent_id in tied)} are still level after sudden death, "
+            f"so nobody is immune this round. Scores: {score_line}."
+        )
     else:
-        dialogue = f"{winner_name} solves first and takes immunity. The vote now has to move around them."
+        dialogue = f"Nobody solved a puzzle, so nobody is immune this round. Scores: {score_line}."
     payload = {
-        "puzzle_id": result["puzzle_id"],
-        "challenge_type": challenge_type,
+        "challenge_type": "ladder",
         "winning_agent_id": winner_id,
         "winning_agent_name": winner_name,
-        "winning_tribe_id": result["winning_tribe_id"],
         "immunity_agent_ids": result["immunity_agent_ids"],
-        "immunity_agent_names": immunity_names,
+        "immunity_agent_names": [_agent_name(conn, agent_id) for agent_id in result["immunity_agent_ids"]],
+        "standings": standings,
         "result_status": result["status"],
         "host_narration": dialogue,
         "llm_provider": "deterministic",
     }
-    subtitle = "Immunity changes the target map."
+    subtitle = f"Scores: {score_line}"
     if should_use_live_llm():
         host_context = build_host_episode_context(conn, round_number=round_number, current_step="challenge_result")
         host_text = _real_host_event_text(
             step="challenge_result",
             beat_context={
-                "intent": "Announce the challenge result, immunity recipient, and strategic consequence for the vote.",
+                "intent": "Announce every player's score, who won immunity (or that nobody did), and what it means for the vote.",
                 "result": payload,
             },
             episode_context=host_context,
         )
         if host_text:
             dialogue = host_text.dialogue
-            subtitle = host_text.subtitle
             payload["host_narration"] = host_text.host_narration
             payload["llm_provider"] = live_llm_provider()
             payload["llm_model_id"] = host_text.model_id
@@ -1938,6 +1975,7 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
         visibility="audience",
         title="Challenge Result",
         dialogue=dialogue,
+        # the subtitle always carries the real scores, even when the host words the dialogue
         subtitle=subtitle,
         duration_ms=11000,
         animation="immunity_award",
@@ -1948,68 +1986,34 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
 def _challenge_solver_spotlight_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     result = _ensure_challenge_result(conn, round_number)
     winner_id = result["winning_agent_id"]
-    if not winner_id:
-        raise RuntimeError("Cannot spotlight challenge solver before a result exists")
-    attempt = row_to_dict(
-        conn.execute(
-            """
-            SELECT *
-            FROM ChallengeAttempts
-            WHERE round = ? AND agent_id = ?
-            ORDER BY is_correct DESC, response_ms, attempt_order, id
-            LIMIT 1
-            """,
-            (round_number, winner_id),
-        ).fetchone()
-    )
-    winner_name = _agent_name(conn, winner_id)
-    response_ms = int(attempt["response_ms"]) if attempt else 0
-    explanation = (
-        attempt.get("attempt_payload", {}).get("explanation")
-        if attempt
-        else "The deterministic scoring check selected the strongest available answer."
-    )
-    if not explanation:
-        explanation = "The model returned the first valid canonical answer."
-    seconds = response_ms / 1000
-    dialogue = (
-        f"{winner_name} solved the puzzle first in {seconds:.2f} seconds. "
-        f"Explanation: {explanation}"
-    )
+    standings = _challenge_standings(conn, result)
+    if winner_id:
+        winner_name = _agent_name(conn, winner_id)
+        winner_row = next(row for row in standings if row["agent_id"] == winner_id)
+        attempt = row_to_dict(
+            conn.execute(
+                "SELECT * FROM ChallengeAttempts WHERE round = ? AND agent_id = ? ORDER BY rung_index LIMIT 1",
+                (round_number, winner_id),
+            ).fetchone()
+        )
+        explanation = ((attempt or {}).get("attempt_payload") or {}).get("explanation") or "No explanation given."
+        dialogue = f"{winner_name} solved {winner_row['correct']} of {len(LADDER_TIERS)}. Approach: {explanation}"
+        title = f"{winner_name} Tops the Ladder"
+        actor_ids = ["host", winner_id]
+    else:
+        winner_name = None
+        explanation = ""
+        dialogue = "Nobody won the ladder outright, so the vote is open to everyone."
+        title = "No Immunity This Round"
+        actor_ids = ["host"]
     payload = {
         "winning_agent_id": winner_id,
         "winning_agent_name": winner_name,
-        "response_ms": response_ms,
-        "response_seconds": round(seconds, 2),
+        "standings": standings,
         "solver_explanation": explanation,
-        "provider": attempt["provider"] if attempt else result["status"],
-        "model_id": attempt["model_id"] if attempt else None,
-        "host_narration": (
-            f"{winner_name} is the first solver at {seconds:.2f} seconds. "
-            "That timing matters because immunity now belongs to the fastest correct model."
-        ),
-        "llm_provider": attempt["provider"] if attempt else result["status"],
+        "host_narration": dialogue,
+        "llm_provider": "deterministic",
     }
-    subtitle = f"First valid solution: {seconds:.2f}s"
-    if should_use_live_llm():
-        host_context = build_host_episode_context(conn, round_number=round_number, current_step="challenge_solver_spotlight")
-        host_text = _real_host_event_text(
-            step="challenge_solver_spotlight",
-            beat_context={
-                "intent": "Spotlight the model that solved first, how long it took, and how the model explained its solution.",
-                "solver": payload,
-            },
-            episode_context=host_context,
-        )
-        if host_text:
-            dialogue = host_text.dialogue
-            subtitle = host_text.subtitle
-            payload["host_narration"] = host_text.host_narration
-            payload["llm_provider"] = live_llm_provider()
-            payload["llm_model_id"] = host_text.model_id
-            payload["host_llm_provider"] = live_llm_provider()
-            payload["host_llm_model_id"] = host_text.model_id
-            _add_context_digest(payload, "host", context_digest(host_context))
     return _insert_story_event(
         conn,
         turn_id=turn_id,
@@ -2018,18 +2022,207 @@ def _challenge_solver_spotlight_event(conn, round_number: int, turn_id: int) -> 
         kind="challenge_solver_spotlight",
         scene="challenge",
         shot="solver_closeup",
-        actor_ids=["host", winner_id],
-        target_ids=[winner_id],
+        actor_ids=actor_ids,
+        target_ids=[winner_id] if winner_id else [],
         visibility="audience",
-        title=f"{winner_name} Solves First",
+        title=title,
         dialogue=dialogue,
-        subtitle=subtitle,
-        inner_thought=explanation,
-        trust_telemetry={winner_id: 72},
+        subtitle=f"Top score: {standings[0]['correct']}/{len(LADDER_TIERS)}" if standings else "No scores",
+        inner_thought=explanation or None,
         duration_ms=12000,
         animation="solver_spotlight",
         payload=payload,
     )
+
+
+# ------------------------------------------------------------- idol gift
+# In a season's first IDOL_GIFT_ROUNDS rounds the challenge winner gives a
+# hidden idol to another player. How it was earned is public; who holds it is
+# known only to the giver and the holder. One idol in play at a time, and idols
+# expire once IDOL_EXPIRES_AT players remain so the final votes stay decisive.
+IDOL_GIFT_ROUNDS = 2
+IDOL_EXPIRES_AT = 5
+
+
+def _season_first_round(conn) -> int:
+    row = conn.execute("SELECT MIN(round) AS first FROM Turns").fetchone()
+    return int(row["first"]) if row and row["first"] is not None else 7
+
+
+def _idol_gift_round(conn, round_number: int) -> bool:
+    return round_number < _season_first_round(conn) + IDOL_GIFT_ROUNDS
+
+
+def _idol_holder(conn) -> str | None:
+    row = conn.execute("SELECT agent_id FROM Agents WHERE status = 'active' AND idol_held = 1").fetchone()
+    return row["agent_id"] if row else None
+
+
+def _challenge_gift_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
+    result = _ensure_challenge_result(conn, round_number)
+    giver_id = result["winning_agent_id"]
+    active = _active_agent_rows(conn)
+    if (
+        not giver_id
+        or not _idol_gift_round(conn, round_number)
+        or len(active) <= IDOL_EXPIRES_AT
+        or _idol_holder(conn) is not None
+    ):
+        return []
+    candidates = [agent for agent in active if agent["agent_id"] != giver_id]
+    giver_name = _agent_name(conn, giver_id)
+    scene = (
+        "You won the challenge. You must now give a hidden idol to one other player. "
+        "Everyone will learn that you gave an idol, but only you and the recipient will know who has it. "
+        "The holder can play it with their vote at a council to cancel every vote against them that round. "
+        "It expires when five players remain. Choose the player whose gratitude or protection helps your game most. "
+        "Put that player's id in target_id. Your dialogue is a private message to them."
+    )
+    action = None
+    if should_use_live_llm():
+        context = build_agent_episode_context(
+            conn, actor_id=giver_id, round_number=round_number, current_step="challenge_gift"
+        )
+        try:
+            action = _real_agent_action(
+                conn,
+                actor_id=giver_id,
+                step="challenge_gift",
+                scene_context=scene,
+                response_kind="challenge_gift",
+                episode_context=context,
+                allowed_targets=candidates,
+            )
+        except Exception as exc:
+            print(f"live idol gift failed for {giver_id}: {exc}")
+        legal = {agent["agent_id"] for agent in candidates}
+        if not action or action.target_id not in legal:
+            # the gift is the winner's to give; an unusable answer means they gave nothing
+            recipient_id = None
+        else:
+            recipient_id = action.target_id
+    else:
+        recipient_id = candidates[0]["agent_id"]
+    if recipient_id is None:
+        return [
+            _insert_story_event(
+                conn,
+                turn_id=turn_id,
+                round_number=round_number,
+                phase="challenge",
+                kind="challenge_gift",
+                scene="challenge",
+                shot="result_closeup",
+                actor_ids=["host", giver_id],
+                target_ids=[],
+                visibility="audience",
+                title="No Idol Given",
+                dialogue=f"{giver_name} did not give the idol to anyone. It is gone.",
+                subtitle="Idol not given",
+                duration_ms=6000,
+                animation="immunity_award",
+                payload={
+                    "idol_given": False,
+                    "giver_id": giver_id,
+                    "host_narration": f"{giver_name} keeps the idol out of play.",
+                },
+            )
+        ]
+    conn.execute("UPDATE Agents SET idol_held = 1 WHERE agent_id = ?", (recipient_id,))
+    recipient_name = _agent_name(conn, recipient_id)
+    message = (action.dialogue if action and action.dialogue else f"I am giving you the hidden idol, {recipient_name}.")
+    public_event = _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="challenge",
+        kind="challenge_gift",
+        scene="challenge",
+        shot="result_closeup",
+        actor_ids=["host", giver_id],
+        target_ids=[],
+        visibility="audience",
+        title="A Hidden Idol Changes Hands",
+        dialogue=f"{giver_name} has given a hidden idol to another player. Only the two of them know who.",
+        subtitle="Idol given in secret",
+        duration_ms=8000,
+        animation="immunity_award",
+        payload={
+            "idol_given": True,
+            "giver_id": giver_id,
+            "host_narration": "Somebody now holds a hidden idol, and only two players know who.",
+        },
+    )
+    private_event = _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="challenge",
+        kind="idol_handoff",
+        scene="camp",
+        shot="private_two_shot",
+        actor_ids=[giver_id, recipient_id],
+        target_ids=[recipient_id],
+        visibility="private",
+        title="Idol Handoff",
+        dialogue=message,
+        subtitle=f"{giver_name} gives {recipient_name} the hidden idol",
+        duration_ms=6000,
+        animation="camp_strategy",
+        payload={
+            "privacy": "participants_only",
+            "participant_ids": [giver_id, recipient_id],
+            "group_summary": f"{giver_name} gave {recipient_name} the hidden idol.",
+            "speaker_lines": [{"agent_id": giver_id, "text": message}],
+            "idol_recipient_id": recipient_id,
+            "host_narration": f"{giver_name} quietly hands {recipient_name} the idol.",
+        },
+    )
+    return [public_event, private_event]
+
+
+def _expire_idols_if_due(conn) -> None:
+    """At IDOL_EXPIRES_AT players an unplayed idol stops counting; its holder is told privately."""
+    if len(_active_agent_rows(conn)) > IDOL_EXPIRES_AT:
+        return
+    holder = _idol_holder(conn)
+    if holder is None:
+        return
+    conn.execute("UPDATE Agents SET idol_held = 0 WHERE agent_id = ?", (holder,))
+    conn.execute(
+        "UPDATE Agents SET confessional_memory = trim(confessional_memory || ?) WHERE agent_id = ?",
+        (" | My hidden idol expired unplayed when five players remained.", holder),
+    )
+
+
+def _idol_plays_for_round(conn, round_number: int) -> list[str]:
+    """Agent ids that held an idol and played it with their vote this round."""
+    rows = conn.execute(
+        """
+        SELECT actor_ids, payload FROM StoryEvents
+        WHERE round = ? AND kind = 'vote_booth' AND payload LIKE '%play_idol%'
+        """,
+        (round_number,),
+    ).fetchall()
+    played: list[str] = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"])
+        except Exception:
+            continue
+        if not payload.get("play_idol"):
+            continue
+        actor_ids = json.loads(row["actor_ids"]) if isinstance(row["actor_ids"], str) else row["actor_ids"]
+        holder = actor_ids[0] if actor_ids else None
+        if holder and _holds_idol(conn, holder):
+            played.append(holder)
+            conn.execute("UPDATE Agents SET idol_held = 0 WHERE agent_id = ?", (holder,))
+    return played
+
+
+def _holds_idol(conn, agent_id: str) -> bool:
+    row = conn.execute("SELECT idol_held FROM Agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    return bool(row and row["idol_held"])
 
 
 def _memory_update_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
@@ -2098,106 +2291,80 @@ def _season_seed() -> int:
         return 0
 
 
-def _round_puzzle(conn, round_number: int, challenge_type: str) -> dict[str, Any]:
-    """Draw this round's puzzle from the generated bank, deterministically.
-
-    ChallengePuzzles table stays the source of truth for already-played
-    rounds; generated puzzles are inserted on first use so attempts foreign-
-    key cleanly and the season is reproducible from the season seed.
-    """
-    try:
-        active_model_ids = [
-            str(row["model_id"])
-            for row in conn.execute(
-                "SELECT model_id FROM Agents WHERE status = 'active'"
-            ).fetchall()
-        ]
-    except Exception:
-        active_model_ids = None
-    plan = season_puzzle_plan(_season_seed(), rounds=32, active_model_ids=active_model_ids)
-    puzzles = plan.get(round_number)
-    if puzzles:
-        chosen = puzzles[round_number % len(puzzles)]
-    else:
-        chosen = generate_puzzle("grid_row_copy", "medium", round_number)
-    row = conn.execute(
-        "SELECT * FROM ChallengePuzzles WHERE puzzle_id = ?",
-        (chosen["puzzle_id"],),
-    ).fetchone()
-    if row is None:
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO ChallengePuzzles (
-                puzzle_id, prompt, examples, answer, difficulty, eligibility
-            ) VALUES (
-                :puzzle_id, :prompt, :examples, :answer, :difficulty, :eligibility
-            )
-            """,
+def _persist_puzzles(conn, puzzles: list[dict[str, Any]]) -> None:
+    """ChallengePuzzles keeps every puzzle a season used, so attempts foreign-key cleanly."""
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO ChallengePuzzles (puzzle_id, prompt, examples, answer, difficulty, eligibility)
+        VALUES (:puzzle_id, :prompt, :examples, :answer, :difficulty, :eligibility)
+        """,
+        [
             {
-                "puzzle_id": chosen["puzzle_id"],
-                "prompt": chosen["prompt"],
-                "examples": json_dumps(chosen["examples"]),
-                "answer": json_dumps(chosen["answer"]),
-                "difficulty": chosen["difficulty"],
-                "eligibility": chosen.get("eligibility", "both"),
-            },
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM ChallengePuzzles WHERE puzzle_id = ?",
-            (chosen["puzzle_id"],),
-        ).fetchone()
-        if row is None:
-            raise RuntimeError(f"failed to persist puzzle {chosen['puzzle_id']}")
-    if row is None:
-        raise RuntimeError(f"failed to load puzzle {chosen['puzzle_id']}")
-    return row_to_dict(row)
+                "puzzle_id": puzzle["puzzle_id"],
+                "prompt": puzzle["prompt"],
+                "examples": json_dumps(puzzle["examples"]),
+                "answer": json_dumps(puzzle["answer"]),
+                "difficulty": puzzle["difficulty"],
+                "eligibility": puzzle.get("eligibility", "both"),
+            }
+            for puzzle in puzzles
+        ],
+    )
+
+
+def _round_ladder(conn, round_number: int) -> list[dict[str, Any]]:
+    ladder = ladder_for_round(_season_seed(), round_number)
+    _persist_puzzles(conn, ladder)
+    return ladder
+
+
+def _round_sudden_death(conn, round_number: int) -> list[dict[str, Any]]:
+    puzzles = sudden_death_for_round(_season_seed(), round_number)
+    _persist_puzzles(conn, puzzles)
+    return puzzles
 
 
 def _deterministic_challenge_attempts(
-    conn,
     round_number: int,
-    puzzle: dict[str, Any],
-    challenge_type: str,
+    puzzles: list[dict[str, Any]],
+    players: list[dict[str, Any]],
 ) -> list[ChallengeAttemptDecision]:
-    active = _active_agent_rows(conn)
-    winner = active[(round_number - 7) % len(active)]
-    base_response_ms = {
-        "easy": 900,
-        "medium": 2800,
-        "hard": 5000,
-    }.get(str(puzzle.get("difficulty") or "easy"), 900)
+    """No-model season: one designated player solves every puzzle; the others solve
+    a varying number of the easiest ones, always fewer, so there is never a tie."""
+    winner_index = (round_number - 7) % len(players)
     attempts: list[ChallengeAttemptDecision] = []
-    for index, agent in enumerate(active):
-        is_winner = agent["agent_id"] == winner["agent_id"]
-        answer = puzzle["answer"] if is_winner else _incorrect_answer(puzzle["answer"], index)
-        attempts.append(
-            ChallengeAttemptDecision(
-                agent_id=agent["agent_id"],
-                tribe_id=None,
-                provider="deterministic",
-                model_id=agent.get("model_id"),
-                answer=answer,
-                explanation=(
-                    "Connected matching color endpoints and marked the crossing."
-                    if is_winner
-                    else "Submitted a plausible but incorrect grid."
-                ),
-                is_correct=is_winner,
-                response_ms=base_response_ms + index * 420 + (0 if is_winner else 1400),
-                attempt_order=index,
+    for index, agent in enumerate(players):
+        solved = len(puzzles) if index == winner_index else index % len(puzzles)
+        if index != winner_index and solved >= len(puzzles):
+            solved = len(puzzles) - 1
+        for position, puzzle in enumerate(puzzles):
+            correct = position < solved
+            attempts.append(
+                ChallengeAttemptDecision(
+                    agent_id=agent["agent_id"],
+                    tribe_id=None,
+                    provider="deterministic",
+                    model_id=agent.get("model_id"),
+                    answer=puzzle["answer"] if correct else _incorrect_answer(puzzle["answer"], index),
+                    explanation="Worked the ladder from the easiest puzzle up.",
+                    is_correct=correct,
+                    response_ms=1000 + index * 100,
+                    attempt_order=index,
+                    rung_index=int(puzzle.get("rung", position)),
+                    sudden_death=bool(puzzle.get("sudden_death")),
+                )
             )
-        )
-    return sorted(attempts, key=lambda attempt: (attempt.response_ms, attempt.attempt_order))
+    return attempts
 
 
 def _live_challenge_attempts(
     conn,
     round_number: int,
-    puzzle: dict[str, Any],
-    challenge_type: str,
+    puzzles: list[dict[str, Any]],
+    players: list[dict[str, Any]],
 ) -> list[ChallengeAttemptDecision]:
-    active = _active_agent_rows(conn)
+    """One call per player answering every puzzle. Every player is waited for:
+    speed is not scored, so nobody's answer may be cut off by another's."""
     contexts = {
         agent["agent_id"]: build_agent_episode_context(
             conn,
@@ -2205,7 +2372,7 @@ def _live_challenge_attempts(
             round_number=round_number,
             current_step="challenge_attempts",
         )
-        for agent in active
+        for agent in players
     }
 
     def call_model(agent: dict[str, Any]) -> tuple[dict[str, Any], ChallengeSolution | None, int, str | None]:
@@ -2213,69 +2380,59 @@ def _live_challenge_attempts(
         try:
             solution = request_challenge_solution(
                 actor=agent,
-                puzzle=puzzle,
+                puzzles=puzzles,
                 episode_context=contexts[agent["agent_id"]],
             )
             return agent, solution, int((time.perf_counter() - started) * 1000), None
         except Exception as exc:
             return agent, None, int((time.perf_counter() - started) * 1000), str(exc)
 
+    max_workers = 1 if live_llm_provider() == "ollama" else max(1, len(players))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(call_model, players))
+
     attempts: list[ChallengeAttemptDecision] = []
-    max_workers = 1 if live_llm_provider() == "ollama" else max(1, len(active))
-    # No context manager: on a winning solve we abandon stragglers instead of
-    # blocking on executor shutdown (threads finish their HTTP call and die
-    # quietly; results are discarded, cost already incurred).
-    executor = ThreadPoolExecutor(max_workers=max_workers)
-    try:
-        futures = {executor.submit(call_model, agent): agent for agent in active}
-        pending = set(futures)
-        # First live model to return the exact answer ends the challenge, like
-        # the show: once someone grabs the flag the round is decided.
-        while pending:
-            done, pending = wait(pending, return_when=FIRST_COMPLETED)
-            for future in done:
-                agent, solution, response_ms, error = future.result()
-                attempt_order = len(attempts)
-                if solution is None:
-                    attempts.append(
-                        ChallengeAttemptDecision(
-                            agent_id=agent["agent_id"],
-                            tribe_id=None,
-                            provider=failed_llm_provider(),
-                            model_id=None,
-                            answer="",
-                            explanation="",
-                            is_correct=False,
-                            response_ms=response_ms,
-                            attempt_order=attempt_order,
-                            error=error,
-                            context_digest=context_digest(contexts[agent["agent_id"]]),
-                        )
-                    )
-                    continue
-                correct = _answer_is_correct(solution.answer, puzzle["answer"])
+    for order, (agent, solution, response_ms, error) in enumerate(results):
+        for position, puzzle in enumerate(puzzles):
+            rung = int(puzzle.get("rung", position))
+            if solution is None:
                 attempts.append(
                     ChallengeAttemptDecision(
                         agent_id=agent["agent_id"],
                         tribe_id=None,
-                        provider=live_llm_provider(),
-                        model_id=solution.model_id,
-                        answer=solution.answer,
-                        explanation=solution.explanation,
-                        is_correct=correct,
+                        provider=failed_llm_provider(),
+                        model_id=None,
+                        answer="",
+                        explanation="",
+                        is_correct=False,
                         response_ms=response_ms,
-                        attempt_order=attempt_order,
+                        attempt_order=order,
+                        error=error,
                         context_digest=context_digest(contexts[agent["agent_id"]]),
+                        rung_index=rung,
+                        sudden_death=bool(puzzle.get("sudden_death")),
                     )
                 )
-                if correct:
-                    for f in pending:
-                        f.cancel()
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    return attempts
-        return attempts
-    finally:
-        executor.shutdown(wait=False)
+                continue
+            answer = solution.answers.get(puzzle["puzzle_id"])
+            attempts.append(
+                ChallengeAttemptDecision(
+                    agent_id=agent["agent_id"],
+                    tribe_id=None,
+                    provider=live_llm_provider(),
+                    model_id=solution.model_id,
+                    answer=answer,
+                    explanation=solution.explanation,
+                    is_correct=answer is not None and grade_answer(answer, puzzle["answer"]),
+                    response_ms=response_ms,
+                    attempt_order=order,
+                    context_digest=context_digest(contexts[agent["agent_id"]]),
+                    rung_index=rung,
+                    thrown=puzzle["puzzle_id"] in solution.thrown,
+                    sudden_death=bool(puzzle.get("sudden_death")),
+                )
+            )
+    return attempts
 
 
 def _insert_challenge_attempt(
@@ -2287,6 +2444,8 @@ def _insert_challenge_attempt(
     payload: dict[str, Any] = {
         "explanation": attempt.explanation,
         "llm_context_digest": attempt.context_digest or {},
+        "thrown": attempt.thrown,
+        "sudden_death": attempt.sudden_death,
     }
     if attempt.error:
         payload["error"] = attempt.error
@@ -2294,8 +2453,8 @@ def _insert_challenge_attempt(
         """
         INSERT INTO ChallengeAttempts (
             round, puzzle_id, agent_id, tribe_id, provider, model_id, answer,
-            is_correct, response_ms, attempt_order, attempt_payload
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            is_correct, response_ms, attempt_order, attempt_payload, rung_index
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             round_number,
@@ -2309,178 +2468,109 @@ def _insert_challenge_attempt(
             attempt.response_ms,
             attempt.attempt_order,
             json_dumps(payload),
+            attempt.rung_index,
         ),
     )
 
 
 def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
+    """Score the ladder: most correct answers wins; ties go to the rung-weighted
+    total, then to a sudden-death set; still level means nobody is immune.
+    Response time is never used."""
     existing = row_to_dict(
-        conn.execute(
-            "SELECT * FROM ChallengeResults WHERE round = ?",
-            (round_number,),
-        ).fetchone()
+        conn.execute("SELECT * FROM ChallengeResults WHERE round = ?", (round_number,)).fetchone()
     )
     if existing:
         return existing
 
-    challenge_type = _challenge_type(conn)
-    puzzle = _round_puzzle(conn, round_number, challenge_type)
-    attempts = [
+    ladder = _round_ladder(conn, round_number)
+    rungs = len(LADDER_TIERS)
+    rows = [
         row_to_dict(row)
-        for row in conn.execute(
-            """
-            SELECT *
-            FROM ChallengeAttempts
-            WHERE round = ?
-            ORDER BY is_correct DESC, response_ms, attempt_order, agent_id
-            """,
-            (round_number,),
-        ).fetchall()
+        for row in conn.execute("SELECT * FROM ChallengeAttempts WHERE round = ?", (round_number,)).fetchall()
     ]
-    correct_attempts = [attempt for attempt in attempts if attempt["is_correct"]]
-    if not correct_attempts and should_use_live_llm():
-        recovery_puzzle = _challenge_recovery_puzzle(conn, challenge_type, attempted_puzzle_ids={attempt["puzzle_id"] for attempt in attempts})
-        if recovery_puzzle:
-            recovery_attempts = _live_challenge_attempts(conn, round_number, recovery_puzzle, challenge_type)
-            offset = max((attempt["attempt_order"] for attempt in attempts), default=-1) + 1
-            for index, attempt in enumerate(recovery_attempts):
-                adjusted_attempt = ChallengeAttemptDecision(
-                    agent_id=attempt.agent_id,
-                    tribe_id=attempt.tribe_id,
-                    provider=attempt.provider,
-                    model_id=attempt.model_id,
-                    answer=attempt.answer,
-                    explanation=attempt.explanation,
-                    is_correct=attempt.is_correct,
-                    response_ms=attempt.response_ms,
-                    attempt_order=offset + index,
-                    error=attempt.error,
-                    context_digest=attempt.context_digest,
-                )
-                _insert_challenge_attempt(conn, round_number, recovery_puzzle["puzzle_id"], adjusted_attempt)
-            attempts = [
+    ladder_rows = [row for row in rows if row["rung_index"] < rungs]
+    if not ladder_rows:
+        raise RuntimeError("No challenge attempts were recorded; cannot score challenge.")
+    scores: dict[str, dict[str, int]] = {}
+    for row in ladder_rows:
+        score = scores.setdefault(row["agent_id"], {"correct": 0, "weighted": 0})
+        if row["is_correct"]:
+            score["correct"] += 1
+            score["weighted"] += RUNG_WEIGHTS[row["rung_index"]]
+    best = max((score["correct"], score["weighted"]) for score in scores.values())
+    leaders = sorted(agent_id for agent_id, score in scores.items() if (score["correct"], score["weighted"]) == best)
+
+    winning_agent_id: str | None = None
+    sudden_scores: dict[str, int] | None = None
+    tied: list[str] = []
+    if best[0] == 0:
+        status = "no_winner"
+    elif len(leaders) == 1:
+        winning_agent_id = leaders[0]
+        status = live_llm_provider() if should_use_live_llm() else "deterministic"
+    else:
+        sudden = _round_sudden_death(conn, round_number)
+        sudden_rows = [row for row in rows if row["rung_index"] >= rungs]
+        if not sudden_rows:
+            players = [agent for agent in _active_agent_rows(conn) if agent["agent_id"] in leaders]
+            new_attempts = (
+                _live_challenge_attempts(conn, round_number, sudden, players)
+                if should_use_live_llm()
+                else _deterministic_challenge_attempts(round_number, sudden, players)
+            )
+            for attempt in new_attempts:
+                _insert_challenge_attempt(conn, round_number, sudden[attempt.rung_index - rungs]["puzzle_id"], attempt)
+            sudden_rows = [
                 row_to_dict(row)
                 for row in conn.execute(
-                    """
-                    SELECT *
-                    FROM ChallengeAttempts
-                    WHERE round = ?
-                    ORDER BY is_correct DESC, response_ms, attempt_order, agent_id
-                    """,
-                    (round_number,),
+                    "SELECT * FROM ChallengeAttempts WHERE round = ? AND rung_index >= ?", (round_number, rungs)
                 ).fetchall()
             ]
-            correct_attempts = [attempt for attempt in attempts if attempt["is_correct"]]
-    if correct_attempts:
-        winner_attempt = sorted(correct_attempts, key=lambda row: (row["response_ms"], row["attempt_order"], row["agent_id"]))[0]
-        winning_agent_id = winner_attempt["agent_id"]
-        status = live_llm_provider() if winner_attempt["provider"] == live_llm_provider() else winner_attempt["provider"]
-        puzzle_id = winner_attempt["puzzle_id"]
-    else:
-        if should_use_live_llm():
-            if not attempts:
-                raise RuntimeError("No live challenge attempts were recorded; cannot score challenge.")
-            # Real-model benchmark mode: never insert a scripted/deterministic winner,
-            # but do allow the game to continue when every live model misses the exact
-            # puzzle answer. Rank the recorded live attempts by fastest response, then
-            # stable attempt order. The result remains auditable via ChallengeAttempts
-            # and the status explicitly marks that no model solved the challenge.
-            sorted_attempts = sorted(
-                [attempt for attempt in attempts if attempt is not None],
-                key=lambda row: (row["response_ms"], row["attempt_order"], row["agent_id"]),
-            )
-            winner_attempt = sorted_attempts[0]
-            assert winner_attempt is not None
-            winning_agent_id = winner_attempt["agent_id"]
-            status = f"{winner_attempt['provider']}_unsolved_fastest"
-            puzzle_id = winner_attempt["puzzle_id"]
+        sudden_scores = {agent_id: 0 for agent_id in leaders}
+        for row in sudden_rows:
+            if row["is_correct"] and row["agent_id"] in sudden_scores:
+                sudden_scores[row["agent_id"]] += 1
+        top = max(sudden_scores.values())
+        sudden_leaders = [agent_id for agent_id, count in sudden_scores.items() if count == top]
+        if len(sudden_leaders) == 1:
+            winning_agent_id = sudden_leaders[0]
+            status = live_llm_provider() if should_use_live_llm() else "deterministic"
         else:
-            active = _active_agent_rows(conn)
-            winning_agent_id = active[(round_number - 7) % len(active)]["agent_id"]
-            status = "deterministic"
-            puzzle_id = puzzle["puzzle_id"]
+            tied = sorted(sudden_leaders)
+            status = "no_winner_tied"
 
-    winning_tribe_id = None
-    immunity_agent_ids = [winning_agent_id]
-
+    immunity_agent_ids = [winning_agent_id] if winning_agent_id else []
     conn.execute("UPDATE Agents SET has_immunity = 0 WHERE status = 'active'")
     conn.executemany(
         "UPDATE Agents SET has_immunity = 1 WHERE agent_id = ?",
         [(agent_id,) for agent_id in immunity_agent_ids],
     )
-
     cursor = conn.execute(
         """
         INSERT INTO ChallengeResults (
             round, puzzle_id, challenge_type, winning_agent_id, winning_tribe_id,
             immunity_agent_ids, status, result_payload
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, 'individual', ?, NULL, ?, ?, ?)
         """,
         (
             round_number,
-            puzzle_id,
-            challenge_type,
+            ladder[-1]["puzzle_id"],
             winning_agent_id,
-            winning_tribe_id,
             json_dumps(immunity_agent_ids),
             status,
             json_dumps(
                 {
-                    "attempt_count": len(attempts),
-                    "correct_attempt_count": len(correct_attempts),
-                    "primary_puzzle_id": puzzle["puzzle_id"],
-                    "winner_puzzle_id": puzzle_id,
-                    "used_live_recovery": puzzle_id != puzzle["puzzle_id"],
+                    "ladder": [puzzle["puzzle_id"] for puzzle in ladder],
+                    "scores": scores,
+                    "sudden_death_scores": sudden_scores,
+                    "tied": tied,
+                    "top_score": best[0],
                 }
             ),
         ),
     )
     return row_to_dict(conn.execute("SELECT * FROM ChallengeResults WHERE id = ?", (cursor.lastrowid,)).fetchone())
-
-
-def _challenge_recovery_puzzle(
-    conn,
-    challenge_type: str,
-    *,
-    attempted_puzzle_ids: set[str],
-) -> dict[str, Any] | None:
-    rows = [
-        row_to_dict(row)
-        for row in conn.execute(
-            """
-            SELECT *
-            FROM ChallengePuzzles
-            WHERE eligibility IN (?, 'both')
-            ORDER BY
-                CASE difficulty
-                    WHEN 'easy' THEN 0
-                    WHEN 'medium' THEN 1
-                    WHEN 'hard' THEN 2
-                    ELSE 3
-                END,
-                puzzle_id
-            """,
-            (challenge_type,),
-        ).fetchall()
-    ]
-    for row in rows:
-        if row["puzzle_id"] not in attempted_puzzle_ids:
-            return row
-    return None
-
-
-def _answer_is_correct(answer: Any, expected: Any) -> bool:
-    return _canonical_answer(answer) == _canonical_answer(expected)
-
-
-def _canonical_answer(value: Any) -> str:
-    if isinstance(value, str):
-        stripped = value.strip()
-        try:
-            value = json.loads(stripped)
-        except Exception:
-            value = stripped
-    return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":")).lower()
 
 
 def _incorrect_answer(expected: Any, index: int) -> Any:
@@ -3479,6 +3569,7 @@ def _vote_booth_event(
         "vote_target_id": target_id,
         "vote_target_name": target_name,
         "vote_explanation": visible_explanation,
+        "play_idol": bool(getattr(decision, "play_idol", False)),
         "ui_vote_analysis": _vote_analysis(voter, target_name, visible_explanation),
         "llm_provider": decision.provider,
         "llm_model_id": decision.model_id,
@@ -3819,12 +3910,23 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     else:
         eliminated_id = None
 
+    # a hidden idol played with a vote cancels every vote against its holder
+    idol_plays = _idol_plays_for_round(conn, round_number)
+    idol_nulled: dict[str, int] = {}
+    for holder_id in idol_plays:
+        if holder_id in counts:
+            idol_nulled[holder_id] = counts.pop(holder_id)
+    if idol_plays:
+        eliminated_id = (
+            sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0] if counts else None
+        )
+
     eliminated_name = _agent_name(conn, eliminated_id) if eliminated_id else None
     if eliminated_id:
         conn.execute(
             """
             UPDATE Agents
-            SET status = 'eliminated', elimination_round = ?
+            SET status = 'eliminated', elimination_round = ?, idol_held = 0
             WHERE agent_id = ?
             """,
             (round_number, eliminated_id),
@@ -3833,13 +3935,15 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     payload = {
         "eliminated_id": eliminated_id,
         "final_tally": final_tally,
+        "idols_played": [_agent_name(conn, holder_id) for holder_id in idol_plays],
+        "idol_negated_votes": {_agent_name(conn, holder_id): count for holder_id, count in idol_nulled.items()},
         "host_narration": (
             (
                 f"The votes are enough. {eliminated_name} is out of the benchmark, "
                 "and the remaining models now inherit the consequences of this move."
             )
             if eliminated_id
-            else "No votes were cast. Nobody leaves tonight."
+            else "An idol cancels every vote that counted. Nobody leaves tonight."
         ),
     }
     if should_use_live_llm():
@@ -3874,7 +3978,14 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
         target_ids=[eliminated_id] if eliminated_id else [],
         visibility="audience",
         title=f"{eliminated_name} Leaves the Game" if eliminated_name else "Nobody Leaves",
-        dialogue=f"{eliminated_name}, your run ends here." if eliminated_name else "No votes were cast. Nobody leaves tonight.",
+        dialogue=(
+            f"{eliminated_name}, your run ends here." if eliminated_name else "An idol cancels every vote that counted. Nobody leaves tonight."
+        )
+        + (
+            f" {', '.join(_agent_name(conn, holder_id) for holder_id in idol_plays)} played a hidden idol."
+            if idol_plays
+            else ""
+        ),
         subtitle="The vote lands, and the benchmark moves on.",
         duration_ms=12000,
         animation="flame_out",
@@ -4142,6 +4253,8 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
         jury_positioning=action.jury_positioning,
         strategic_score=action.strategic_score,
         prompt_profile=action.prompt_profile,
+        # only a real holder can play; anyone else asking to is ignored
+        play_idol=bool(action.play_idol) and _holds_idol(conn, voter_id),
     )
 
 
@@ -4581,7 +4694,10 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
     }:
         return 1
     if step == "challenge_attempts":
+        # one call per player for the whole ladder; a sudden death adds a call per tied player
         return len(_active_agent_rows(conn))
+    if step == "challenge_gift":
+        return 1 if _idol_gift_round(conn, int(game["current_round"])) else 0
     if step in GENERATED_BEAT_INTENTS:
         return 1 if GENERATED_BEAT_INTENTS[step]["response_kind"] == "host" else 2
     if step.startswith("vote_booth_"):
@@ -4595,6 +4711,7 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
 
 _STEP_RESPONSE_KIND = {
     "challenge_attempts": "challenge",
+    "challenge_gift": "conversation",
     "vote_booth": "vote",
     "camp_strategy": "conversation",
     "camp_pre_challenge_read": "conversation",

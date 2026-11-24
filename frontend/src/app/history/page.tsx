@@ -24,8 +24,13 @@ type Season = {
 
 type Attempt = { who: string; correct: boolean; ms: number };
 
+type LadderStanding = { who: string; correct: number; sudden_death: number | null };
+
 type Challenge = {
   type: string;
+  // ladder seasons (2026-11-24 on) carry standings; older seasons carry timed attempts
+  standings?: LadderStanding[];
+  idol_given?: boolean;
   winner: string;
   tribe: string;
   solved: boolean;
@@ -113,8 +118,54 @@ function Line({
   );
 }
 
+function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n: string) => void }) {
+  const standings = challenge.standings ?? [];
+  const suddenDeath = standings.some((row) => row.sudden_death != null);
+  return (
+    <div className="narrative-block">
+      <h4 className="narrative-label">challenge: five-puzzle ladder</h4>
+      <p className="narrative-summary">
+        {challenge.winner ? (
+          <>
+            {onName ? (
+              <button className="narrative-who-btn" onClick={() => onName(challenge.winner as string)}>
+                <strong>{challenge.winner}</strong>
+              </button>
+            ) : (
+              <strong>{challenge.winner}</strong>
+            )}{" "}
+            won immunity{suddenDeath ? " after sudden death" : ""}.
+          </>
+        ) : (
+          "Nobody won immunity."
+        )}
+        {challenge.idol_given ? " The winner gave a hidden idol to another player." : ""}
+      </p>
+      <table className="bench-table">
+        <thead>
+          <tr>
+            <th>player</th>
+            <th className="num">correct of 5</th>
+            {suddenDeath && <th className="num">sudden death</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {standings.map((row) => (
+            <tr key={row.who} className={row.who === challenge.winner ? "bench-winner" : undefined}>
+              <td>{row.who}</td>
+              <td className="num">{row.correct}</td>
+              {suddenDeath && <td className="num">{row.sudden_death ?? "-"}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ChallengeBlock({ challenge, onName }: { challenge: Challenge; onName?: (n: string) => void }) {
   const [open, setOpen] = useState(false);
+  if (challenge.standings) return <LadderBlock challenge={challenge} onName={onName} />;
   return (
     <div className="narrative-block">
       <h4 className="narrative-label">challenge result</h4>
@@ -185,7 +236,8 @@ function ModelDetail({ narrative, row, onClose }: { narrative: Narrative; row: H
   const name = row.model;
   const lines: { round: number; kind: string; text: string; thinking?: string }[] = [];
   const votes: { round: number; target: string; reason: string }[] = [];
-  const attempts: { round: number; correct: boolean; ms: number; first: string | null }[] = [];
+  // result reads "3/5" for ladder seasons and "yes, 2.1s" for older timed seasons
+  const attempts: { round: number; result: string; winner: string | null }[] = [];
 
   for (const r of narrative.rounds) {
     for (const c of r.conversations) {
@@ -194,9 +246,18 @@ function ModelDetail({ narrative, row, onClose }: { narrative: Narrative; row: H
     for (const v of r.votes) {
       if (v.who === name) votes.push({ round: r.round, target: v.target, reason: v.reason });
     }
-    if (r.challenge) {
-      const mine = r.challenge.attempts.find((a) => a.who === name);
-      if (mine) attempts.push({ round: r.round, correct: mine.correct, ms: mine.ms, first: r.challenge.first_solver });
+    if (r.challenge?.standings) {
+      const mine = r.challenge.standings.find((s) => s.who === name);
+      if (mine) attempts.push({ round: r.round, result: `${mine.correct}/5`, winner: r.challenge.winner });
+    } else if (r.challenge) {
+      const mine = (r.challenge.attempts ?? []).find((a) => a.who === name);
+      if (mine) {
+        attempts.push({
+          round: r.round,
+          result: `${mine.correct ? "yes" : "no"}, ${(mine.ms / 1000).toFixed(1)}s`,
+          winner: r.challenge.first_solver,
+        });
+      }
     }
   }
   const juryVote = narrative.jury.find((j) => j.who === name);
@@ -231,15 +292,14 @@ function ModelDetail({ narrative, row, onClose }: { narrative: Narrative; row: H
           <h4 className="narrative-label">challenges</h4>
           <table className="bench-table">
             <thead>
-              <tr><th>round</th><th>solved</th><th>time</th><th>round winner</th></tr>
+              <tr><th>round</th><th>result</th><th>round winner</th></tr>
             </thead>
             <tbody>
               {attempts.map((a, i) => (
                 <tr key={i}>
                   <td>{a.round}</td>
-                  <td>{a.correct ? "yes" : "no"}</td>
-                  <td>{(a.ms / 1000).toFixed(1)}s</td>
-                  <td>{a.first ?? "-"}</td>
+                  <td>{a.result}</td>
+                  <td>{a.winner ?? "-"}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,4 +1,4 @@
-"""One group all season: no tribes, no merge, no idols; every vote is individual."""
+"""One group all season: no tribes, no merge; every vote is individual."""
 
 from __future__ import annotations
 
@@ -68,13 +68,16 @@ class OneGroupSeasonTest(unittest.TestCase):
             self.assertEqual(row["challenge_type"], "individual")
             self.assertEqual(len(json.loads(row["immunity_agent_ids"])), 1)
 
-    def test_no_idols(self) -> None:
+    def test_idols_come_only_from_the_first_two_challenges_and_expire(self) -> None:
+        first_round = self.conn.execute("SELECT MIN(round) FROM Turns").fetchone()[0]
+        gift_rounds = {
+            row["round"] for row in self.conn.execute("SELECT round FROM StoryEvents WHERE kind = 'challenge_gift'")
+        }
+        self.assertTrue(gift_rounds)
+        self.assertTrue(gift_rounds <= {first_round, first_round + 1})
+        # by the finale every idol was played, left with its holder, or expired at five players
         held = self.conn.execute("SELECT COUNT(*) AS n FROM Agents WHERE idol_held = 1").fetchone()["n"]
         self.assertEqual(held, 0)
-        idol_events = self.conn.execute(
-            "SELECT COUNT(*) AS n FROM StoryEvents WHERE payload LIKE '%idol%'"
-        ).fetchone()["n"]
-        self.assertEqual(idol_events, 0)
 
 
 if __name__ == "__main__":

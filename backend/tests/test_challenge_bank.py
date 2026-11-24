@@ -8,12 +8,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import re  # noqa: E402
+
 from backend.challenge_bank import (  # noqa: E402
     DIFFICULTY_TIERS,
     FAMILIES,
+    LADDER_TIERS,
+    RUNG_WEIGHTS,
+    answer_format,
     generate_puzzle,
     grade_answer,
-    season_puzzle_plan,
+    ladder_for_round,
+    sudden_death_for_round,
 )
 
 
@@ -75,11 +81,39 @@ class AnswerSanity(unittest.TestCase):
         self.assertEqual(len(diffs), 1, "sequence not arithmetic")
         self.assertEqual(puzzle["answer"], terms[-1] + diffs.pop())
 
-    def test_instruction_answers_are_verifiable(self) -> None:
-        for seed in range(1, 11):
-            puzzle = generate_puzzle("instruction_exact", "medium", seed)
-            self.assertIsNotNone(puzzle["answer"])
-            self.assertTrue(str(puzzle["answer"]).strip() != "")
+    def test_instruction_answers_match_their_prompts(self) -> None:
+        """Recompute every answer from the prompt text alone. The old generator drew
+        the position and word twice, so about a quarter of medium and most hard keys
+        disagreed with their own prompts."""
+        for difficulty in ("easy", "medium", "hard", "frontier"):
+            for seed in range(400):
+                puzzle = generate_puzzle("instruction_exact", difficulty, seed)
+                prompt, answer = puzzle["prompt"], puzzle["answer"]
+                word = re.search(r"word '([a-z]+)'", prompt).group(1)
+                if difficulty == "frontier":
+                    n = int(re.search(r"Then take the (\d+)(?:st|nd|rd|th) letter", prompt).group(1))
+                    expected = (ord(word[::-1][n - 1]) - 96) * 2 + 1
+                elif prompt.startswith("Count the vowels"):
+                    expected = sum(1 for ch in word if ch in "aeiou")
+                elif prompt.startswith("Return the exact reverse"):
+                    expected = word[::-1]
+                else:
+                    n = int(re.search(r"Return the (\d+)(?:st|nd|rd|th) letter", prompt).group(1))
+                    expected = word[n - 1]
+                self.assertEqual(answer, expected, f"{difficulty} seed {seed}: {prompt}")
+
+    def test_ordinals_read_correctly(self) -> None:
+        for family in ("instruction_exact", "chain_two_step"):
+            for difficulty in DIFFICULTY_TIERS:
+                for seed in range(200):
+                    prompt = generate_puzzle(family, difficulty, seed)["prompt"]
+                    self.assertNotRegex(prompt, r"\b(1th|2th|3th|11st|12nd|13rd)\b", prompt)
+
+    def test_no_prompt_promises_a_speed_bonus(self) -> None:
+        for family in FAMILIES:
+            for difficulty in DIFFICULTY_TIERS:
+                prompt = generate_puzzle(family, difficulty, 5)["prompt"].lower()
+                self.assertNotIn("speed", prompt)
 
 
 class Grader(unittest.TestCase):
@@ -108,28 +142,42 @@ class Grader(unittest.TestCase):
         self.assertFalse(grade_answer("langiss", "langis"))
 
 
-class SeasonPlan(unittest.TestCase):
-    def test_plan_is_deterministic(self) -> None:
-        a = season_puzzle_plan(99, rounds=9)
-        b = season_puzzle_plan(99, rounds=9)
-        self.assertEqual(
-            [p["puzzle_id"] for ps in a.values() for p in ps],
-            [p["puzzle_id"] for ps in b.values() for p in ps],
+class Ladder(unittest.TestCase):
+    def test_ladder_is_deterministic_and_rises_in_difficulty(self) -> None:
+        a = ladder_for_round(99, 7)
+        b = ladder_for_round(99, 7)
+        self.assertEqual([p["puzzle_id"] for p in a], [p["puzzle_id"] for p in b])
+        self.assertEqual(tuple(p["difficulty"] for p in a), LADDER_TIERS)
+        self.assertEqual([p["rung"] for p in a], list(range(len(LADDER_TIERS))))
+        self.assertEqual(len(RUNG_WEIGHTS), len(LADDER_TIERS))
+        self.assertEqual(list(RUNG_WEIGHTS), sorted(RUNG_WEIGHTS))
+
+    def test_ladders_differ_by_round_and_seed(self) -> None:
+        self.assertNotEqual(
+            [p["puzzle_id"] for p in ladder_for_round(1, 7)], [p["puzzle_id"] for p in ladder_for_round(1, 8)]
+        )
+        self.assertNotEqual(
+            [p["puzzle_id"] for p in ladder_for_round(1, 7)], [p["puzzle_id"] for p in ladder_for_round(2, 7)]
         )
 
-    def test_plan_difficulty_progression(self) -> None:
-        plan = season_puzzle_plan(1, rounds=9)
-        rounds_sorted = sorted(plan)
-        first_round_diffs = [p["difficulty"] for p in plan[rounds_sorted[0]]]
-        last_round_diffs = [p["difficulty"] for p in plan[rounds_sorted[-1]]]
-        self.assertIn("easy", first_round_diffs)
-        self.assertNotIn("easy", last_round_diffs)
+    def test_sudden_death_is_harder_and_never_repeats_a_rung(self) -> None:
+        ladder = {p["puzzle_id"] for p in ladder_for_round(3, 9)}
+        sudden = sudden_death_for_round(3, 9)
+        self.assertEqual(len(sudden), 3)
+        self.assertTrue(all(p["difficulty"] == "frontier" and p["sudden_death"] for p in sudden))
+        self.assertFalse(ladder & {p["puzzle_id"] for p in sudden})
+        self.assertEqual([p["rung"] for p in sudden], [5, 6, 7])
 
-    def test_plan_puzzle_count(self) -> None:
-        plan = season_puzzle_plan(7, rounds=6)
-        self.assertEqual(len(plan), 6)
-        for puzzles in plan.values():
-            self.assertEqual(len(puzzles), 3)
+    def test_every_puzzle_states_its_answer_format(self) -> None:
+        for seed in range(30):
+            for puzzle in ladder_for_round(seed, 7) + sudden_death_for_round(seed, 7):
+                self.assertNotEqual(answer_format(puzzle), "a JSON value", puzzle["puzzle_id"])
+                if puzzle["answer_kind"] == "grid":
+                    self.assertIsInstance(puzzle["answer"], list)
+                elif puzzle["answer_kind"] == "number":
+                    self.assertIsInstance(puzzle["answer"], int)
+                else:
+                    self.assertIsInstance(puzzle["answer"], str)
 
     def test_200_distinct_puzzles(self) -> None:
         ids = set()

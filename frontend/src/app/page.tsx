@@ -44,6 +44,7 @@ const KIND_LABEL: Record<string, string> = {
   challenge_intro: "challenge",
   challenge_attempts: "attempts",
   challenge_result: "result",
+  challenge_gift: "idol",
   vote_call: "vote call",
   vote_booth: "vote",
   vote_reveal: "reveal",

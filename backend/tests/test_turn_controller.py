@@ -398,25 +398,17 @@ class TurnControllerTest(unittest.TestCase):
                 set(participant_ids),
             )
 
-    def test_challenge_solver_spotlight_explains_first_solver(self) -> None:
-        result = turn_controller.auto_run(9)
+    def test_challenge_solver_spotlight_reports_ladder_score_not_speed(self) -> None:
+        result = turn_controller.auto_run(10)
         spotlight = next(event for event in result["story_events"] if event["kind"] == "challenge_solver_spotlight")
 
         self.assertEqual(spotlight["actor_ids"], ["host", "agent-alpha"])
         self.assertEqual(spotlight["payload"]["winning_agent_id"], "agent-alpha")
-        # response time must match the winning attempt row for this round
-        conn = turn_controller.get_db_connection()
-        try:
-            row = conn.execute(
-                "SELECT response_ms FROM ChallengeAttempts WHERE agent_id = ? AND is_correct = 1 ORDER BY id LIMIT 1",
-                ("agent-alpha",),
-            ).fetchone()
-        finally:
-            conn.close()
-        self.assertIsNotNone(row)
-        self.assertEqual(spotlight["payload"]["response_ms"], row["response_ms"])
-        self.assertIn(f"{row['response_ms'] / 1000:.2f} seconds", spotlight["dialogue"])
-        self.assertTrue(spotlight["payload"]["solver_explanation"])
+        self.assertIn("solved 5 of 5", spotlight["dialogue"])
+        self.assertNotIn("seconds", spotlight["dialogue"])
+        standings = spotlight["payload"]["standings"]
+        self.assertEqual(standings[0]["agent_id"], "agent-alpha")
+        self.assertTrue(all(row["correct"] < 5 for row in standings[1:]))
 
     def test_auto_run_to_end_declares_winner_from_jury_vote(self) -> None:
         result = turn_controller.auto_run_to_end(

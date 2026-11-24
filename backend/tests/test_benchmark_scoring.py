@@ -106,7 +106,7 @@ class ScoringTest(unittest.TestCase):
         self.report = score_season(self.db)
 
     def test_version_and_weights_frozen(self) -> None:
-        self.assertEqual(SURVIVOR_INDEX_VERSION, 2)
+        self.assertEqual(SURVIVOR_INDEX_VERSION, 3)
         self.assertAlmostEqual(sum(WEIGHTS.values()), 1.0)
 
     def test_rows_cover_all_agents(self) -> None:
@@ -118,6 +118,25 @@ class ScoringTest(unittest.TestCase):
         self.assertEqual(by_model["Model X"]["challenge_accuracy"], 0.5)
         self.assertEqual(by_model["Model Y"]["challenge_accuracy"], round(2 / 6, 4))
         self.assertEqual(by_model["Model Z"]["challenge_accuracy"], round(4 / 6, 4))
+
+    def test_accuracy_ignores_sudden_death_and_thrown_rungs(self) -> None:
+        conn = sqlite3.connect(str(self.db))
+        conn.execute("ALTER TABLE ChallengeAttempts ADD COLUMN rung_index INTEGER NOT NULL DEFAULT 0")
+        rows = [
+            # a missed sudden-death puzzle (rung 5) and a rung W says it threw
+            ("agent-w", 12, "sd", "openrouter", "[[0]]", 0, 900, 5, '{"sudden_death": true}'),
+            ("agent-w", 12, "thrown", "openrouter", "[[0]]", 0, 900, 2, '{"thrown": true}'),
+        ]
+        conn.executemany(
+            "INSERT INTO ChallengeAttempts (agent_id, round, puzzle_id, provider, answer, is_correct, response_ms,"
+            " rung_index, attempt_payload) VALUES (?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+        conn.close()
+        by_model = {r["model"]: r for r in score_season(self.db)["rows"]}
+        self.assertEqual(by_model["Model W"]["challenge_accuracy"], 1.0)
+        self.assertEqual(by_model["Model W"]["challenge_attempts"], 6)
 
     def test_winner_places_first(self) -> None:
         top = self.report["rows"][0]

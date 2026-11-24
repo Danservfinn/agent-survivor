@@ -15,7 +15,10 @@ MAX_CONTEXT_CHARS = 40_000
 # in turn_controller.py: players can only plan around rules they are told.
 GAME_RULES = [
     "All players live and vote as one group for the whole season; there are no tribes.",
-    "Each round has a challenge. The winner is immune: they cannot be voted for that round, but they still vote.",
+    "Each round has a challenge: the same five puzzles for every player, easiest to hardest. Most correct answers wins; a tie goes to whoever solved the harder puzzles, then to a sudden-death set; if still tied, nobody wins. Speed does not count. Every player's score is public (challenge_history).",
+    "The challenge winner is immune: they cannot be voted for that round, but they still vote. A player may answer puzzles wrong on purpose to look less threatening.",
+    "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it. Only one idol is in play at a time.",
+    "A holder plays the idol with their vote at a council; every vote against them that round is then cancelled, and the play is announced. An unplayed idol expires when five players remain.",
     "Each voter casts one secret vote for an eligible player. After everyone votes, the votes are revealed one by one and stay public: every player sees who voted for whom (vote_history).",
     "The player with the most votes leaves. On a tie there is a revote among the tied players only; tied players cannot vote for themselves.",
     "If the revote is also tied, the tied player with the fewest challenge wins this season leaves; if still level, the one who has received the most votes this season leaves.",
@@ -26,6 +29,7 @@ AGENT_PUBLIC_KINDS = {
     "challenge_intro",
     "challenge_attempts",
     "challenge_result",
+    "challenge_gift",
     "challenge_solver_spotlight",
     "establishing",
     "conversation",
@@ -138,18 +142,24 @@ def _prior_events(conn, round_number: int) -> list[dict[str, Any]]:
 
 def _actor_static_memory(conn, actor_id: str) -> list[dict[str, Any]]:
     row = conn.execute(
-        "SELECT confessional_memory FROM Agents WHERE agent_id = ?",
+        "SELECT confessional_memory, idol_held FROM Agents WHERE agent_id = ?",
         (actor_id,),
     ).fetchone()
-    if row is None or not row["confessional_memory"]:
+    if row is None:
         return []
-    return [
-        {
-            "kind": "confessional_memory",
-            "actor_id": actor_id,
-            "memory": row["confessional_memory"],
-        }
-    ]
+    memory: list[dict[str, Any]] = []
+    if row["confessional_memory"]:
+        memory.append({"kind": "confessional_memory", "actor_id": actor_id, "memory": row["confessional_memory"]})
+    if row["idol_held"]:
+        # only the holder ever sees this
+        memory.append(
+            {
+                "kind": "hidden_idol",
+                "actor_id": actor_id,
+                "memory": "You hold the hidden idol. To play it, set play_idol to true when you vote; every vote against you that round is then cancelled. It expires when five players remain.",
+            }
+        )
+    return memory
 
 
 def _agent_public_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -349,17 +359,30 @@ def _vote_history(conn, prior_events: list[dict[str, Any]], eliminated_rounds: s
 def _challenge_history(conn) -> list[dict[str, Any]]:
     names = _names_by_id(conn)
     history = []
+    idol_rounds = set()
+    for row in conn.execute("SELECT round, payload FROM StoryEvents WHERE kind = 'challenge_gift'").fetchall():
+        try:
+            if json.loads(row["payload"] or "{}").get("idol_given"):
+                idol_rounds.add(row["round"])
+        except (TypeError, ValueError):
+            continue
     for row in conn.execute("SELECT * FROM ChallengeResults ORDER BY round").fetchall():
         try:
             immune_ids = json.loads(row["immunity_agent_ids"] or "[]")
+            result = json.loads(row["result_payload"] or "{}")
         except (TypeError, ValueError):
-            immune_ids = []
+            immune_ids, result = [], {}
+        scores = {
+            names.get(agent_id, agent_id): score.get("correct", 0)
+            for agent_id, score in (result.get("scores") or {}).items()
+        }
         history.append(
             {
                 "round": row["round"],
-                "type": row["challenge_type"],
-                "winner": names.get(row["winning_agent_id"], row["winning_agent_id"]),
+                "winner": names.get(row["winning_agent_id"], row["winning_agent_id"]) if row["winning_agent_id"] else None,
                 "immune": [names.get(agent_id, agent_id) for agent_id in immune_ids],
+                "scores_out_of_5": scores,
+                "idol_given_by_winner": row["round"] in idol_rounds,
             }
         )
     return history

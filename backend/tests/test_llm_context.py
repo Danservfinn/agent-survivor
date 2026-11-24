@@ -199,7 +199,7 @@ class LLMContextBoundaryTest(unittest.TestCase):
                     self.assertIn(actor, event.get("participant_ids", []))
 
     def test_host_context_includes_private_material_but_redacts_unrevealed_votes(self) -> None:
-        turn_controller.auto_run(25)
+        turn_controller.auto_run(26)  # through the challenge gift step to the first vote booths
         conn = database.get_db_connection()
         try:
             context = build_host_episode_context(
@@ -596,7 +596,7 @@ class TurnControllerLLMWiringTest(unittest.TestCase):
 
     def test_live_agent_receives_generated_scene_context(self) -> None:
         captured: list[dict] = []
-        turn_controller.auto_run(9)
+        turn_controller.auto_run(10)  # up to camp_strategy, after the challenge gift step
 
         def fake_agent_action(**kwargs):
             captured.append(kwargs)

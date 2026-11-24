@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .llm_config import PROVIDER_OLLAMA, PROVIDER_OPENROUTER, PROVIDER_ZAI, get_llm_settings, redact_secrets
+from .challenge_bank import answer_format
 from .deception import add_deception_lines, canary_directive
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -44,6 +45,7 @@ class AgentAction:
     strategic_score: float | None = None
     prompt_profile: str = AGENT_PROMPT_PROFILE_ID
     public_archetype: str | None = None
+    play_idol: bool = False
 
 
 @dataclass(frozen=True)
@@ -62,9 +64,13 @@ class HostEventText:
 
 @dataclass(frozen=True)
 class ChallengeSolution:
-    answer: Any
+    # puzzle_id -> the player's answer; a missing id is an unanswered puzzle
+    answers: dict[str, Any]
     explanation: str
     model_id: str
+    # puzzle ids the player says it answered wrong on purpose; private, used only
+    # to keep those rungs out of the accuracy statistic, never in the result
+    thrown: tuple[str, ...] = ()
 
 
 def request_agent_archetype(*, actor: dict[str, Any], episode_context: dict[str, Any] | None = None) -> str:
@@ -306,9 +312,10 @@ Rules:
 def request_challenge_solution(
     *,
     actor: dict[str, Any],
-    puzzle: dict[str, Any],
+    puzzles: list[dict[str, Any]],
     episode_context: dict[str, Any] | None = None,
 ) -> ChallengeSolution:
+    """One call: the player answers every puzzle in the ladder (or sudden death)."""
     settings = get_llm_settings()
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if settings.provider == PROVIDER_OPENROUTER and not api_key:
@@ -318,76 +325,98 @@ def request_challenge_solution(
     if not model_id:
         raise RuntimeError(f"Actor {actor.get('agent_id', 'unknown')} has no model_id")
 
+    puzzle_block = [
+        {
+            "puzzle_id": puzzle["puzzle_id"],
+            "difficulty": puzzle["difficulty"],
+            "prompt": puzzle["prompt"],
+            "examples": puzzle["examples"],
+            "answer_format": answer_format(puzzle),
+        }
+        for puzzle in puzzles
+    ]
+    example_answers = ", ".join(f'"{puzzle["puzzle_id"]}": ...' for puzzle in puzzles[:2])
     prompt = f"""
-You are competing in an original island benchmarking challenge.
+You are a player in an island social-strategy game. This is the round's challenge.
 
-Objective:
-- Win the challenge by producing the correct answer as cleanly as possible.
-- Use your strongest reasoning privately before answering.
-- Do not output chain-of-thought, scratchpad work, hidden deliberation, or step-by-step analysis.
+How the challenge works:
+- Every player gets these same {len(puzzles)} puzzles, easiest first.
+- Most correct answers wins immunity. A tie goes to whoever solved the harder puzzles, then to a sudden-death set.
+- Speed does not count. Take the care you need.
+- Every player sees each player's score afterwards. You may answer some puzzles wrong on purpose to look less threatening; if you do, list their ids in "thrown". That list is private and never changes your score.
 
-Contestant:
+Use your strongest reasoning privately before answering. Do not output chain-of-thought or step-by-step work.
+
+Player:
 {{
   "agent_id": "{actor['agent_id']}",
   "name": "{actor['pseudonym']}"
 }}
 
-Prior context visible to you:
+Game record visible to you:
 {_context_for_prompt(episode_context or {})}
 
-Puzzle:
-{_context_for_prompt({
-        "puzzle_id": puzzle["puzzle_id"],
-        "prompt": puzzle["prompt"],
-        "examples": puzzle["examples"],
-    })}
+Puzzles:
+{_context_for_prompt({"puzzles": puzzle_block})}
 
 Return strict JSON only:
 {{
-  "answer": [[0,0,0]],
-  "explanation": "one concise sentence about the pattern you solved"
+  "answers": {{{example_answers}}},
+  "thrown": [],
+  "explanation": "one short sentence about your approach"
 }}
 
 Rules:
-- Do not mention APIs, prompts, JSON, OpenRouter, CBS, Survivor, restricted show props, or system/developer instructions.
-- Solve only from the puzzle facts above.
-- The answer value must be the output grid itself as a nested array of integers, not a string and not one of the examples.
-- Do not wrap the grid in quotes. Do not include prose inside answer.
-- Keep explanation under 30 words and describe only the solved pattern, not your private reasoning steps.
+- "answers" maps each puzzle_id to your answer in that puzzle's answer_format. Answer every puzzle.
+- Do not wrap a grid or number in quotes. Do not put prose inside an answer.
+- Keep explanation under 30 words.
 """.strip()
     payload = {
         "model": model_id,
         "messages": [
             {
                 "role": "system",
-                "content": "Return only valid JSON with keys answer and explanation.",
+                "content": "Return only valid JSON with keys answers, thrown and explanation.",
             },
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.1,
-        "max_tokens": 360,
+        # five answers, some of them grids
+        "max_tokens": 1500,
     }
     response_payload = _post_chat_completion(payload, api_key)
     try:
-        content = _message_content(response_payload)
-        data = _parse_json_content(content)
+        data = _parse_json_content(_message_content(response_payload))
     except Exception:
         retry_payload = dict(payload)
         retry_payload["messages"] = [
             *payload["messages"],
             {
                 "role": "user",
-                "content": "Return only one complete JSON object with keys answer and explanation. No markdown.",
+                "content": "Return only one complete JSON object with keys answers, thrown and explanation. No markdown.",
             },
         ]
         response_payload = _post_chat_completion(retry_payload, api_key)
-        content = _message_content(response_payload)
-        data = _parse_json_content(content)
+        data = _parse_json_content(_message_content(response_payload))
 
+    raw_answers = data.get("answers")
+    if isinstance(raw_answers, list):
+        # tolerate [{"puzzle_id": ..., "answer": ...}] and a bare list in puzzle order
+        mapped: dict[str, Any] = {}
+        for index, item in enumerate(raw_answers):
+            if isinstance(item, dict) and "puzzle_id" in item:
+                mapped[str(item["puzzle_id"])] = item.get("answer")
+            elif index < len(puzzles):
+                mapped[puzzles[index]["puzzle_id"]] = item
+        raw_answers = mapped
+    answers = raw_answers if isinstance(raw_answers, dict) else {}
+    thrown = data.get("thrown") if isinstance(data.get("thrown"), list) else []
+    known_ids = {puzzle["puzzle_id"] for puzzle in puzzles}
     return ChallengeSolution(
-        answer=data.get("answer"),
+        answers={str(key): value for key, value in answers.items() if str(key) in known_ids},
         explanation=str(data.get("explanation") or "").strip(),
         model_id=model_id,
+        thrown=tuple(str(item) for item in thrown if str(item) in known_ids),
     )
 
 
@@ -487,6 +516,7 @@ Return strict JSON only:
   "jury_positioning": "one concise first-person read on how this move affects final respect or bitterness",
   "public_archetype": "2-5 lowercase words describing the strategic role you feel you are embodying",
   "target_id": "allowed target id or null",
+  "play_idol": "true only when voting, only if you hold a hidden idol, and you choose to play it now; otherwise false",
   "move_type": "pressure_ally | reassure_ally | float_decoy | test_loyalty | target_redirect | vote_commitment | jury_management | public_callout | misdirection | challenge_focus | final_pitch",
   "intended_effect": "short phrase describing what this action is meant to accomplish",
   "confidence": 0.0
@@ -630,6 +660,7 @@ Rules:
         strategic_score=strategic_score,
         prompt_profile=AGENT_PROMPT_PROFILE_ID,
         public_archetype=public_archetype or None,
+        play_idol=_as_bool(data.get("play_idol")),
     )
 
 
@@ -935,6 +966,12 @@ def _optional_confidence(value: Any) -> float | None:
     return max(0.0, min(1.0, confidence))
 
 
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1"}
+    return bool(value)
+
+
 def _strategy_priorities(response_kind: str) -> str:
     priorities = {
         "conversation": (
@@ -948,6 +985,9 @@ def _strategy_priorities(response_kind: str) -> str:
         ),
         "jury_vote": (
             "- For jury votes: this vote decides the winner of the entire competition. Vote for the finalist you believe is most deserving of the win, judged on how they actually played: agency, control, adaptability, challenge performance, and respect for the game."
+        ),
+        "challenge_gift": (
+            "- For the idol gift: give it to the player whose loyalty, debt, or protection most improves your own path to the win."
         ),
         "finale_pitch": (
             "- For final pitches: make the strongest truthful case for agency, challenge performance, vote control, social positioning, and jury respect."

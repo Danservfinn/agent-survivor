@@ -1,7 +1,11 @@
-"""Benchmark scoring: per-model metrics and the Survivor Index v1.
+"""Benchmark scoring: per-model metrics and the Survivor Index.
 
-Weights are FROZEN for v1. Changing any weight requires bumping
+Changing a weight or how a metric is counted requires bumping
 SURVIVOR_INDEX_VERSION so runs stay comparable.
+
+v3 (2026-11-24): challenge accuracy counts only the five ladder rungs. Sudden-
+death rungs (only tied players get them) and rungs the player says it answered
+wrong on purpose are left out.
 
 Sources (all read from a season DB):
 - ChallengeAttempts: accuracy, median latency, provider (live vs deterministic)
@@ -11,7 +15,7 @@ Sources (all read from a season DB):
 - JuryVotes: jury votes received
 - Alliances: alliances joined
 
-Survivor Index v1 (0-100):
+Survivor Index (0-100):
   challenge_accuracy   30%
   vote_participation   20%  (fraction of rounds alive with a recorded vote)
   strategic_score      20%  (mean normalized strategic_score, 0 if none)
@@ -26,7 +30,8 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-SURVIVOR_INDEX_VERSION = 2
+SURVIVOR_INDEX_VERSION = 3
+LADDER_RUNGS = 5
 
 WEIGHTS = {
     "challenge_accuracy": 0.30,
@@ -35,6 +40,13 @@ WEIGHTS = {
     "placement": 0.15,
     "social": 0.15,
 }
+
+
+def _counts_for_accuracy(attempt: dict[str, Any]) -> bool:
+    """Ladder rungs only; seasons before the ladder have no rung_index and count in full."""
+    if int(attempt.get("rung_index") or 0) >= LADDER_RUNGS:
+        return False
+    return not _load_json(attempt.get("attempt_payload")).get("thrown")
 
 
 def _load_json(value: Any) -> dict[str, Any]:
@@ -195,7 +207,7 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
     rows = []
     for agent in agents:
         aid = agent["agent_id"]
-        att = [a for a in attempts if a["agent_id"] == aid]
+        att = [a for a in attempts if a["agent_id"] == aid and _counts_for_accuracy(a)]
         correct = [a for a in att if a["is_correct"]]
         accuracy = len(correct) / len(att) if att else 0.0
         latencies = [a["response_ms"] for a in att if a["response_ms"]]

@@ -125,7 +125,7 @@ TOKEN_BUDGETS = {
     "jury_vote": (8000, 300),
     "finale_pitch": (8000, 420),
     "host": (3600, 300),
-    "challenge": (6500, 360),
+    "challenge": (6500, 1500),  # one call answers all five ladder puzzles
     "archetype": (1200, 120),
 }
 
