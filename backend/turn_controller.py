@@ -5282,12 +5282,19 @@ def _estimated_step_cost_cents(
     calls = _estimated_live_calls_for_step(conn, game, step)
     if calls <= 0:
         return 0.0
-    # per-call cost uses the priciest roster model as a conservative bound
-    priciest = max(
-        model_ids,
-        key=lambda m: estimate_step_cost_usd([m], kind, table=pricing_table),
-    )
-    return estimate_step_cost_usd([priciest], kind, table=pricing_table) * calls * 100.0
+    # Price each call at the model that makes it. Pricing every call at the
+    # priciest seat (as before 2026-11-24) overstated a cheap-roster season about
+    # four times, because one seat (Grok) costs 20-200x the others, and the cap
+    # stopped a season that had spent about a quarter of its budget.
+    for prefix in ("vote_booth_", "finale_pitch_", "jury_vote_"):
+        if step.startswith(prefix):
+            row = _agent_row(conn, step[len(prefix):])
+            if row and row.get("model_id"):
+                return estimate_step_cost_usd([row["model_id"]], kind, table=pricing_table) * calls * 100.0
+    # every active player takes a turn: the average seat cost, per call
+    seat_models = [row["model_id"] for row in _active_agent_rows(conn) if row.get("model_id")]
+    mean_cost = sum(estimate_step_cost_usd([m], kind, table=pricing_table) for m in seat_models) / len(seat_models)
+    return mean_cost * calls * 100.0
 
 
 def _episode_title(game: dict[str, Any], round_number: int) -> str:
