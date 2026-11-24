@@ -356,7 +356,6 @@ class VoteDecision:
     leverage_plan: str | None = None
     risk_control: str | None = None
     jury_positioning: str | None = None
-    play_idol: bool = False
     strategic_score: float | None = None
     prompt_profile: str | None = None
 
@@ -866,20 +865,6 @@ def start_next_round() -> dict[str, Any]:
 
         next_round = state["current_round"] + 1
         conn.execute("UPDATE Agents SET has_immunity = 0 WHERE status = 'active'")
-        _grant_season_idols(conn, next_round, _season_seed())
-        if len(_active_agent_rows(conn)) <= MERGE_AT:
-            already_merged = conn.execute(
-                "SELECT COUNT(*) AS n FROM StoryEvents WHERE kind = 'merge'"
-            ).fetchone()["n"]
-            if not already_merged:
-                merge_turn = _insert_turn(
-                    conn,
-                    {**state, "current_round": next_round, "phase": "camp"},
-                    "merge_announcement",
-                    None,
-                    0,
-                )
-                _merge_event(conn, next_round, merge_turn)
         conn.execute(
             """
             UPDATE GameState
@@ -1054,13 +1039,6 @@ def _apply_step(
         if non_immune <= 1:
             # sole remaining non-immune player: no council needed, they are out
             return [], {"vote_skipped_walkover": voter_id}, "Walkover: no council"
-        if _tribe_phase(conn) == "tribal":
-            # the winning tribe won safety: skip its members' frozen vote steps
-            row = conn.execute(
-                "SELECT has_immunity FROM Agents WHERE agent_id = ?", (voter_id,)
-            ).fetchone()
-            if row and row["has_immunity"]:
-                return [], {"vote_skipped_immune": voter_id}, f"{_agent_name(conn, voter_id)} is safe at camp"
         decision = _resolve_vote_decision(conn, voter_id, step)
         _insert_vote(conn, round_number, turn_index, voter_id, decision.target_id)
         event = _vote_booth_event(conn, round_number, turn_id, voter_id, decision)
@@ -1132,15 +1110,8 @@ def _finale_steps(conn) -> list[str]:
 
 
 def _round_voter_ids(conn, round_number: int) -> list[str]:
-    active = _active_agent_rows(conn)
-    if _tribe_phase(conn) == "tribal":
-        # tribal council: the immune tribe is safe and does NOT vote; only
-        # the losing tribe attends and votes among its own members
-        voters = [a["agent_id"] for a in active if not a["has_immunity"]]
-        tribes = {_tribe_of(conn, v) for v in voters}
-        if len(tribes) == 1 and None not in tribes:
-            return voters  # one losing tribe: classic pre-merge council
-    return [agent["agent_id"] for agent in active]
+    # one group all season: every active player votes, immune players included
+    return [agent["agent_id"] for agent in _active_agent_rows(conn)]
 
 
 def _active_agent_rows(conn) -> list[dict[str, Any]]:
@@ -1441,30 +1412,16 @@ def _social_events_for_existing_step(conn, round_number: int, turn_id: int, step
             events.append(event)
             covered.update(event.get("payload", {}).get("participant_ids", []))
     # Coverage guarantee: every active model takes part in at least one camp
-    # conversation each round. Chunk the uncovered into small same-tribe huddles.
+    # conversation each round. Chunk the uncovered into small huddles.
     active_ids = [a["agent_id"] for a in _active_agent_rows(conn)]
-    tribal = _tribe_phase(conn) == "tribal"
     extra_index = 0
     while True:
         uncovered = [aid for aid in active_ids if aid not in covered]
         if not uncovered:
             break
-        # prefer same-tribe groups of <=4 when in tribal phase
-        by_tribe: dict[str, list[str]] = {}
-        if tribal:
-            for aid in uncovered:
-                by_tribe.setdefault(_tribe_of(conn, aid) or "none", []).append(aid)
-            pool = next(iter(by_tribe.values()))
-        else:
-            pool = uncovered
-        chunk = pool[:4]
+        chunk = uncovered[:4]
         if len(chunk) < 2:
-            if tribal and len(by_tribe) > 1:
-                # merge a loner with the next tribe group (merge phase handles this anyway)
-                pool = [aid for aid in uncovered if aid not in chunk]
-                chunk = (chunk + pool)[:2]
-            if len(chunk) < 2:
-                break
+            break
         extra_step = f"{step}_coverage_{extra_index}"
         extra_index += 1
         if extra_index > 6:
@@ -1480,10 +1437,6 @@ def _social_events_for_existing_step(conn, round_number: int, turn_id: int, step
 
 def _social_group_invitees(conn, proposer_id: str, target_size: int, round_number: int, step: str) -> list[str]:
     candidates = [agent["agent_id"] for agent in _active_agent_rows(conn) if agent["agent_id"] != proposer_id]
-    if _tribe_phase(conn) == "tribal":
-        home = _tribe_of(conn, proposer_id)
-        if home:
-            candidates = [cid for cid in candidates if _tribe_of(conn, cid) == home]
     candidates.sort(key=lambda agent_id: _social_affinity(conn, proposer_id, agent_id, round_number, step), reverse=True)
     return candidates[: max(1, target_size - 1)]
 
@@ -1783,13 +1736,10 @@ def _stable_index(seed: str, modulo: int) -> int:
 
 
 def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
-    puzzle = _round_puzzle(conn, round_number, _challenge_type(conn))
     challenge_type = _challenge_type(conn)
+    puzzle = _round_puzzle(conn, round_number, challenge_type)
     active_names = ", ".join(agent["pseudonym"] for agent in _active_agent_rows(conn))
-    if challenge_type == "team":
-        stakes = "The first valid solver gives their whole tribe safety."
-    else:
-        stakes = "The first valid solver wins immunity for this round."
+    stakes = "The first valid solver wins immunity for this round."
     dialogue = f"The remaining models face {puzzle['puzzle_id']}: {puzzle['prompt']} {stakes}"
     payload = {
         "puzzle_id": puzzle["puzzle_id"],
@@ -1937,12 +1887,7 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
     winner_name = _agent_name(conn, winner_id) if winner_id else "No model"
     immunity_names = [_agent_name(conn, agent_id) for agent_id in result["immunity_agent_ids"]]
     challenge_type = result["challenge_type"]
-    if challenge_type == "team":
-        dialogue = (
-            f"{winner_name} returns the first valid solution, so {result['winning_tribe_id']} earns safety. "
-            f"Protected this round: {', '.join(immunity_names)}."
-        )
-    elif result["status"] == "no_live_solver":
+    if result["status"] == "no_live_solver":
         raise RuntimeError("No live model returned a valid challenge solution; no deterministic immunity award was created.")
     else:
         dialogue = f"{winner_name} solves first and takes immunity. The vote now has to move around them."
@@ -2141,16 +2086,7 @@ def _memory_update_event(conn, round_number: int, turn_id: int) -> dict[str, Any
 
 
 def _challenge_type(conn) -> str:
-    if _tribe_phase(conn) == "merged":
-        return "individual"
-    active = _active_agent_rows(conn)
-    if len(active) > 2:
-        camps = _team_assignments(conn)
-        sizes: dict[str, int] = {}
-        for tribe in camps.values():
-            sizes[tribe] = sizes.get(tribe, 0) + 1
-        if min(sizes.values()) >= 2:
-            return "team"
+    # one group all season, so every challenge is individual
     return "individual"
 
 
@@ -2218,68 +2154,6 @@ def _round_puzzle(conn, round_number: int, challenge_type: str) -> dict[str, Any
     return row_to_dict(row)
 
 
-# ------------------------------------------------------------------ tribes
-# Tribe camps and merged-phase management. While unmerged (more than
-# MERGE_AT players active) the cast is split into two camps; camp talk is
-# same-tribe only, and only the losing tribe attends tribal council.
-MERGE_AT = 6
-
-
-def _tribe_phase(conn) -> str:
-    """'tribal' while two camps exist, 'merged' after the merge event."""
-    row = conn.execute(
-        "SELECT COUNT(*) AS n FROM Agents WHERE status = 'active'"
-    ).fetchone()
-    return "merged" if row["n"] <= MERGE_AT else "tribal"
-
-
-def _tribe_of(conn, agent_id: str) -> str | None:
-    row = conn.execute("SELECT team_id FROM Agents WHERE agent_id = ?", (agent_id,)).fetchone()
-    team = row["team_id"] if row else None
-    return team if team and team.startswith("tribe-") else None
-
-
-def _merge_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
-    """Merge: camps dissolve, everyone competes and votes individually."""
-    return _insert_story_event(
-        conn,
-        turn_id=turn_id,
-        round_number=round_number,
-        phase="camp",
-        kind="merge",
-        scene="beach",
-        shot="merge_flag",
-        actor_ids=[agent["agent_id"] for agent in _active_agent_rows(conn)],
-        visibility="audience",
-        target_ids=[],
-        title="The Merge",
-        dialogue="The camps dissolve. From here on, every model competes and votes alone.",
-        subtitle="Individual game begins.",
-        payload={"phase_after": "merged", "merged_at_players": MERGE_AT},
-    )
-
-
-def _team_assignments(conn) -> dict[str, str]:
-    # read the seeded camps; never recompute parity (it drifts after eliminations)
-    active = _active_agent_rows(conn)
-    assigned = {
-        agent["agent_id"]: agent["team_id"]
-        for agent in active
-        if agent.get("team_id") and str(agent["team_id"]).startswith("tribe-")
-    }
-    if len(assigned) == len(active):
-        return assigned
-    # fallback for legacy seasons without camps: parity split once, then persisted
-    recomputed = {
-        agent["agent_id"]: "tribe-a" if index % 2 == 0 else "tribe-b"
-        for index, agent in enumerate(active)
-        if agent["agent_id"] not in assigned
-    }
-    for agent_id, tribe in recomputed.items():
-        conn.execute("UPDATE Agents SET team_id = ? WHERE agent_id = ?", (tribe, agent_id))
-    return {**assigned, **recomputed}
-
-
 def _deterministic_challenge_attempts(
     conn,
     round_number: int,
@@ -2288,7 +2162,6 @@ def _deterministic_challenge_attempts(
 ) -> list[ChallengeAttemptDecision]:
     active = _active_agent_rows(conn)
     winner = active[(round_number - 7) % len(active)]
-    teams = _team_assignments(conn)
     base_response_ms = {
         "easy": 900,
         "medium": 2800,
@@ -2301,7 +2174,7 @@ def _deterministic_challenge_attempts(
         attempts.append(
             ChallengeAttemptDecision(
                 agent_id=agent["agent_id"],
-                tribe_id=teams.get(agent["agent_id"]) if challenge_type == "team" else None,
+                tribe_id=None,
                 provider="deterministic",
                 model_id=agent.get("model_id"),
                 answer=answer,
@@ -2325,7 +2198,6 @@ def _live_challenge_attempts(
     challenge_type: str,
 ) -> list[ChallengeAttemptDecision]:
     active = _active_agent_rows(conn)
-    teams = _team_assignments(conn)
     contexts = {
         agent["agent_id"]: build_agent_episode_context(
             conn,
@@ -2368,7 +2240,7 @@ def _live_challenge_attempts(
                     attempts.append(
                         ChallengeAttemptDecision(
                             agent_id=agent["agent_id"],
-                            tribe_id=teams.get(agent["agent_id"]) if challenge_type == "team" else None,
+                            tribe_id=None,
                             provider=failed_llm_provider(),
                             model_id=None,
                             answer="",
@@ -2385,7 +2257,7 @@ def _live_challenge_attempts(
                 attempts.append(
                     ChallengeAttemptDecision(
                         agent_id=agent["agent_id"],
-                        tribe_id=teams.get(agent["agent_id"]) if challenge_type == "team" else None,
+                        tribe_id=None,
                         provider=live_llm_provider(),
                         model_id=solution.model_id,
                         answer=solution.answer,
@@ -2528,16 +2400,8 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
             status = "deterministic"
             puzzle_id = puzzle["puzzle_id"]
 
-    teams = _team_assignments(conn)
-    winning_tribe_id = teams.get(winning_agent_id) if challenge_type == "team" else None
-    if challenge_type == "team" and winning_tribe_id:
-        immunity_agent_ids = [
-            agent_id
-            for agent_id, tribe_id in teams.items()
-            if tribe_id == winning_tribe_id
-        ]
-    else:
-        immunity_agent_ids = [winning_agent_id]
+    winning_tribe_id = None
+    immunity_agent_ids = [winning_agent_id]
 
     conn.execute("UPDATE Agents SET has_immunity = 0 WHERE status = 'active'")
     conn.executemany(
@@ -2567,7 +2431,6 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
                     "primary_puzzle_id": puzzle["puzzle_id"],
                     "winner_puzzle_id": puzzle_id,
                     "used_live_recovery": puzzle_id != puzzle["puzzle_id"],
-                    "team_assignments": teams if challenge_type == "team" else {},
                 }
             ),
         ),
@@ -3616,7 +3479,6 @@ def _vote_booth_event(
         "vote_target_id": target_id,
         "vote_target_name": target_name,
         "vote_explanation": visible_explanation,
-        "play_idol": bool(decision.play_idol) if hasattr(decision, "play_idol") else False,
         "ui_vote_analysis": _vote_analysis(voter, target_name, visible_explanation),
         "llm_provider": decision.provider,
         "llm_model_id": decision.model_id,
@@ -3957,21 +3819,6 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     else:
         eliminated_id = None
 
-    # hidden immunity idols: holders who voted for themselves defensively, or
-    # were told they hold an idol and it was auto-considered, negate votes.
-    # idol play is recorded on the vote_booth payload (play_idol=true).
-    idol_plays = _idol_plays_for_round(conn, round_number)
-    idol_nulled: dict[str, int] = {}
-    if idol_plays:
-        for holder_id in idol_plays:
-            if holder_id in counts:
-                idol_nulled[holder_id] = counts.pop(holder_id)
-        if idol_nulled and not counts:
-            # every counted target played an idol: no elimination this round
-            eliminated_id = None
-        elif idol_nulled:
-            eliminated_id, _elim_votes = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0]
-
     eliminated_name = _agent_name(conn, eliminated_id) if eliminated_id else None
     if eliminated_id:
         conn.execute(
@@ -3986,15 +3833,13 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     payload = {
         "eliminated_id": eliminated_id,
         "final_tally": final_tally,
-        "idols_played": list(idol_plays) if idol_plays else [],
-        "idol_negated_votes": idol_nulled,
         "host_narration": (
             (
                 f"The votes are enough. {eliminated_name} is out of the benchmark, "
                 "and the remaining models now inherit the consequences of this move."
             )
             if eliminated_id
-            else "Idols hit the table and every vote is negated. Nobody leaves tonight."
+            else "No votes were cast. Nobody leaves tonight."
         ),
     }
     if should_use_live_llm():
@@ -4028,91 +3873,14 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
         actor_ids=["host"],
         target_ids=[eliminated_id] if eliminated_id else [],
         visibility="audience",
-        title=f"{eliminated_name} Leaves the Game" if eliminated_name else "Idols Negate Every Vote",
-        dialogue=f"{eliminated_name}, your run ends here." if eliminated_name else "Every vote is negated. Nobody leaves tonight.",
+        title=f"{eliminated_name} Leaves the Game" if eliminated_name else "Nobody Leaves",
+        dialogue=f"{eliminated_name}, your run ends here." if eliminated_name else "No votes were cast. Nobody leaves tonight.",
         subtitle="The vote lands, and the benchmark moves on.",
         duration_ms=12000,
         animation="flame_out",
         spoiler_group="elimination",
         payload=payload,
     )
-
-
-def _idol_plays_for_round(conn, round_number: int) -> list[str]:
-    """Agent ids that hold an idol this round and played it (vote payload play_idol)."""
-    rows = conn.execute(
-        """
-        SELECT actor_ids, payload FROM StoryEvents
-        WHERE round = ? AND kind = 'vote_booth' AND payload LIKE '%play_idol%'
-        """,
-        (round_number,),
-    ).fetchall()
-    played: list[str] = []
-    for row in rows:
-        try:
-            payload = json.loads(row["payload"])
-        except Exception:
-            continue
-        if not payload.get("play_idol"):
-            continue
-        actor_ids = json.loads(row["actor_ids"]) if isinstance(row["actor_ids"], str) else row["actor_ids"]
-        holder = actor_ids[0] if actor_ids else None
-        if holder and _holds_idol(conn, holder):
-            played.append(holder)
-            _spend_idol(conn, holder)
-    return played
-
-
-def _holds_idol(conn, agent_id: str) -> bool:
-    row = conn.execute(
-        "SELECT idol_held FROM Agents WHERE agent_id = ?", (agent_id,)
-    ).fetchone()
-    return bool(row and row["idol_held"])
-
-
-def _spend_idol(conn, agent_id: str) -> None:
-    conn.execute("UPDATE Agents SET idol_held = 0 WHERE agent_id = ?", (agent_id,))
-
-
-def _grant_season_idols(conn, round_number: int, season_seed: int) -> list[str]:
-    """Deterministically grant up to 3 hidden idols per season.
-
-    Idol rounds: seeded from the season seed, one idol every 3 rounds from the
-    first voting round. Granted privately: the holder's confessional memory gets
-    the idol notice; nothing public is written.
-    """
-    granted: list[str] = []
-    idol_rounds = _idol_rounds(season_seed)
-    if round_number not in idol_rounds:
-        return granted
-    rng = random.Random(season_seed * 100003 + round_number)
-    holders = conn.execute(
-        """
-        SELECT agent_id FROM Agents
-        WHERE status = 'active' AND idol_held = 0 AND has_immunity = 0
-        ORDER BY agent_id
-        """
-    ).fetchall()
-    if not holders:
-        return granted
-    holder = rng.choice(holders)["agent_id"]
-    conn.execute("UPDATE Agents SET idol_held = 1 WHERE agent_id = ?", (holder,))
-    conn.execute(
-        """
-        UPDATE Agents SET confessional_memory =
-            confessional_memory || ' | You found a hidden immunity idol. If you play it at tribal, all votes against you are negated. Playing it is public; holding it is secret.'
-        WHERE agent_id = ?
-        """,
-        (holder,),
-    )
-    granted.append(holder)
-    return granted
-
-
-def _idol_rounds(season_seed: int) -> set[int]:
-    rng = random.Random(season_seed * 7919)
-    first = 7  # first voting round
-    return {first + rng.randint(1, 2), first + 3 + rng.randint(0, 1), first + 6 + rng.randint(0, 1)}
 
 
 def _exit_confessional_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
@@ -4374,7 +4142,6 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
         jury_positioning=action.jury_positioning,
         strategic_score=action.strategic_score,
         prompt_profile=action.prompt_profile,
-        play_idol=bool(getattr(action, "play_idol", False)),
     )
 
 
@@ -4523,14 +4290,6 @@ def _eligible_targets(conn, actor_id: str) -> list[dict[str, Any]]:
             (actor_id,),
         ).fetchall()
     ]
-    if _tribe_phase(conn) == "tribal":
-        home = _tribe_of(conn, actor_id)
-        if home:
-            same_tribe = [t for t in targets if _tribe_of(conn, t["agent_id"]) == home]
-            if same_tribe:
-                return same_tribe  # pre-merge council: vote your own tribe only
-            if targets:
-                return targets  # own tribe fully safe: vote across camps (edge case)
     return targets
 
 
@@ -4689,11 +4448,6 @@ def _total_votes_for_round(conn, round_number: int) -> int:
         (round_number,),
     ).fetchone()["count"]
     eligible_now = len(_round_voter_ids(conn, round_number))
-    if _tribe_phase(conn) == "tribal":
-        safe = conn.execute(
-            "SELECT COUNT(*) AS n FROM Agents WHERE status='active' AND has_immunity=1"
-        ).fetchone()["n"]
-        eligible_now -= safe  # immune winners' booths are skipped mid-round
     return max(int(vote_count), eligible_now) if eligible_now else int(vote_count)
 
 

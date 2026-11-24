@@ -28,7 +28,7 @@ type FeedEvent = {
   subtitle: string | null;
 };
 
-type Player = { agent_id: string; name: string; alias?: string | null; model: string; tribe: string | null };
+type Player = { agent_id: string; name: string; alias?: string | null; model: string };
 
 type Feed = {
   ok: boolean;
@@ -323,7 +323,6 @@ export default function Benchmark() {
                     <th>still in ({feedPlayers.length})</th>
                     <th>plays as</th>
                     <th>model</th>
-                    <th>tribe</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -332,7 +331,6 @@ export default function Benchmark() {
                       <td>{p.name}</td>
                       <td>{p.alias ?? "-"}</td>
                       <td>{p.model}</td>
-                      <td>{p.tribe ?? "merged"}</td>
                     </tr>
                   ))}
                 </tbody>

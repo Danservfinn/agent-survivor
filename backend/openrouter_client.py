@@ -44,7 +44,6 @@ class AgentAction:
     strategic_score: float | None = None
     prompt_profile: str = AGENT_PROMPT_PROFILE_ID
     public_archetype: str | None = None
-    play_idol: bool = False
 
 
 @dataclass(frozen=True)
@@ -488,7 +487,6 @@ Return strict JSON only:
   "jury_positioning": "one concise first-person read on how this move affects final respect or bitterness",
   "public_archetype": "2-5 lowercase words describing the strategic role you feel you are embodying",
   "target_id": "allowed target id or null",
-  "play_idol": "true only if your private memory says you hold a hidden immunity idol and you choose to play it this round; otherwise false",
   "move_type": "pressure_ally | reassure_ally | float_decoy | test_loyalty | target_redirect | vote_commitment | jury_management | public_callout | misdirection | challenge_focus | final_pitch",
   "intended_effect": "short phrase describing what this action is meant to accomplish",
   "confidence": 0.0
@@ -632,7 +630,6 @@ Rules:
         strategic_score=strategic_score,
         prompt_profile=AGENT_PROMPT_PROFILE_ID,
         public_archetype=public_archetype or None,
-        play_idol=bool(_optional_bool(data.get("play_idol"))),
     )
 
 
@@ -928,16 +925,6 @@ def _optional_strategy_text(value: Any, actor: dict[str, Any], *, max_len: int) 
         fallback="",
     )
     return text or None
-
-
-def _optional_bool(value: Any) -> bool | None:
-    if value is None:
-        return False
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"true", "yes", "1"}
-    return bool(value)
 
 
 def _optional_confidence(value: Any) -> float | None:

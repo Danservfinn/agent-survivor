@@ -356,6 +356,7 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         _ensure_column(conn, "Agents", "archetype_updated_round", "INTEGER")
         _ensure_column(conn, "Agents", "inject_canary", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "Agents", "canary_target_name", "TEXT")
+        # idols were removed 2026-11-24; the column stays so older season databases still open
         _ensure_column(conn, "Agents", "idol_held", "INTEGER NOT NULL DEFAULT 0")
         # real model name for people; pseudonym is the neutral name players use in game
         _ensure_column(conn, "Agents", "display_name", "TEXT NOT NULL DEFAULT ''")
@@ -482,15 +483,6 @@ def seed_demo(
             """,
             _shuffled_roster(roster_preset),
         )
-        # split the cast into two tribes at seed time (camp structure)
-        active = conn.execute(
-            "SELECT agent_id FROM Agents WHERE status = 'active' ORDER BY agent_id"
-        ).fetchall()
-        for index, row in enumerate(active):
-            tribe = "tribe-a" if index % 2 == 0 else "tribe-b"
-            conn.execute(
-                "UPDATE Agents SET team_id = ? WHERE agent_id = ?", (tribe, row["agent_id"])
-            )
         conn.commit()
     finally:
         conn.close()

@@ -372,7 +372,6 @@ def api_live_season_feed(after: int = 0, season: str | None = None) -> dict:
                     "name": display_name or r["pseudonym"],
                     "alias": r["pseudonym"] if display_name else None,
                     "model": r["model_id"],
-                    "tribe": r["team_id"] if r["team_id"] and str(r["team_id"]).startswith("tribe-") else None,
                 }
             )
         conn.close()

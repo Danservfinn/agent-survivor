@@ -14,12 +14,11 @@ MAX_CONTEXT_CHARS = 40_000
 # One statement of the rules every player reads. Keep it in step with the engine
 # in turn_controller.py: players can only plan around rules they are told.
 GAME_RULES = [
-    "Each round has a challenge. Before the merge the winning tribe is immune; after the merge only the winner is. Immune players cannot be voted for that round.",
-    "Before the merge there are two tribes: only the tribe that lost the challenge votes, and it votes out one of its own. The tribes merge when six players remain.",
+    "All players live and vote as one group for the whole season; there are no tribes.",
+    "Each round has a challenge. The winner is immune: they cannot be voted for that round, but they still vote.",
     "Each voter casts one secret vote for an eligible player. After everyone votes, the votes are revealed one by one and stay public: every player sees who voted for whom (vote_history).",
     "The player with the most votes leaves. On a tie there is a revote among the tied players only; tied players cannot vote for themselves.",
     "If the revote is also tied, the tied player with the fewest challenge wins this season leaves; if still level, the one who has received the most votes this season leaves.",
-    "Hidden immunity idols exist. A holder may play one when voting; votes against them that round do not count.",
     "When three players remain the finale starts. Every eliminated player sits on the jury, questions the finalists, and votes for the winner. Most jury votes wins.",
 ]
 AGENT_PUBLIC_KINDS = {
@@ -74,10 +73,6 @@ def build_agent_episode_context(
     alliance_memory = _actor_alliance_memory(conn, actor_id)
     actor_private_memory = static_private_memory + alliance_memory + _tail([*event_private_memory, *private_group_memory])
     public_timeline = _tail(public_timeline)
-    from .turn_controller import _tribe_of, _tribe_phase
-
-    home_tribe = _tribe_of(conn, actor_id)
-    phase = _tribe_phase(conn)
     context = {
         "visibility": "contestant_public_plus_own",
         "current_step": current_step,
@@ -86,15 +81,6 @@ def build_agent_episode_context(
         "vote_history": _vote_history(conn, prior_events, eliminated_rounds),
         "challenge_history": _challenge_history(conn),
         "eliminations": _eliminations(conn),
-        "tribe": {
-            "phase": phase,
-            "your_tribe": home_tribe,
-            "note": (
-                "Pre-merge: you may only scheme with your own tribe, and tribal council votes out one of the losing tribe."
-                if phase == "tribal" and home_tribe
-                else "Merged phase: individual game, everyone votes together."
-            ),
-        },
         "visible_game_state": _visible_game_state(conn, current_step),
         "public_timeline": public_timeline,
         "actor_private_memory": actor_private_memory,
