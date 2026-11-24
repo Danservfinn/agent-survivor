@@ -118,12 +118,14 @@ def estimate_call_cost_usd(
 # Token budgets per response kind: (input, output). Contestant calls carry the
 # full game record (llm_context.MAX_CONTEXT_CHARS, up to about 10k tokens late
 # in a season) on top of a ~2.5k-token prompt; 8000 is a season average.
+# v3 replies open with up to ~150 words of private thinking (about 250 tokens)
+# before the decision, so contestant outputs carry that on top.
 TOKEN_BUDGETS = {
-    "conversation": (8000, 420),
+    "conversation": (8000, 670),
     "confessional": (8000, 380),
-    "vote": (8000, 420),
-    "jury_vote": (8000, 300),
-    "finale_pitch": (8000, 420),
+    "vote": (8000, 670),
+    "jury_vote": (8000, 550),
+    "finale_pitch": (8000, 670),
     "host": (3600, 300),
     "challenge": (6500, 1500),  # one call answers all five ladder puzzles
     "archetype": (1200, 120),

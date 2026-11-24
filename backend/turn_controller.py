@@ -27,6 +27,7 @@ from .llm_config import (
     failed_llm_provider,
     get_llm_settings,
     live_llm_provider,
+    prompt_profile,
     should_use_live_llm,
 )
 from .openrouter_client import (
@@ -1126,12 +1127,12 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
     vote_reveal_steps = [f"vote_reveal_{index + 1}" for index in range(len(voters))]
     if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
         return [
-            # each player privately plans the round before anything happens
-            "round_plan",
             "challenge_intro",
             "challenge_attempts",
             "challenge_result",
             "challenge_gift",
+            # each player privately plans the round once immunity is known
+            "round_plan",
             # every conversation in a round is one a player chose to have
             "camp_talks",
             # one short private message to react to what the talks revealed
@@ -1272,6 +1273,7 @@ def _group_discussion_event(
     step: str,
     covered: set[str] | None = None,
     force_participants: list[str] | None = None,
+    talk_asks: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     active = _active_agent_rows(conn)
     if len(active) < 2:
@@ -1381,7 +1383,9 @@ def _group_discussion_event(
         _record_declined_trust(conn, proposer_id, declined_ids)
         return None
 
-    speaker_lines, line_metadata = _group_speaker_lines(conn, round_number, step, accepted_ids, declined_ids, stage)
+    speaker_lines, line_metadata = _group_speaker_lines(
+        conn, round_number, step, accepted_ids, declined_ids, stage, talk_asks=talk_asks
+    )
     transcript = [{"agent_id": line["agent_id"], "text": line["text"]} for line in speaker_lines]
     for index, line in enumerate(speaker_lines):
         conn.execute(
@@ -1477,7 +1481,7 @@ def _round_plans(conn, round_number: int) -> int:
                 written_plan = request_private_writing(
                     actor=agent,
                     task=(
-                        "Plan this round before anything happens. Name the biggest threats to you and why, the "
+                        "The challenge is over and immunity is settled. Plan the rest of this round. Name the biggest threats to you and why, the "
                         "players most likely to vote with you, what you will say in your private talk and to whom, "
                         "and who you expect to go home tonight and how sure you are. Keep it short; you will see "
                         "this plan again in every decision this round."
@@ -1520,19 +1524,37 @@ def _write_notebook(conn, round_number: int, agent: dict[str, Any], eliminated_n
             conn, actor_id=agent["agent_id"], round_number=round_number, current_step="memory_update"
         )
         try:
-            written = request_private_writing(
-                actor=agent,
-                task=(
-                    "The council is over. Rewrite your private notebook, which replaces your old one and is the "
-                    "only memory you carry forward besides the public record. Cover what you predicted and what "
-                    "actually happened, which promises held and who lied to you, what you have learned about each "
-                    f"remaining player, and your plan for next round. At most {NOTEBOOK_MAX_CHARS} characters."
-                ),
-                fields={"notebook": f"your new notebook, first person, at most {NOTEBOOK_MAX_CHARS} characters"},
-                episode_context=context,
-                max_tokens=600,
-            )
-            note = str(written.get("notebook") or "").strip() or None
+            if prompt_profile() == "v2":
+                written = request_private_writing(
+                    actor=agent,
+                    task=(
+                        "The council is over. Rewrite your private notebook, which replaces your old one and is the "
+                        "only memory you carry forward besides the public record. Cover what you predicted and what "
+                        "actually happened, which promises held and who lied to you, what you have learned about each "
+                        f"remaining player, and your plan for next round. At most {NOTEBOOK_MAX_CHARS} characters."
+                    ),
+                    fields={"notebook": f"your new notebook, first person, at most {NOTEBOOK_MAX_CHARS} characters"},
+                    episode_context=context,
+                    max_tokens=600,
+                )
+                note = str(written.get("notebook") or "").strip() or None
+            else:
+                written = request_private_writing(
+                    actor=agent,
+                    task=(
+                        "The council is over. Rewrite your private notebook; it replaces the old one and is the only "
+                        "memory you carry forward besides the public record. One short line per remaining player, "
+                        "then what you got right and wrong, then your plan."
+                    ),
+                    fields={
+                        "players": "object: each remaining player's name -> one line: trust high/medium/low; threat high/medium/low; their last vote; what they owe you or you owe them",
+                        "lessons": "what you predicted vs what happened, and who lied to you",
+                        "plan": "your plan for next round",
+                    },
+                    episode_context=context,
+                    max_tokens=600,
+                )
+                note = _render_notebook(written)
         except Exception as exc:
             print(f"live notebook failed for {agent['agent_id']}: {exc}")
     if note is None:
@@ -1544,6 +1566,20 @@ def _write_notebook(conn, round_number: int, agent: dict[str, Any], eliminated_n
         "UPDATE Agents SET confessional_memory = ? WHERE agent_id = ?",
         (note[:NOTEBOOK_MAX_CHARS], agent["agent_id"]),
     )
+
+
+def _render_notebook(written: dict[str, Any]) -> str | None:
+    """Fixed shape: one line per player, then lessons, then plan."""
+    players = written.get("players")
+    lines = []
+    if isinstance(players, dict):
+        lines += [f"{name}: {str(note).strip()}" for name, note in players.items() if str(note).strip()]
+    if written.get("lessons"):
+        lines.append(f"Lessons: {str(written['lessons']).strip()}")
+    if written.get("plan"):
+        lines.append(f"Plan: {str(written['plan']).strip()}")
+    text = " | ".join(lines).strip()
+    return text[:NOTEBOOK_MAX_CHARS] or None
 
 
 def _followup_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
@@ -1689,12 +1725,16 @@ def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, A
     if len(active) < 2:
         return []
     picks: list[tuple[str, str]] = []
+    asks: dict[str, str] = {}
     for index, agent in enumerate(active):
         others = [other for other in active if other["agent_id"] != agent["agent_id"]]
         for _ in range(PRIVATE_TALKS_PER_ROUND):
-            partner = _choose_talk_partner(conn, round_number, agent["agent_id"], others, index)
+            choice = _choose_talk_partner(conn, round_number, agent["agent_id"], others, index)
+            partner, ask = choice if isinstance(choice, tuple) else (choice, None)
             if partner:
                 picks.append((agent["agent_id"], partner))
+                if ask:
+                    asks[agent["agent_id"]] = ask
     talks: list[list[str]] = []
     seen: set[frozenset[str]] = set()
     for chooser, partner in picks:
@@ -1706,7 +1746,12 @@ def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, A
     events = []
     for number, (chooser, partner) in enumerate(talks):
         event = _group_discussion_event(
-            conn, round_number, turn_id, f"camp_talk_{number}", force_participants=[chooser, partner]
+            conn,
+            round_number,
+            turn_id,
+            f"camp_talk_{number}",
+            force_participants=[chooser, partner],
+            talk_asks={agent_id: ask for agent_id, ask in asks.items() if agent_id in (chooser, partner)},
         )
         if event:
             event["payload"]["chosen_by"] = chooser
@@ -1722,7 +1767,7 @@ def _choose_talk_partner(
     index: int,
 ) -> str | None:
     if not should_use_live_llm():
-        return others[index % len(others)]["agent_id"]
+        return others[index % len(others)]["agent_id"], None
     context = build_agent_episode_context(conn, actor_id=agent_id, round_number=round_number, current_step="camp_talks")
     try:
         action = _real_agent_action(
@@ -1731,8 +1776,9 @@ def _choose_talk_partner(
             step="camp_talks",
             scene_context=(
                 "Before tonight's vote you get one private conversation. Choose the one player you want to talk to; "
-                "only the two of you will hear it. Put their id in target_id. Your dialogue is the opening line you "
-                "will say to them."
+                "only the two of you will hear it. Put their id in target_id. In summary, state the one specific "
+                "thing you want from this talk: a named vote, a commitment, or a piece of information. You will "
+                "make that ask in the talk and should leave with a yes, a no, or a counter-offer."
             ),
             response_kind="talk_choice",
             episode_context=context,
@@ -1742,7 +1788,9 @@ def _choose_talk_partner(
         print(f"live talk choice failed for {agent_id}: {exc}")
         return None
     legal = {other["agent_id"] for other in others}
-    return action.target_id if action and action.target_id in legal else None
+    if not action or action.target_id not in legal:
+        return None
+    return action.target_id, (action.strategic_summary or "").strip()[:240] or None
 
 
 def _record_promise(
@@ -1927,6 +1975,7 @@ def _group_speaker_lines(
     participant_ids: list[str],
     declined_ids: list[str],
     stage: str,
+    talk_asks: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
     lines: list[dict[str, str]] = []
     metadata: list[dict[str, Any]] = []
@@ -1951,7 +2000,14 @@ def _group_speaker_lines(
                     actor_id=agent_id,
                     step=step,
                     scene_context=_group_dialogue_context(
-                        conn, stage, participant_ids, declined_ids, previous_line, pass_no
+                        conn,
+                        stage,
+                        participant_ids,
+                        declined_ids,
+                        previous_line,
+                        pass_no,
+                        ask=(talk_asks or {}).get(agent_id),
+                        last_turn=talk_asks is not None and pass_no == passes - 1,
                     ),
                     response_kind="group_conversation",
                     episode_context=agent_context,
@@ -1997,6 +2053,9 @@ def _group_dialogue_context(
     declined_ids: list[str],
     previous_line: str,
     pass_no: int = 0,
+    *,
+    ask: str | None = None,
+    last_turn: bool = False,
 ) -> str:
     context = {
         "stage": stage,
@@ -2006,11 +2065,21 @@ def _group_dialogue_context(
     }
     if previous_line:
         context["previous_line_in_this_private_group"] = previous_line
-    if pass_no > 0:
+    if ask:
+        # the purpose this player chose the talk for (camp talks only)
+        context["your_ask_in_this_talk"] = ask
+    if last_turn:
+        context["instruction"] = (
+            "This is your last line in this talk. Give a clear yes, no, or counter-offer to what the other "
+            "player asked of you, and say plainly where your own ask stands."
+        )
+    elif pass_no > 0:
         context["instruction"] = (
             "This is your second turn in this talk. Respond directly to what was just said: "
             "agree, push back, probe for a real commitment, or pivot the plan."
         )
+    elif ask:
+        context["instruction"] = "Open by making your ask plainly."
     return json_dumps(context)
 
 

@@ -71,6 +71,19 @@ def get_llm_settings() -> LLMSettings:
     )
 
 
+# Contestant prompt version. "v3" (default since 2026-11-24): a computed
+# situation brief and a ledger of what each player was told, a strategist's
+# checklist, private thinking before the decision, fewer reply fields and a
+# structured notebook. "v2": the earlier prompt and context, kept so the two
+# can be compared on the same seed (scripts/compare_seasons.py).
+PROMPT_PROFILES = ("v2", "v3")
+
+
+def prompt_profile() -> str:
+    value = os.environ.get("SURVIVOR_PROMPT_PROFILE", "v3").strip().lower()
+    return value if value in PROMPT_PROFILES else "v3"
+
+
 def should_use_openrouter() -> bool:
     settings = get_llm_settings()
     return settings.provider == PROVIDER_OPENROUTER and settings.openrouter_configured

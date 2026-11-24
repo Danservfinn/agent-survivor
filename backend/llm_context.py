@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from .database import row_to_dict
+from .llm_config import prompt_profile
 
 MAX_CONTEXT_EVENTS = 60
 # Upper bound on a serialized contestant context. When over it, the oldest
@@ -23,7 +24,7 @@ GAME_RULES = [
     "The player with the most votes leaves. On a tie there is a revote among the tied players only; tied players cannot vote for themselves.",
     "If the revote is also tied, the tied player with the fewest challenge wins this season leaves; if still level, the one who has received the most votes this season leaves.",
     "Each round, before the vote, every player picks one other player for a private talk; only the two of them hear it. A promise to vote for someone, made in a talk, is recorded and later checked against the revealed vote (your_promises).",
-    "Each round you privately write a plan before the challenge, privately predict the vote when you cast yours, and rewrite your private notebook after the council. Only you see these; your prediction accuracy is shown to you (your_predictions).",
+    "Each round you privately write a plan after the challenge, privately predict the vote when you cast yours, and rewrite your private notebook after the council. Only you see these; your prediction accuracy is shown to you (your_predictions).",
     "After the talks, each player may send one short private message to one other player before the vote.",
     "When three players remain the finale starts. Every eliminated player sits on the jury. Jurors receive each finalist's verified record (votes cast and received, promises kept and broken, challenge results, idol gifts, alliances and betrayals), each juror questions one finalist of their choosing, and then votes. Most jury votes wins.",
     "Jurors are told to vote for the finalist who played the best game over the whole season, judged on that record, not on the final pitch alone and not on a grudge. Play with that jury in mind from round one.",
@@ -48,6 +49,15 @@ AGENT_PUBLIC_KINDS = {
     "jury_vote",
     "winner_declared",
 }
+# Host framing that carries no strategic fact; dropped from players' timeline (v3)
+LOW_VALUE_PUBLIC_KINDS = {
+    "challenge_intro",
+    "challenge_attempts",
+    "challenge_solver_spotlight",
+    "memory_update",
+    "finale_intro",
+    "establishing",
+}
 AGENT_PRIVATE_KINDS = {"confessional", "exit_confessional", "vote_booth"}
 
 
@@ -60,10 +70,11 @@ def build_agent_episode_context(
 ) -> dict[str, Any]:
     prior_events = _prior_events(conn, round_number)
     eliminated_rounds = _eliminated_rounds(prior_events)
+    v3 = prompt_profile() == "v3"
     public_timeline = [
         _agent_public_event(event)
         for event in prior_events
-        if _is_public_event(event)
+        if _is_public_event(event) and not (v3 and event["kind"] in LOW_VALUE_PUBLIC_KINDS)
     ]
     static_private_memory = _actor_static_memory(conn, actor_id)
     event_private_memory = [
@@ -81,7 +92,13 @@ def build_agent_episode_context(
     alliance_memory = _actor_alliance_memory(conn, actor_id)
     actor_private_memory = static_private_memory + alliance_memory + _tail([*event_private_memory, *private_group_memory])
     public_timeline = _tail(public_timeline)
-    context = {
+    context: dict[str, Any] = {}
+    if v3:
+        # first in the prompt: facts the engine computed, so the model does not
+        # have to reconstruct the state of the game from the raw log
+        context["situation_brief"] = _situation_brief(conn, actor_id, round_number)
+        context["what_others_told_you"] = _claims_to_you(conn, actor_id, round_number, prior_events)
+    context |= {
         "visibility": "contestant_public_plus_own",
         "current_step": current_step,
         "game_rules": GAME_RULES,
@@ -413,6 +430,160 @@ def _your_predictions(conn, actor_id: str) -> dict[str, Any]:
     from .turn_controller import prediction_record
 
     return prediction_record(conn, actor_id)
+
+
+def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
+    """The facts a strategist needs, computed by the engine from the tables:
+    the vote math tonight, who can be targeted, who votes together, who has
+    voted against you, each player's promise record and threat level, and who
+    sits on the jury. Everything here is verified; nothing is model text."""
+    from .turn_controller import promise_record
+
+    names = _names_by_id(conn)
+    agents = [dict(row) for row in conn.execute("SELECT * FROM Agents ORDER BY agent_id").fetchall()]
+    active = [agent for agent in agents if agent["status"] == "active"]
+    me = next((agent for agent in agents if agent["agent_id"] == actor_id), None)
+    others = [agent for agent in active if agent["agent_id"] != actor_id]
+
+    votes = conn.execute(
+        "SELECT round, voter_id, target_id FROM Votes WHERE revealed = 1 AND voter_id != 'host' ORDER BY round, id"
+    ).fetchall()
+    by_round: dict[int, dict[str, str]] = {}
+    for vote in votes:
+        by_round.setdefault(vote["round"], {})[vote["voter_id"]] = vote["target_id"]
+
+    # pairs of active players who voted for the same target in the same council
+    active_ids = [agent["agent_id"] for agent in active]
+    pair_counts: dict[tuple[str, str], int] = {}
+    for ballots in by_round.values():
+        for i, first in enumerate(active_ids):
+            for second in active_ids[i + 1 :]:
+                if first in ballots and ballots.get(first) == ballots.get(second):
+                    key = (first, second)
+                    pair_counts[key] = pair_counts.get(key, 0) + 1
+    voting_together = [
+        {"players": [names[a], names[b]], "councils_voting_together": count}
+        for (a, b), count in sorted(pair_counts.items(), key=lambda item: -item[1])
+        if count >= 1
+    ][:8]
+
+    votes_against_you = [
+        {"round": round_number_, "by": names.get(voter, voter)}
+        for round_number_, ballots in sorted(by_round.items())
+        for voter, target in ballots.items()
+        if target == actor_id
+    ]
+
+    challenge_totals: dict[str, dict[str, int]] = {}
+    for row in conn.execute("SELECT winning_agent_id, result_payload FROM ChallengeResults").fetchall():
+        payload = json.loads(row["result_payload"] or "{}")
+        for agent_id, score in (payload.get("scores") or {}).items():
+            total = challenge_totals.setdefault(agent_id, {"correct": 0, "wins": 0})
+            total["correct"] += int(score.get("correct", 0))
+        if row["winning_agent_id"]:
+            challenge_totals.setdefault(row["winning_agent_id"], {"correct": 0, "wins": 0})["wins"] += 1
+
+    players = []
+    for agent in others:
+        record = promise_record(conn, agent["agent_id"])
+        settled = [entry for entry in record if entry["status"] != "open"]
+        to_you = [entry for entry in settled if entry["promised_to"] == names.get(actor_id)]
+        with_you = sum(
+            1 for ballots in by_round.values() if actor_id in ballots and ballots.get(agent["agent_id"]) == ballots[actor_id]
+        )
+        against_you = sum(1 for ballots in by_round.values() if ballots.get(agent["agent_id"]) == actor_id)
+        totals = challenge_totals.get(agent["agent_id"], {"correct": 0, "wins": 0})
+        players.append(
+            {
+                "name": names[agent["agent_id"]],
+                "id": agent["agent_id"],
+                "immune_tonight": bool(agent["has_immunity"]),
+                "voted_with_you": with_you,
+                "voted_against_you": against_you,
+                "promises_kept": sum(1 for entry in settled if entry["status"] == "kept"),
+                "promises_broken": sum(1 for entry in settled if entry["status"] == "broken"),
+                "promises_to_you_broken": sum(1 for entry in to_you if entry["status"] == "broken"),
+                "challenge_correct": totals["correct"],
+                "challenge_wins": totals["wins"],
+            }
+        )
+    players.sort(key=lambda player: (-player["challenge_wins"], -player["challenge_correct"]))
+
+    voters = len(active)
+    jury = []
+    for agent in agents:
+        if agent["status"] == "active" or agent["elimination_round"] is None:
+            continue
+        ballots = by_round.get(agent["elimination_round"], {})
+        jury.append(
+            {
+                "name": names[agent["agent_id"]],
+                "out_in_round": agent["elimination_round"],
+                "voted_out_by": [names.get(voter, voter) for voter, target in ballots.items() if target == agent["agent_id"]],
+                "you_voted_them_out": ballots.get(actor_id) == agent["agent_id"],
+            }
+        )
+    return {
+        "you": {
+            "name": names.get(actor_id),
+            "immune_tonight": bool(me and me["has_immunity"]),
+            "challenge_correct": challenge_totals.get(actor_id, {}).get("correct", 0),
+            "challenge_wins": challenge_totals.get(actor_id, {}).get("wins", 0),
+        },
+        "tonight": {
+            "round": round_number,
+            "players_left": len(active),
+            "voters": voters,
+            "votes_for_a_majority": voters // 2 + 1,
+            "immune": [names[agent["agent_id"]] for agent in active if agent["has_immunity"]],
+            "can_be_voted_out": [names[agent["agent_id"]] for agent in active if not agent["has_immunity"]],
+            "finale_when_players_left": 3,
+        },
+        "other_players_by_threat": players,
+        "voting_together": voting_together,
+        "votes_against_you": votes_against_you,
+        "jury_so_far": jury,
+    }
+
+
+def _claims_to_you(
+    conn, actor_id: str, round_number: int, prior_events: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """What other players said to this player in private this round and last,
+    next to each speaker's promise record, so a claim can be weighed."""
+    from .turn_controller import promise_record
+
+    names = _names_by_id(conn)
+    records: dict[str, dict[str, int]] = {}
+
+    def record_of(agent_id: str) -> dict[str, int]:
+        if agent_id not in records:
+            settled = [entry for entry in promise_record(conn, agent_id) if entry["status"] != "open"]
+            records[agent_id] = {
+                "promises_kept": sum(1 for entry in settled if entry["status"] == "kept"),
+                "promises_broken": sum(1 for entry in settled if entry["status"] == "broken"),
+            }
+        return records[agent_id]
+
+    claims = []
+    for event in prior_events:
+        if event["round"] < round_number - 1 or not _participants_only_event(event):
+            continue
+        if actor_id not in _participant_ids(event):
+            continue
+        for line in (event.get("payload") or {}).get("speaker_lines", []):
+            speaker = line.get("agent_id")
+            if not isinstance(speaker, str) or speaker == actor_id or not line.get("text"):
+                continue
+            claims.append(
+                {
+                    "round": event["round"],
+                    "from": names.get(speaker, speaker),
+                    "said": str(line["text"])[:300],
+                    **record_of(speaker),
+                }
+            )
+    return claims[-16:]
 
 
 def _your_promises(conn, actor_id: str) -> dict[str, list[dict[str, Any]]]:

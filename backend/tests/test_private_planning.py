@@ -49,11 +49,13 @@ class _Db(unittest.TestCase):
 
 
 class RoundPlanTest(_Db):
-    def test_round_opens_with_the_plan_step(self) -> None:
-        state = {"phase": "round", "phase_step": "round_plan", "current_round": ROUND}
+    def test_plan_comes_after_the_challenge_and_before_the_talks(self) -> None:
+        state = {"phase": "round", "phase_step": "challenge_intro", "current_round": ROUND}
         steps = tc._phase_steps(self.conn, state)
-        self.assertEqual(steps[0], "round_plan")
-        self.assertEqual(database.round_start_step(), "round_plan")
+        self.assertEqual(steps[0], "challenge_intro")
+        self.assertEqual(database.round_start_step(), "challenge_intro")
+        self.assertLess(steps.index("challenge_gift"), steps.index("round_plan"))
+        self.assertLess(steps.index("round_plan"), steps.index("camp_talks"))
         self.assertLess(steps.index("camp_talks"), steps.index("camp_followup"))
         self.assertLess(steps.index("camp_followup"), steps.index("tribal_vote_call"))
 
@@ -113,14 +115,36 @@ class PredictionTest(_Db):
 
 
 class NotebookTest(_Db):
-    def test_notebook_replaces_old_memory_and_is_capped(self) -> None:
+    def _write(self, written: dict) -> str:
         a = self.players[0]
         self.conn.execute("UPDATE Agents SET confessional_memory = 'OLD MEMORY' WHERE agent_id = ?", (a,))
         live = self._live()
-        long_note = "N" * 3000
-        with live[0], live[1], live[2], patch.object(tc, "request_private_writing", return_value={"notebook": long_note}):
+        with live[0], live[1], live[2], patch.object(tc, "request_private_writing", return_value=written):
             tc._write_notebook(self.conn, ROUND, dict(self.conn.execute("SELECT * FROM Agents WHERE agent_id = ?", (a,)).fetchone()), "Ash", 8)
-        memory = self.conn.execute("SELECT confessional_memory FROM Agents WHERE agent_id = ?", (a,)).fetchone()[0]
+        return self.conn.execute("SELECT confessional_memory FROM Agents WHERE agent_id = ?", (a,)).fetchone()[0]
+
+    def test_notebook_has_one_line_per_player_then_lessons_and_plan(self) -> None:
+        memory = self._write(
+            {
+                "players": {"Cedar": "trust low; threat high; voted Ash; owes me a vote", "Ash": "trust high; threat low"},
+                "lessons": "I called the vote right.",
+                "plan": "Split Cedar from Elm.",
+            }
+        )
+        self.assertEqual(
+            memory,
+            "Cedar: trust low; threat high; voted Ash; owes me a vote | Ash: trust high; threat low"
+            " | Lessons: I called the vote right. | Plan: Split Cedar from Elm.",
+        )
+
+    def test_notebook_replaces_old_memory_and_is_capped(self) -> None:
+        memory = self._write({"players": {"Cedar": "N" * 3000}, "plan": "x"})
+        self.assertNotIn("OLD MEMORY", memory)
+        self.assertEqual(len(memory), tc.NOTEBOOK_MAX_CHARS)
+
+    def test_v2_notebook_is_free_text(self) -> None:
+        with patch.dict(os.environ, {"SURVIVOR_PROMPT_PROFILE": "v2"}):
+            memory = self._write({"notebook": "N" * 3000})
         self.assertEqual(memory, "N" * tc.NOTEBOOK_MAX_CHARS)
 
     def test_without_a_model_the_memory_still_stays_within_the_cap(self) -> None:

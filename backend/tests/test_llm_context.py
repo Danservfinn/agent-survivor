@@ -41,8 +41,19 @@ class LLMContextBoundaryTest(unittest.TestCase):
         private_text = json.dumps(context["actor_private_memory"])
         full_text = json.dumps(context)
 
-        self.assertIn("Tribal Conference", public_text)
+        # v3 drops host framing such as the "Tribal Conference" establishing shot
+        self.assertNotIn("Tribal Conference", public_text)
         self.assertIn("Camp | The Quiet Count", public_text)
+        with patch.dict(os.environ, {"SURVIVOR_PROMPT_PROFILE": "v2"}):
+            conn = database.get_db_connection()
+            try:
+                legacy = build_agent_episode_context(
+                    conn, actor_id="agent-bravo", round_number=1, current_step="vote_booth_agent-bravo"
+                )
+            finally:
+                conn.close()
+        self.assertIn("Tribal Conference", json.dumps(legacy["public_timeline"]))
+        self.assertNotIn("situation_brief", legacy)
         self.assertIn("I am trying to keep two alliances", private_text)
         self.assertIn("I am privately weighing", private_text)
         self.assertNotIn("Grok 4.3 knows the room is tilted", full_text)
@@ -256,7 +267,7 @@ class OpenRouterPromptContextTest(unittest.TestCase):
                 ]
             }
 
-        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key", "SURVIVOR_PROMPT_PROFILE": "v2"}, clear=False):
             with patch("backend.openrouter_client._post_chat_completion", side_effect=fake_post):
                 result = openrouter_client.request_agent_action(
                     actor={
@@ -416,7 +427,7 @@ class OpenRouterPromptContextTest(unittest.TestCase):
                 ]
             }
 
-        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key", "SURVIVOR_PROMPT_PROFILE": "v2"}, clear=False):
             with patch("backend.openrouter_client._post_chat_completion", side_effect=fake_post):
                 result = openrouter_client.request_agent_action(
                     actor={
