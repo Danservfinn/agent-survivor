@@ -9,6 +9,11 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import json  # noqa: E402
+import sqlite3  # noqa: E402
+import tempfile  # noqa: E402
+
+from backend import api, live_season  # noqa: E402
 from backend.live_season import ALLOWED_ROSTERS, run_live_season  # noqa: E402
 from backend.model_rosters import agents_for_roster  # noqa: E402
 
@@ -59,6 +64,49 @@ class LiveSeasonGuardTest(unittest.TestCase):
             result = run_live_season(roster="cheap_recent_openrouter")
         self.assertFalse(result["ok"])
         self.assertIn("not active", result["error"])
+
+
+class SeasonReadPathsTest(unittest.TestCase):
+    """Read endpoints over artifacts/seasons: aborted runs and bad ids."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.seasons = Path(self.tmp.name)
+        finished = self.seasons / "20260101-000000-cheap_recent_openrouter"
+        finished.mkdir()
+        (finished / "scorecard.json").write_text(
+            json.dumps({"ok": True, "roster": "cheap_recent_openrouter", "season_id": "20260101-000000"})
+        )
+        # a later run that died before scoring
+        (self.seasons / "20260202-000000-cheap_recent_openrouter").mkdir()
+        patcher = mock.patch.object(live_season, "SEASONS_DIR", self.seasons)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_latest_report_skips_seasons_without_scorecard(self) -> None:
+        report = live_season.latest_report()
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["season_id"], "20260101-000000")
+
+    def test_latest_report_with_no_scorecards(self) -> None:
+        with mock.patch.object(live_season, "SEASONS_DIR", self.seasons / "missing"):
+            self.assertFalse(live_season.latest_report()["ok"])
+
+    def test_history_includes_scorecard_metadata(self) -> None:
+        season_dir = self.seasons / "20260101-000000-cheap_recent_openrouter"
+        with sqlite3.connect(season_dir / "season.db") as conn:
+            conn.execute("CREATE TABLE StoryEvents (id INTEGER PRIMARY KEY)")
+            conn.execute("INSERT INTO StoryEvents DEFAULT VALUES")
+        fake_card = {"index_version": 2, "game": {"rounds": 1, "winner": None}, "rows": []}
+        with mock.patch("backend.benchmark_scoring.score_season", return_value=fake_card):
+            seasons = api.api_live_season_history()["seasons"]
+        self.assertEqual(len(seasons), 1)
+        self.assertEqual(seasons[0]["roster"], "cheap_recent_openrouter")
+
+    def test_feed_and_narrative_reject_ids_outside_seasons_dir(self) -> None:
+        self.assertIsNone(api.api_live_season_feed(season="../" + self.seasons.name)["season_id"])
+        self.assertFalse(api.api_live_season_narrative("..")["ok"])
 
 
 if __name__ == "__main__":

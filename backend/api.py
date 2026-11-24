@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -106,6 +108,8 @@ class ViewerStateRequest(BaseModel):
 
 
 APP_ROOT = Path(__file__).resolve().parent.parent
+# season directory names are "<timestamp>-<roster>"; reject anything that could leave SEASONS_DIR
+_SEASON_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
 FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST", APP_ROOT / "frontend" / "out"))
 
 app = FastAPI(title="LLM Survivor Turn API")
@@ -312,8 +316,8 @@ def api_live_season_feed(after: int = 0, season: str | None = None) -> dict:
     from .live_season import latest_season_dir, SEASONS_DIR
 
     if season is not None:
-        cand = Path(SEASONS_DIR) / str(season)
-        season_dir = cand if (cand / "season.db").exists() else None
+        cand = Path(SEASONS_DIR) / season
+        season_dir = cand if _SEASON_ID.fullmatch(season) and (cand / "season.db").exists() else None
     else:
         season_dir = latest_season_dir()
     if season_dir is None or not (season_dir / "season.db").exists():
@@ -449,6 +453,8 @@ def api_live_season_narrative(season_id: str) -> dict:
     """Public: per-round written narrative for one season, from recorded events."""
     from .season_narrative import season_narrative
 
+    if not _SEASON_ID.fullmatch(season_id):
+        return {"ok": False, "error": "season not found"}
     try:
         return season_narrative(season_id)
     except FileNotFoundError:
@@ -468,7 +474,8 @@ def api_live_season_scorecard() -> dict:
     report = live_latest_report()
     if not report.get("ok"):
         raise HTTPException(status_code=404, detail=report.get("error") or "no live season recorded")
-    return report
+    # "db" is the season database's absolute path on this host; keep it off the public API
+    return {key: value for key, value in report.items() if key != "db"}
 
 
 @app.get("/api/model-rosters")
@@ -743,24 +750,25 @@ def _resolve_frontend_file(frontend_path: str) -> Path | None:
 
     if candidate.exists() and candidate.is_file():
         return candidate
-
-    fallback = FRONTEND_DIST / "index.html"
-    if fallback.exists():
-        return fallback
     return None
+
+
+def _frontend_response(frontend_path: str) -> FileResponse:
+    candidate = _resolve_frontend_file(frontend_path)
+    if candidate:
+        return FileResponse(candidate)
+    # static export: there is no client-side router to hand unknown paths to
+    not_found = FRONTEND_DIST / "404.html"
+    if not frontend_path.startswith(("api/", "media/")) and not_found.is_file():
+        return FileResponse(not_found, status_code=404)
+    raise HTTPException(status_code=404, detail="Not Found")
 
 
 @app.get("/{frontend_path:path}", include_in_schema=False)
 def serve_frontend(frontend_path: str = ""):
-    candidate = _resolve_frontend_file(frontend_path)
-    if candidate:
-        return FileResponse(candidate)
-    raise HTTPException(status_code=404, detail="Frontend build not found")
+    return _frontend_response(frontend_path)
 
 
 @app.head("/{frontend_path:path}", include_in_schema=False)
 def head_frontend(frontend_path: str = ""):
-    candidate = _resolve_frontend_file(frontend_path)
-    if candidate:
-        return FileResponse(candidate)
-    raise HTTPException(status_code=404, detail="Frontend build not found")
+    return _frontend_response(frontend_path)

@@ -29,7 +29,15 @@ class ApiStaticServingTest(unittest.TestCase):
             self.assertEqual(api._resolve_frontend_file("").name, "index.html")
             self.assertEqual(api._resolve_frontend_file("benchmark").name, "benchmark.html")
             self.assertEqual(api._resolve_frontend_file("arena").name, "index.html")
-            self.assertEqual(api._resolve_frontend_file("unknown-route").name, "index.html")
+
+    def test_unknown_route_is_a_404_not_the_home_page(self) -> None:
+        (self.frontend_dist / "404.html").write_text("<main>Not found</main>", encoding="utf-8")
+        with patch.object(api, "FRONTEND_DIST", self.frontend_dist):
+            self.assertIsNone(api._resolve_frontend_file("unknown-route"))
+            response = api.serve_frontend("unknown-route")
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(Path(response.path).name, "404.html")
+            self.assertEqual(api.serve_frontend("").status_code, 200)
 
     def test_rejects_api_media_and_unsafe_paths(self) -> None:
         with patch.object(api, "FRONTEND_DIST", self.frontend_dist):

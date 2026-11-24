@@ -55,16 +55,19 @@ def latest_season_dir() -> Path | None:
 
 
 def latest_report() -> dict[str, Any]:
-    latest = latest_season_dir()
-    if latest is None:
+    """Scorecard of the newest season that finished. Aborted runs leave a
+    season dir with no scorecard; those must not hide the last real result."""
+    if not SEASONS_DIR.exists():
         return {"ok": False, "error": "no live seasons recorded"}
-    report_path = latest / "scorecard.json"
-    if not report_path.exists():
-        return {"ok": False, "error": "latest season has no scorecard"}
-    try:
-        return json.loads(report_path.read_text())
-    except Exception as exc:
-        return {"ok": False, "error": f"scorecard unreadable: {exc}"}
+    for season_dir in sorted((p for p in SEASONS_DIR.iterdir() if p.is_dir()), reverse=True):
+        report_path = season_dir / "scorecard.json"
+        if not report_path.exists():
+            continue
+        try:
+            return json.loads(report_path.read_text())
+        except Exception as exc:
+            return {"ok": False, "error": f"scorecard unreadable: {exc}"}
+    return {"ok": False, "error": "no live season has a scorecard"}
 
 
 def run_live_season(
