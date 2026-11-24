@@ -10,11 +10,20 @@ type LiveScorecard = {
   error?: string;
   interrupted?: { step: string; model_id: string; reason: string } | null;
   season_id?: string;
+  roster?: string;
+  /** seasons recorded since the report page exists carry their own link */
+  report_url?: string;
+  index_version?: number;
   elapsed_s?: number;
   game?: { rounds?: number; winner?: string | null };
   caps?: { estimated_live_calls?: number; estimated_cost_cents?: number };
   rows?: ScoreRow[];
 };
+
+function reportHref(card: LiveScorecard): string {
+  if (card.report_url) return card.report_url;
+  return card.season_id && card.roster ? `/report/${card.season_id}-${card.roster}` : "/report";
+}
 
 type Budget = { spent_cents: number; per_run_cap_cents: number };
 
@@ -385,8 +394,10 @@ export default function Benchmark() {
           </p>
           <ScoreTable rows={scorecard.rows} />
           <p className="bench-note">
-            Index v2 weights: challenge accuracy 30%, vote participation 20%, strategy 20%, placement 15%, social 15%.{" "}
-            <Link href="/history">Every season, with transcripts</Link>.
+            {/* the report is served by the backend, not by this static export, so it is a plain link */}
+            <a href={reportHref(scorecard)}>Full season report: charts, every vote, cost and the jury</a>.{" "}
+            Index v{scorecard.index_version ?? "-"} weights: challenge accuracy 30%, vote participation 20%, strategy
+            20%, placement 15%, social 15%. <Link href="/history">Every season, with transcripts</Link>.
           </p>
         </section>
       )}

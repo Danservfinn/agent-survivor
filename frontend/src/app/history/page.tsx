@@ -437,6 +437,8 @@ export default function HistoryPage() {
                   ]
                     .filter(Boolean)
                     .join(" | ")}
+                  {" | "}
+                  <a href={`/report/${s.season_id}`}>full report</a>
                 </p>
                 <ScoreTable
                   rows={s.rows ?? []}

@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__REPORT_TITLE__</title>
+<meta name="description" content="After-action report and benchmark results for one LLM Survivor season: scores, votes, challenges, promises and the jury.">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #f1f3f8;
+  --ink: #121a33;
+  --ink-2: #47506a;
+  --muted: #79829a;
+  --line: #e2e5ee;
+  --accent: #2f4fe8;
+  --accent-ink: #ffffff;
+  --good: #0ca30c;
+  --critical: #d03b3b;
+  --warn-bg: #fff6dd;
+  --warn-line: #e8c765;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --shadow: 0 1px 2px rgba(18, 26, 51, .05);
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e1117; --surface: #161a23; --surface-2: #1d222d; --ink: #eceef5; --ink-2: #b8bfd0;
+    --muted: #8690a6; --line: #2a3040; --accent: #7d95ff; --accent-ink: #0e1117;
+    --good: #0ca30c; --critical: #e66767; --warn-bg: #2c2613; --warn-line: #6d5a1c;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1117; --surface: #161a23; --surface-2: #1d222d; --ink: #eceef5; --ink-2: #b8bfd0;
+  --muted: #8690a6; --line: #2a3040; --accent: #7d95ff; --accent-ink: #0e1117;
+  --good: #0ca30c; --critical: #e66767; --warn-bg: #2c2613; --warn-line: #6d5a1c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+button, select, input { font: inherit; color: inherit; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 900px) { .wrap { padding: 0 40px; } }
+.mono { font-family: var(--mono); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.top-in { display: flex; align-items: center; gap: 20px; height: 52px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); flex: none; }
+.top nav { display: flex; gap: 4px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+.top nav a { text-decoration: none; color: var(--ink-2); padding: 6px 10px; border-radius: 999px; font-size: 14px; white-space: nowrap; }
+.top nav a:hover { background: var(--surface-2); color: var(--ink); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-block; }
+.btn:hover { border-color: var(--muted); }
+.btn-solid { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+@media (max-width: 760px) { .top nav { display: none; } .top-in { justify-content: space-between; } }
+
+/* hero */
+.hero { padding: 44px 0 28px; }
+.kicker { font: 12px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
+.hero-grid { display: grid; gap: 20px 56px; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 980px) { .hero-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); } }
+h1 { font: 400 clamp(32px, 5vw, 52px)/1.08 var(--serif); letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+.hero-sub { color: var(--ink-2); font-size: 16px; margin: 0 0 12px; max-width: 62ch; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { font: 12px var(--mono); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 10px; color: var(--ink-2); }
+.banner { margin: 20px 0 0; padding: 12px 16px; border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 10px; font-size: 14px; }
+.banner strong { font-weight: 700; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.card-pad { padding: 20px; }
+
+/* elimination timeline */
+.tl { margin-top: 28px; padding: 20px 24px 18px; }
+.tl-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.tl-label { font: 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+.tl-winner { font: 700 15px var(--mono); color: var(--accent); text-align: right; }
+.tl-scroll { overflow-x: auto; padding-bottom: 4px; }
+.tl-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(104px, 1fr); position: relative; min-width: min-content; }
+.tl-track::before { content: ""; position: absolute; left: 6px; right: 6px; top: 23px; height: 2px; background: var(--accent); }
+.tl-stop { position: relative; padding-right: 10px; }
+.tl-stop .r { font: 11px var(--mono); color: var(--muted); height: 16px; }
+.tl-stop .pt { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); margin: 1px 0 8px; position: relative; }
+.tl-stop.end .pt { background: var(--surface); border: 3px solid var(--good); box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 18%, transparent); }
+.tl-stop .who { font-size: 13px; font-weight: 600; line-height: 1.25; }
+.tl-stop .how { font: 11px var(--mono); color: var(--muted); }
+.updated { font-size: 13px; color: var(--ink-2); margin: 12px 0 0; }
+
+/* takeaway cards */
+.takes { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 28px 0 0; }
+.take { padding: 16px; }
+.pill { display: inline-block; background: var(--surface-2); border-radius: 999px; padding: 4px 12px; font-size: 14px; font-weight: 500; margin-bottom: 12px; }
+.take p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+
+/* sections */
+section.sec { padding: 44px 0 8px; border-top: 1px solid var(--line); margin-top: 44px; }
+.sec-h { display: flex; align-items: baseline; gap: 12px; margin: 0 0 4px; }
+.sec-n { font: 12px var(--mono); color: var(--muted); }
+h2 { font: 700 21px/1.2 var(--sans); letter-spacing: -.01em; margin: 0; }
+.sec-sub { color: var(--ink-2); margin: 0 0 18px; max-width: 70ch; }
+h3 { font: 700 15px/1.3 var(--sans); margin: 0 0 4px; }
+.card-sub { color: var(--ink-2); font-size: 13px; margin: 0 0 14px; max-width: 68ch; }
+.src { font: 11px var(--mono); color: var(--muted); margin: 14px 0 0; }
+.foot { font: 12px/1.6 var(--mono); color: var(--muted); margin: 12px 0 0; }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.search { flex: 1 1 220px; max-width: 420px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.chip { font: 12.5px var(--mono); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 13px; cursor: pointer; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.chip:focus-visible, .btn:focus-visible, .search:focus-visible, th button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips-label { font: 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); margin-right: 4px; }
+
+/* leaderboard */
+.tbl-wrap { overflow-x: auto; }
+table.lb { border-collapse: collapse; width: 100%; font-size: 14px; }
+.lb th, .lb td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.lb thead th { background: var(--surface-2); font-weight: 600; font-size: 12px; line-height: 1.3; color: var(--ink); vertical-align: bottom; white-space: normal; min-width: 84px; }
+.lb thead tr.grp th { font-size: 12px; color: var(--ink-2); border-bottom: none; padding-bottom: 2px; text-align: left; }
+.lb thead tr.grp th + th, .lb thead tr.cols th.gstart, .lb td.gstart { border-left: 1px solid var(--line); }
+.lb th.name, .lb td.name { text-align: left; position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 210px; }
+.lb thead th.name { background: var(--surface-2); }
+.lb th button { all: unset; cursor: pointer; display: inline-flex; gap: 5px; align-items: baseline; }
+.lb th .unit { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+.lb th .arr { color: var(--muted); font-size: 10px; width: 8px; }
+.lb th[aria-sort] .arr { color: var(--accent); }
+.lb tbody tr.row { cursor: pointer; }
+.lb tbody tr.row:hover td { background-color: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+.lb td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.lb td.idx { font-weight: 700; font-size: 15px; }
+.lb tr:last-child td { border-bottom: none; }
+.who { display: flex; align-items: center; gap: 10px; }
+.caret { color: var(--muted); font-size: 10px; width: 10px; transition: transform .15s; }
+tr.open .caret { transform: rotate(90deg); }
+.mono-badge { width: 26px; height: 26px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; font: 700 11px var(--mono); color: var(--ink-2); flex: none; }
+.who .m { font-weight: 600; }
+.who .a { color: var(--muted); font-size: 12.5px; }
+.badge { font: 11px var(--mono); border: 1px solid currentColor; border-radius: 5px; padding: 0 5px; margin-left: 6px; color: var(--good); }
+.lb td.detail { text-align: left; white-space: normal; background: var(--surface-2); padding: 16px 16px 18px 48px; position: static; }
+.detail-grid { display: grid; gap: 18px 32px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 13px; margin: 0; }
+.kv dt { color: var(--ink-2); }
+.kv dd { margin: 0; font-family: var(--mono); text-align: right; }
+table.mini { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+.mini th, .mini td { padding: 4px 8px 4px 0; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.mini th { font-weight: 500; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.yes { color: var(--good); font-weight: 700; }
+.no { color: var(--muted); }
+
+/* insight grid */
+.grid2 { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+.grid2 > * { min-width: 0; }
+@media (max-width: 600px) {
+  .lb th.name, .lb td.name { min-width: 150px; }
+  .lb .mono-badge { display: none; }
+  .bar-row { grid-template-columns: minmax(72px, 34%) 1fr 44px; gap: 8px; }
+  .card-pad { padding: 16px; }
+}
+@media (min-width: 980px) { .grid2 { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); } .span2 { grid-column: 1 / -1; } }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); margin: 0 0 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.bars { display: grid; gap: 9px; }
+.bar-row { display: grid; grid-template-columns: minmax(96px, 168px) 1fr 54px; gap: 12px; align-items: center; font-size: 13px; }
+.bar-row .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-row .val { font-family: var(--mono); text-align: right; font-size: 12.5px; }
+.track { display: flex; gap: 2px; height: 16px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.track span { display: block; height: 100%; min-width: 2px; }
+.track span:last-child { border-radius: 0 4px 4px 0; }
+.track.single span { border-radius: 4px; background: var(--s1); }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+svg text.lbl { font-family: var(--sans); font-size: 12px; font-weight: 600; fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.grid-line { stroke: var(--line); stroke-width: 1; }
+.empty { color: var(--muted); font-size: 13.5px; padding: 18px; border: 1px dashed var(--line); border-radius: 8px; }
+
+/* heat grids */
+.heat-wrap { overflow-x: auto; }
+table.heat { border-collapse: separate; border-spacing: 2px; font-size: 12.5px; }
+.heat th { font-weight: 500; color: var(--ink-2); text-align: left; padding: 0 10px 0 0; white-space: nowrap; }
+.heat thead th { text-align: center; padding: 0 0 4px; font: 11px var(--mono); color: var(--muted); vertical-align: bottom; }
+.heat thead th.vert span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font: 500 12px var(--sans); color: var(--ink-2); max-height: 150px; overflow: hidden; text-overflow: ellipsis; }
+.heat td { width: 40px; min-width: 40px; height: 32px; text-align: center; border-radius: 4px; font: 12px var(--mono); background: var(--surface-2); }
+.heat td.off { background: transparent; }
+.heat td.self { background: repeating-linear-gradient(135deg, var(--surface-2) 0 4px, transparent 4px 8px); }
+.heat td.imm { outline: 2px solid var(--ink); outline-offset: -2px; }
+.heat td.out { box-shadow: inset 0 -3px 0 var(--critical); }
+
+/* rounds */
+details.round { margin-bottom: 12px; }
+details.round > summary, details.acc > summary { list-style: none; cursor: pointer; padding: 15px 20px; display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
+details > summary::-webkit-details-marker { display: none; }
+details.round > summary::before, details.acc > summary::before { content: "▸"; color: var(--muted); font-size: 11px; width: 10px; transition: transform .15s; display: inline-block; }
+details[open] > summary::before { transform: rotate(90deg); }
+.round-t { font-weight: 700; }
+.round-s { color: var(--ink-2); font-size: 14px; }
+.round-m { margin-left: auto; font: 12px var(--mono); color: var(--muted); }
+.round-b { padding: 4px 20px 20px; display: grid; gap: 22px 32px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); border-top: 1px solid var(--line); padding-top: 18px; }
+.sub-l { font: 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.rungs { display: inline-flex; gap: 3px; vertical-align: middle; }
+.rungs i { width: 13px; height: 13px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); display: inline-block; }
+.rungs i.ok { background: var(--s1); border-color: var(--s1); }
+.ch-row { display: grid; grid-template-columns: minmax(90px, 1fr) auto 34px; gap: 10px; align-items: center; font-size: 13px; padding: 3px 0; }
+.ch-row .sc { font-family: var(--mono); text-align: right; }
+.vote { font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.vote:last-child { border-bottom: none; }
+.vote b { font-weight: 600; }
+.alias { color: var(--muted); font-weight: 400; }
+.vote .arrow { color: var(--muted); margin: 0 6px; }
+.vote .why { display: block; color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
+.note { font-size: 13px; margin: 0 0 8px; color: var(--ink-2); }
+.note b { color: var(--ink); font-weight: 600; }
+blockquote { margin: 0 0 10px; padding: 2px 0 2px 12px; border-left: 3px solid var(--line); color: var(--ink-2); font-size: 13px; }
+details.talks { grid-column: 1 / -1; font-size: 13px; }
+details.talks summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.talk { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.talk p { margin: 2px 0; }
+
+/* finale */
+.fin-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 16px; }
+.fin .n { font: 700 34px/1 var(--mono); }
+.fin .nm { font-weight: 700; margin: 2px 0 8px; }
+.fin p { font-size: 13px; color: var(--ink-2); margin: 0; }
+
+details.acc { border-bottom: 1px solid var(--line); }
+details.acc > summary { padding: 13px 0; font-weight: 600; }
+details.acc > div { padding: 0 0 14px 22px; color: var(--ink-2); font-size: 14px; max-width: 80ch; }
+
+footer { margin-top: 56px; border-top: 1px solid var(--line); padding: 28px 0 56px; color: var(--ink-2); font-size: 13px; }
+.cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; padding: 20px 24px; margin-bottom: 24px; }
+.cta p { margin: 0; font-size: 15px; color: var(--ink); max-width: 62ch; }
+
+#tip { position: fixed; z-index: 50; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12.5px; line-height: 1.4; padding: 7px 10px; border-radius: 7px; max-width: 280px; white-space: pre-line; opacity: 0; transition: opacity .08s; }
+#tip.on { opacity: 1; }
+[data-tip] { cursor: default; }
+@media print { .top, .controls, .btn { display: none !important; } body { background: #fff; } details > * { display: block !important; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="tip" role="tooltip"></div>
+<script id="report-data" type="application/json">__REPORT_DATA__</script>
+<script>
+(function () {
+"use strict";
+var D = JSON.parse(document.getElementById("report-data").textContent);
+var S = D.season, M = D.models, NAMES = D.names || {}, ALIAS = D.aliases || {}, LINKS = D.links || {};
+var byId = {}; M.forEach(function (m) { byId[m.agent_id] = m; });
+var COMP = Object.keys(S.weights);
+var COMP_COLOR = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)"];
+var SVGNS = "http://www.w3.org/2000/svg";
+/* ?theme=light or ?theme=dark pins the colors, e.g. for a screenshot; default follows the system */
+var wanted = /[?&]theme=(light|dark)\b/.exec(location.search);
+if (wanted) document.documentElement.setAttribute("data-theme", wanted[1]);
+
+/* every value from the report goes in through textContent or setAttribute, never innerHTML:
+   speeches, vote reasons and model names are model-written text */
+function add(node, kids) {
+  for (var i = 0; i < kids.length; i++) {
+    var k = kids[i];
+    if (k == null || k === false) continue;
+    if (Array.isArray(k)) add(node, k);
+    else node.appendChild(typeof k === "object" ? k : document.createTextNode(String(k)));
+  }
+  return node;
+}
+function mk(ns, tag, attrs, kids) {
+  var node = ns ? document.createElementNS(ns, tag) : document.createElement(tag);
+  for (var key in attrs || {}) {
+    var v = attrs[key];
+    if (v == null || v === false) continue;
+    if (key === "text") node.textContent = v;
+    else if (key.slice(0, 2) === "on") node.addEventListener(key.slice(2), v);
+    else node.setAttribute(key, v === true ? "" : v);
+  }
+  return add(node, kids);
+}
+function h(tag, attrs) { return mk(null, tag, attrs, [].slice.call(arguments, 2)); }
+function s(tag, attrs) { return mk(SVGNS, tag, attrs, [].slice.call(arguments, 2)); }
+
+function nm(id) { return id === "host" ? "Host" : (NAMES[id] || id || "nobody"); }
+function who(id) {
+  var alias = ALIAS[id];
+  return alias ? [nm(id), h("span", { class: "alias", text: " (" + alias + ")" })] : nm(id);
+}
+function f1(x) { return x == null ? "–" : Number(x).toFixed(1); }
+function pct(x) { return x == null ? "–" : Math.round(x * 100) + "%"; }
+function frac(a, b) { return b ? a + "/" + b : "–"; }
+function usd(x) { return x == null ? "–" : "$" + (x >= 1 ? x.toFixed(2) : x >= 0.01 ? x.toFixed(3) : x.toFixed(4)); }
+function initials(name) {
+  var parts = String(name).replace(/[^A-Za-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+  return ((parts[0] || "?")[0] + ((parts[1] || parts[0] || "")[parts[1] ? 0 : 1] || "")).toUpperCase();
+}
+function mix(color, share) { return "color-mix(in srgb, " + color + " " + Math.round(share * 100) + "%, var(--surface-2))"; }
+function sourceLine() { return h("p", { class: "src", text: "Source: LLM Survivor season " + (S.date || S.season_id) + (LINKS.site ? " · " + LINKS.site.replace(/^https?:\/\//, "") : "") }); }
+function section(id, n, title, sub) {
+  return h("section", { class: "sec", id: id },
+    h("div", { class: "sec-h" }, h("span", { class: "sec-n", text: n }), h("h2", { text: title })),
+    sub ? h("p", { class: "sec-sub", text: sub }) : null);
+}
+
+/* ---------- tooltip */
+var tip = document.getElementById("tip");
+document.addEventListener("mousemove", function (e) {
+  var el = e.target.closest ? e.target.closest("[data-tip]") : null;
+  if (!el) { tip.className = ""; return; }
+  tip.textContent = el.getAttribute("data-tip");
+  tip.className = "on";
+  var w = tip.offsetWidth, ht = tip.offsetHeight;
+  var x = Math.min(window.innerWidth - w - 8, Math.max(8, e.clientX + 14));
+  var y = e.clientY + 18 + ht > window.innerHeight ? e.clientY - ht - 10 : e.clientY + 18;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+});
+document.addEventListener("focusin", function (e) {
+  var el = e.target.closest ? e.target.closest("[data-tip]") : null;
+  if (!el) { tip.className = ""; return; }
+  var r = el.getBoundingClientRect();
+  tip.textContent = el.getAttribute("data-tip"); tip.className = "on";
+  tip.style.left = Math.max(8, r.left) + "px"; tip.style.top = (r.bottom + 6) + "px";
+});
+
+/* ---------- hero */
+function hero() {
+  var councils = D.rounds.filter(function (r) { return r.eliminated_id; });
+  var title = S.winner ? S.winner + " won the season." : "Season in progress.";
+  var facts = [S.players + " models", "rounds " + S.first_round + " to " + S.last_round, councils.length + (councils.length === 1 ? " council" : " councils")];
+  if (S.contestant_calls) facts.push(S.contestant_calls + " contestant calls");
+  if (S.run_est_cost_cents) facts.push("about $" + (S.run_est_cost_cents / 100).toFixed(2) + " to run");
+  var social = S.rules === "social-game";
+  var blurb = social
+    ? "Models play one group under neutral names. Each round they solve a five-puzzle ladder for immunity, talk in private, make vote promises and vote one player out. A jury of the players they voted out picks the winner."
+    : "Models compete in challenges for immunity, talk in private and vote one player out each round. A jury of eliminated players picks the winner.";
+  var tags = [S.rules === "social-game" ? "one-group rules" : "pre-November rules", "Survivor Index v" + S.index_version, S.mode === "live" ? "live model calls" : "test run"];
+  if (S.roster) tags.push("roster " + S.roster);
+  if (S.season_seed != null) tags.push("seed " + S.season_seed);
+
+  var stops = councils.map(function (r) {
+    var counts = Object.keys(r.tally).map(function (k) { return r.tally[k]; }).sort(function (a, b) { return b - a; });
+    return h("div", { class: "tl-stop" },
+      h("div", { class: "r", text: "R" + r.round }), h("div", { class: "pt" }),
+      h("div", { class: "who", text: nm(r.eliminated_id) }),
+      h("div", { class: "how", text: counts.length ? "out " + counts.join("-") + (r.revote_tally ? ", revote" : "") : "out" }));
+  });
+  if (S.winner) {
+    var jt = D.finale ? Object.keys(D.finale.tally).map(function (k) { return D.finale.tally[k]; }).sort(function (a, b) { return b - a; }).join("-") : "";
+    stops.push(h("div", { class: "tl-stop end" }, h("div", { class: "r", text: "Final" }), h("div", { class: "pt" }),
+      h("div", { class: "who", text: S.winner }), h("div", { class: "how", text: jt ? "jury " + jt : "winner" })));
+  }
+  return h("header", { class: "hero" },
+    h("p", { class: "kicker", text: "LLM Survivor · Season " + (S.date || S.season_id) }),
+    h("div", { class: "hero-grid" },
+      h("h1", { text: title }),
+      h("div", null,
+        h("p", { class: "hero-sub", text: blurb + " " + facts.join(", ") + "." }),
+        h("div", { class: "tags" }, tags.map(function (t) { return h("span", { class: "tag", text: t }); })))),
+    S.mode !== "live" ? h("div", { class: "banner" }, h("strong", { text: "Test run. " }), "No model was called in this season. Players followed scripted fallback moves, so nothing on this page is a benchmark result.") : null,
+    S.mode === "live" && !S.finished ? h("div", { class: "banner" }, h("strong", { text: S.interrupted ? "Interrupted season. " : "Unfinished season. " }), "This season has no final result. The figures cover only the rounds that were played.") : null,
+    stops.length ? h("div", { class: "card tl" },
+      h("div", { class: "tl-head" }, h("span", { class: "tl-label", text: "Elimination order" }), h("span", { class: "tl-winner", text: S.winner ? "Winner: " + S.winner : "" })),
+      h("div", { class: "tl-scroll" }, h("div", { class: "tl-track" }, stops))) : null,
+    S.recorded_at ? h("p", { class: "updated", text: "Recorded " + S.recorded_at + (S.elapsed_s >= 60 ? " · ran " + Math.round(S.elapsed_s / 60) + " min" : "") }) : null,
+    D.takeaways.length ? h("div", { class: "takes" }, D.takeaways.map(function (t) {
+      return h("div", { class: "card take" }, h("span", { class: "pill", text: t.label }), h("p", { text: t.text }));
+    })) : null);
+}
+
+/* ---------- leaderboard */
+var hasPred = M.some(function (m) { return m.prediction_accuracy != null; });
+var hasProm = M.some(function (m) { return m.promises_made; });
+var hasCost = M.some(function (m) { return m.est_cost_per_round_usd != null; });
+var hasTime = M.some(function (m) { return m.median_response_ms != null; });
+var COLS = [
+  { g: "Result", k: "survivor_index", label: "Survivor Index", unit: "0 to 100", get: function (m) { return m.survivor_index; }, fmt: f1, cls: "idx" },
+  { g: "Result", k: "place", label: "Place", unit: "of " + M.length, get: function (m) { return m.place_known ? m.place : null; }, fmt: String, low: true },
+  { g: "Result", k: "jury", label: "Jury votes", get: function (m) { return m.jury_votes; }, fmt: String },
+  { g: "Challenge", k: "acc", label: "Puzzles right", unit: "share", get: function (m) { return m.challenge_attempts ? m.challenge_accuracy : null; }, fmt: pct, tip: function (m) { return frac(m.challenge_correct, m.challenge_attempts) + " puzzles"; } },
+  { g: "Challenge", k: "imm", label: "Immunity", unit: "wins", get: function (m) { return m.immunity_wins; }, fmt: String },
+  hasTime ? { g: "Challenge", k: "ms", label: "Answer time", unit: "median s", get: function (m) { return m.median_response_ms == null ? null : m.median_response_ms / 1000; }, fmt: f1, low: true } : null,
+  { g: "Votes", k: "with", label: "Voted with outcome", unit: "share of councils", get: function (m) { return m.with_outcome_rate; }, fmt: pct, tip: function (m) { return m.voted_with_outcome + " of " + m.votes_decided + " councils"; } },
+  { g: "Votes", k: "against", label: "Votes against", unit: "season", get: function (m) { return m.votes_received; }, fmt: String, noheat: true },
+  hasPred ? { g: "Votes", k: "pred", label: "Votes predicted", unit: "share right", get: function (m) { return m.prediction_accuracy; }, fmt: pct } : null,
+  hasProm ? { g: "Social", k: "prom", label: "Promises kept", unit: "share", get: function (m) { return m.promises_made ? m.promises_kept / m.promises_made : null; }, fmt: pct, tip: function (m) { return m.promises_kept + " kept, " + m.promises_broken + " broken of " + m.promises_made; } } : null,
+  hasCost ? { g: "Cost", k: "cost", label: "Est. cost", unit: "USD per round", get: function (m) { return m.est_cost_per_round_usd; }, fmt: usd, low: true } : null,
+  { g: "Cost", k: "calls", label: "Calls", unit: "season", get: function (m) { return m.calls || null; }, fmt: String, noheat: true }
+].filter(Boolean);
+var PARTS = COMP.map(function (key) {
+  return { g: "Index parts (points)", k: "p_" + key, label: D.component_labels[key] || key, unit: "max " + Math.round(S.weights[key] * 100), part: true,
+    get: function (m) { return m.points[key]; }, fmt: f1, tip: function (m) { return pct(m.components[key]) + " of the " + Math.round(S.weights[key] * 100) + " points"; } };
+});
+var lbState = { sort: "survivor_index", dir: -1, parts: false, ids: false, q: "", open: {} };
+
+function leaderboard() {
+  var sec = section("leaderboard", "01", "Leaderboard", "One row per model, sortable by any column. Click a row for its round-by-round record. Shading marks the top three in a column.");
+  var wrap = h("div", { class: "card tbl-wrap" });
+  function draw() {
+    var cols = lbState.parts ? COLS.slice(0, 3).concat(PARTS, COLS.slice(3)) : COLS;
+    var rows = M.filter(function (m) { return (m.model + " " + (m.alias || "") + " " + (m.org || "") + " " + (m.model_id || "")).toLowerCase().indexOf(lbState.q) >= 0; });
+    var col = cols.filter(function (c) { return c.k === lbState.sort; })[0] || cols[0];
+    rows.sort(function (a, b) {
+      var x = col.get(a), y = col.get(b);
+      if (x == null && y == null) return a.rank - b.rank;
+      if (x == null) return 1; if (y == null) return -1;
+      return (x - y) * lbState.dir || a.rank - b.rank;
+    });
+    var top = {};
+    cols.forEach(function (c) {
+      if (c.noheat) return;
+      var vals = M.map(c.get).filter(function (v) { return v != null; });
+      var uniq = vals.filter(function (v, i) { return vals.indexOf(v) === i; }).sort(function (a, b) { return c.low ? a - b : b - a; });
+      top[c.k] = uniq.slice(0, Math.min(3, uniq.length - 1));
+    });
+    var groups = [];
+    cols.forEach(function (c) { var last = groups[groups.length - 1]; if (last && last.g === c.g) last.n++; else groups.push({ g: c.g, n: 1 }); });
+    var gstart = {}; var seen = "";
+    cols.forEach(function (c) { if (c.g !== seen) { gstart[c.k] = true; seen = c.g; } });
+
+    var thead = h("thead", null,
+      h("tr", { class: "grp" }, h("th", { class: "name" }), groups.map(function (g) { return h("th", { colspan: g.n, text: g.g }); })),
+      h("tr", { class: "cols" }, h("th", { class: "name", text: "Model" }), cols.map(function (c) {
+        var active = lbState.sort === c.k;
+        return h("th", { class: gstart[c.k] ? "gstart" : null, "aria-sort": active ? (lbState.dir < 0 ? "descending" : "ascending") : null },
+          h("button", { type: "button", onclick: function () {
+            if (active) lbState.dir = -lbState.dir; else { lbState.sort = c.k; lbState.dir = c.low ? 1 : -1; }
+            draw();
+          } }, h("span", null, c.label, c.unit ? h("span", { class: "unit", text: c.unit }) : null), h("span", { class: "arr", text: active ? (lbState.dir < 0 ? "▼" : "▲") : "↕" })));
+      })));
+    var tbody = h("tbody");
+    rows.forEach(function (m) {
+      var open = !!lbState.open[m.agent_id];
+      tbody.appendChild(h("tr", { class: "row" + (open ? " open" : ""), onclick: function () { lbState.open[m.agent_id] = !open; draw(); } },
+        h("td", { class: "name" }, h("div", { class: "who" },
+          h("span", { class: "caret", text: "▸" }),
+          h("span", { class: "mono-badge", text: initials(m.org || m.model), "data-tip": m.org || null }),
+          h("span", null,
+            h("span", { class: "m", text: m.model }), m.is_winner ? h("span", { class: "badge", text: "winner" }) : null,
+            h("div", { class: "a", text: (lbState.ids && m.model_id ? m.model_id + " · " : "") + (m.alias ? "played as " + m.alias + " · " : "") + m.fate })))),
+        cols.map(function (c) {
+          var v = c.get(m), rank = v == null || !top[c.k] ? -1 : top[c.k].indexOf(v);
+          var shade = rank < 0 ? null : "background-color: color-mix(in srgb, var(--accent) " + [24, 15, 8][rank] + "%, transparent)";
+          return h("td", { class: "num" + (c.cls ? " " + c.cls : "") + (gstart[c.k] ? " gstart" : ""), style: shade, "data-tip": v != null && c.tip ? c.tip(m) : null, text: v == null ? "–" : c.fmt(v) });
+        })));
+      if (open) tbody.appendChild(h("tr", null, h("td", { class: "detail", colspan: cols.length + 1 }, modelDetail(m))));
+    });
+    if (!rows.length) tbody.appendChild(h("tr", null, h("td", { class: "name", colspan: cols.length + 1, text: "No model matches that filter." })));
+    wrap.textContent = "";
+    wrap.appendChild(h("table", { class: "lb" }, thead, tbody));
+  }
+  function toggle(label, key) {
+    var b = h("button", { class: "chip", type: "button", "aria-pressed": "false", text: label, onclick: function () {
+      lbState[key] = !lbState[key]; b.setAttribute("aria-pressed", String(lbState[key])); draw();
+    } });
+    return b;
+  }
+  var search = h("input", { class: "search", type: "search", placeholder: "Filter models, e.g. Gemma, Google", "aria-label": "Filter models", oninput: function () { lbState.q = search.value.trim().toLowerCase(); draw(); } });
+  add(sec, [h("div", { class: "controls" }, search, toggle("Index parts", "parts"), toggle("Model ids", "ids")), wrap,
+    h("p", { class: "foot", text: "// Survivor Index v" + S.index_version + " = " + COMP.map(function (k) { return (D.component_labels[k] || k).toLowerCase() + " ×" + Math.round(S.weights[k] * 100); }).join(" + ") + " · shading = top 3 per column · cost = recorded calls × token budget × list price" })]);
+  draw();
+  return sec;
+}
+
+function modelDetail(m) {
+  var diff = Object.keys(m.accuracy_by_difficulty || {});
+  var order = ["easy", "medium", "hard", "frontier"];
+  diff.sort(function (a, b) { return (order.indexOf(a) + 9) % 9 - (order.indexOf(b) + 9) % 9; });
+  var facts = [["Result", m.fate], ["Rounds played", m.rounds_played]];
+  diff.forEach(function (d) { var v = m.accuracy_by_difficulty[d]; facts.push([d[0].toUpperCase() + d.slice(1) + " puzzles", v[0] + "/" + v[1]]); });
+  facts.push(["Votes survived", m.votes_survived + " of " + m.votes_received]);
+  if (m.boot_calls_of) facts.push(["Named who would leave", m.boot_calls + " of " + m.boot_calls_of + " rounds"]);
+  if (m.mean_plan_confidence != null) facts.push(["Stated confidence, mean", pct(m.mean_plan_confidence)]);
+  if (m.promises_made) facts.push(["Promises kept / broken", m.promises_kept + " / " + m.promises_broken]);
+  if (m.lied_to) facts.push(["Broken promises received", m.lied_to]);
+  if (m.idols_given || m.idols_received || m.idols_played) facts.push(["Idols given / received / played", m.idols_given + " / " + m.idols_received + " / " + m.idols_played]);
+  if (m.est_cost_usd != null) facts.push(["Est. cost, season", usd(m.est_cost_usd)]);
+  if (m.model_id) facts.push(["Model id", m.model_id]);
+  var dl = h("dl", { class: "kv" });
+  facts.forEach(function (f) { add(dl, [h("dt", { text: f[0] }), h("dd", { text: String(f[1]) })]); });
+  var tbl = h("table", { class: "mini" }, h("thead", null, h("tr", null, ["Round", "Puzzles", "Voted for", "With outcome", "Votes against"].map(function (t) { return h("th", { text: t }); }))),
+    h("tbody", null, m.per_round.map(function (r) {
+      return h("tr", null,
+        h("td", { class: "num", text: "R" + r.round }),
+        h("td", { class: "num", text: (r.challenge_of ? r.challenge_correct + "/" + r.challenge_of : "–") + (r.immune ? " · immune" : "") }),
+        h("td", { text: r.voted_id ? nm(r.voted_id) : "–" }),
+        h("td", { class: r.with_outcome ? "yes" : "no", text: r.voted_id ? (r.with_outcome ? "yes" : "no") : "–" }),
+        h("td", { class: "num", text: r.votes_against + (r.eliminated ? " · out" : "") }));
+    })));
+  return h("div", { class: "detail-grid" }, dl, h("div", { style: "overflow-x:auto" }, tbl));
+}
+
+/* ---------- insights */
+function composition() {
+  var card = h("div", { class: "card card-pad" }, h("h3", { text: "What each index is made of" }),
+    h("p", { class: "card-sub", text: "Points earned in each of the five parts of the Survivor Index. The bar's full width is 100." }),
+    h("div", { class: "legend" }, COMP.map(function (k, i) { return h("span", null, h("i", { style: "background:" + COMP_COLOR[i] }), (D.component_labels[k] || k) + " (max " + Math.round(S.weights[k] * 100) + ")"); })));
+  var bars = h("div", { class: "bars" });
+  M.forEach(function (m) {
+    bars.appendChild(h("div", { class: "bar-row" }, h("span", { class: "lab", text: m.model, title: m.model }),
+      h("div", { class: "track" }, COMP.map(function (k, i) {
+        var pts = m.points[k];
+        return pts > 0 ? h("span", { style: "width:" + pts + "%;background:" + COMP_COLOR[i], tabindex: "0", "data-tip": m.model + "\n" + (D.component_labels[k] || k) + ": " + f1(pts) + " of " + Math.round(S.weights[k] * 100) + " points" }) : null;
+      })), h("span", { class: "val", text: f1(m.survivor_index) })));
+  });
+  return add(card, [bars, sourceLine()]);
+}
+
+function ranked(title, sub, get, fmt, lowFirst) {
+  var rows = M.filter(function (m) { return get(m) != null; }).sort(function (a, b) { return lowFirst ? get(a) - get(b) : get(b) - get(a); });
+  var card = h("div", { class: "card card-pad" }, h("h3", { text: title }), h("p", { class: "card-sub", text: sub }));
+  if (!rows.length) return add(card, [h("div", { class: "empty", text: "No data recorded for this season." })]);
+  var max = Math.max.apply(null, rows.map(get)) || 1;
+  var bars = h("div", { class: "bars" });
+  rows.forEach(function (m) {
+    bars.appendChild(h("div", { class: "bar-row" }, h("span", { class: "lab", text: m.model, title: m.model }),
+      h("div", { class: "track single" }, h("span", { style: "width:" + Math.max(1.5, get(m) / max * 100) + "%", tabindex: "0", "data-tip": m.model + "\n" + fmt(get(m)) + (m.calls ? "\n" + m.calls + " calls over " + m.rounds_played + " rounds" : "") })),
+      h("span", { class: "val", text: fmt(get(m)) })));
+  });
+  return add(card, [bars, sourceLine()]);
+}
+
+function scatter() {
+  var card = h("div", { class: "card card-pad" }, h("h3", { text: "Index against cost" }),
+    h("p", { class: "card-sub", text: "Survivor Index against estimated cost per round, log scale. The dashed line is the value frontier: the best index available at each cost." }));
+  var pts = M.filter(function (m) { return m.est_cost_per_round_usd > 0; });
+  if (pts.length < 2) return add(card, [h("div", { class: "empty", text: "Not enough priced models in this season to plot cost. Costs appear when the season used live calls and the models have a list price." })]);
+  var box = h("div"); add(card, [box, sourceLine()]);
+  function draw() {
+    var W = Math.max(320, box.clientWidth || 600), H = Math.round(Math.min(420, Math.max(300, W * 0.62)));
+    var L = 44, R = 18, T = 14, B = 40;
+    var xs = pts.map(function (m) { return Math.log10(m.est_cost_per_round_usd); });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs); if (x1 - x0 < 0.3) { x0 -= 0.2; x1 += 0.2; }
+    var padx = (x1 - x0) * 0.08; x0 -= padx; x1 += padx;
+    var ys = pts.map(function (m) { return m.survivor_index; });
+    var y0 = Math.floor((Math.min.apply(null, ys) - 4) / 10) * 10, y1 = Math.ceil((Math.max.apply(null, ys) + 4) / 10) * 10;
+    function X(v) { return L + (Math.log10(v) - x0) / (x1 - x0) * (W - L - R); }
+    function Y(v) { return T + (1 - (v - y0) / (y1 - y0)) * (H - T - B); }
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Survivor Index against estimated cost per round" });
+    for (var y = y0; y <= y1; y += 10) add(svg, [s("line", { class: "grid-line", x1: L, x2: W - R, y1: Y(y), y2: Y(y) }), s("text", { x: L - 8, y: Y(y) + 4, "text-anchor": "end", text: y })]);
+    var ticks = [];
+    for (var e = Math.floor(x0); e <= Math.ceil(x1); e++) [1, 2, 5].forEach(function (k) { var v = k * Math.pow(10, e); if (Math.log10(v) >= x0 && Math.log10(v) <= x1) ticks.push(v); });
+    ticks.forEach(function (v) { add(svg, [s("line", { class: "grid-line", x1: X(v), x2: X(v), y1: T, y2: H - B }), s("text", { x: X(v), y: H - B + 16, "text-anchor": "middle", text: usd(v) })]); });
+    add(svg, [s("text", { x: (L + W - R) / 2, y: H - 4, "text-anchor": "middle", text: "Est. cost per round (log) →" }), s("text", { x: 12, y: T + 4, transform: "rotate(-90 12 " + (T + 4) + ")", "text-anchor": "end", text: "Survivor Index ↑" })]);
+    var sorted = pts.slice().sort(function (a, b) { return a.est_cost_per_round_usd - b.est_cost_per_round_usd || b.survivor_index - a.survivor_index; });
+    var best = -1, frontier = [];
+    sorted.forEach(function (m) { if (m.survivor_index > best) { best = m.survivor_index; frontier.push(m); } });
+    if (frontier.length > 1) svg.appendChild(s("polyline", { fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-dasharray": "5 5", points: frontier.map(function (m) { return X(m.est_cost_per_round_usd) + "," + Y(m.survivor_index); }).join(" ") }));
+    var placed = [];
+    function free(b) { return b.x >= L && b.x + b.w <= W - 2 && b.y >= T && b.y + b.h <= H - B && !placed.some(function (p) { return b.x < p.x + p.w && b.x + b.w > p.x && b.y < p.y + p.h && b.y + b.h > p.y; }); }
+    pts.forEach(function (m) { placed.push({ x: X(m.est_cost_per_round_usd) - 8, y: Y(m.survivor_index) - 8, w: 16, h: 16 }); });
+    pts.slice().sort(function (a, b) { return b.survivor_index - a.survivor_index; }).forEach(function (m) {
+      var cx = X(m.est_cost_per_round_usd), cy = Y(m.survivor_index), w = m.model.length * 6.6 + 4;
+      var onFrontier = frontier.indexOf(m) >= 0;
+      svg.appendChild(s("circle", { cx: cx, cy: cy, r: 6, fill: onFrontier ? "var(--accent)" : "var(--muted)", stroke: "var(--surface)", "stroke-width": 2, tabindex: "0",
+        "data-tip": m.model + "\nIndex " + f1(m.survivor_index) + "\n" + usd(m.est_cost_per_round_usd) + " a round, " + usd(m.est_cost_usd) + " for the season" + (onFrontier ? "\nOn the value frontier" : "") }));
+      var opts = [{ x: cx + 10, y: cy - 8 }, { x: cx - 10 - w, y: cy - 8 }, { x: cx - w / 2, y: cy - 25 }, { x: cx - w / 2, y: cy + 9 }];
+      for (var i = 0; i < opts.length; i++) {
+        var b = { x: opts[i].x, y: opts[i].y, w: w, h: 16 };
+        if (free(b)) { placed.push(b); svg.appendChild(s("text", { class: "lbl", x: b.x + 2, y: b.y + 12, text: m.model })); break; }
+      }
+    });
+    box.textContent = ""; box.appendChild(svg);
+  }
+  onResize(box, draw);
+  return card;
+}
+
+function radar() {
+  var chosen = M.slice(0, Math.min(2, M.length)).map(function (m) { return m.agent_id; });
+  var colors = ["var(--s1)", "var(--s2)", "var(--s3)"];
+  var card = h("div", { class: "card card-pad" }, h("h3", { text: "Profile" }),
+    h("p", { class: "card-sub", text: "Compare up to three models across the five parts of the index. Each axis runs from 0 to the full score for that part." }));
+  var box = h("div", { style: "max-width:380px;margin:0 auto" }), ctl = h("div", { class: "controls", style: "justify-content:center;margin-top:10px" });
+  function draw() {
+    var size = 380, c = size / 2, rad = 126, n = COMP.length;
+    var svg = s("svg", { viewBox: "0 0 " + size + " " + size, role: "img", "aria-label": "Index profile comparison" });
+    function pt(i, v) { var a = -Math.PI / 2 + i * 2 * Math.PI / n; return [c + Math.cos(a) * rad * v, c + Math.sin(a) * rad * v]; }
+    [0.25, 0.5, 0.75, 1].forEach(function (ring) { svg.appendChild(s("polygon", { fill: "none", class: "grid-line", points: COMP.map(function (_, i) { return pt(i, ring).join(","); }).join(" ") })); });
+    COMP.forEach(function (k, i) {
+      var end = pt(i, 1), lab = pt(i, 1.2);
+      add(svg, [s("line", { class: "grid-line", x1: c, y1: c, x2: end[0], y2: end[1] }), s("text", { x: lab[0], y: lab[1] + 4, "text-anchor": "middle", text: D.component_labels[k] || k })]);
+    });
+    chosen.forEach(function (id) {
+      var m = byId[id], col = colors[slotOf[id]];
+      svg.appendChild(s("polygon", { fill: col, "fill-opacity": .12, stroke: col, "stroke-width": 2, "stroke-linejoin": "round", points: COMP.map(function (k, i) { return pt(i, m.components[k] || 0).join(","); }).join(" ") }));
+      COMP.forEach(function (k, i) { var p = pt(i, m.components[k] || 0); svg.appendChild(s("circle", { cx: p[0], cy: p[1], r: 4, fill: col, stroke: "var(--surface)", "stroke-width": 2, tabindex: "0", "data-tip": m.model + "\n" + (D.component_labels[k] || k) + ": " + pct(m.components[k]) })); });
+    });
+    box.textContent = ""; box.appendChild(svg);
+    ctl.textContent = "";
+    chosen.forEach(function (id) {
+      ctl.appendChild(h("button", { class: "chip", type: "button", "aria-label": "Remove " + byId[id].model, onclick: function () { chosen = chosen.filter(function (x) { return x !== id; }); delete slotOf[id]; draw(); } },
+        h("i", { style: "display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:" + colors[slotOf[id]] }), byId[id].model + " ×"));
+    });
+    if (chosen.length < 3) {
+      var sel = h("select", { class: "chip", "aria-label": "Add a model to compare", onchange: function () {
+        if (!sel.value) return;
+        slotOf[sel.value] = [0, 1, 2].filter(function (i) { return !chosen.some(function (id) { return slotOf[id] === i; }); })[0];
+        chosen.push(sel.value); draw();
+      } }, h("option", { value: "", text: "+ Add model" }), M.filter(function (m) { return chosen.indexOf(m.agent_id) < 0; }).map(function (m) { return h("option", { value: m.agent_id, text: m.model + " · " + f1(m.survivor_index) }); }));
+      ctl.appendChild(sel);
+    }
+  }
+  var slotOf = {}; chosen.forEach(function (id, i) { slotOf[id] = i; });
+  draw();
+  return add(card, [box, ctl, sourceLine()]);
+}
+
+function ladder() {
+  var rounds = D.rounds.filter(function (r) { return r.challenge; });
+  var card = h("div", { class: "card card-pad" }, h("h3", { text: "Challenge record" }),
+    h("p", { class: "card-sub", text: "Puzzles answered right in each round's challenge. A dark outline marks the immunity winner; a red underline marks the round a model was voted out." }));
+  if (!rounds.length) return add(card, [h("div", { class: "empty", text: "No challenge was recorded." })]);
+  var order = M.slice().sort(function (a, b) { return a.place - b.place; });
+  var table = h("table", { class: "heat" }, h("thead", null, h("tr", null, h("th"), rounds.map(function (r) { return h("th", { text: "R" + r.round }); }), h("th", { text: "all" }))));
+  var tb = h("tbody");
+  order.forEach(function (m) {
+    var tr = h("tr", null, h("th", { text: m.model }));
+    rounds.forEach(function (r) {
+      var st = r.challenge.standings.filter(function (x) { return x.agent_id === m.agent_id; })[0];
+      if (!st) { tr.appendChild(h("td", { class: "off" })); return; }
+      var share = st.of ? st.correct / st.of : 0;
+      var imm = r.challenge.immunity_ids.indexOf(m.agent_id) >= 0, out = r.eliminated_id === m.agent_id;
+      tr.appendChild(h("td", { class: (imm ? "imm " : "") + (out ? "out" : ""), tabindex: "0", style: "background:" + mix("var(--s1)", share * 0.9) + (share > 0.55 ? ";color:#fff" : ""),
+        "data-tip": m.model + ", round " + r.round + "\n" + st.correct + " of " + st.of + " right" + (st.sudden_death ? "\nSudden death: " + st.sudden_death.filter(Boolean).length + " of " + st.sudden_death.length : "") + (imm ? "\nWon immunity" : "") + (out ? "\nVoted out this round" : ""),
+        text: st.of > 1 ? st.correct : (st.correct ? "✓" : "·") }));
+    });
+    tr.appendChild(h("td", { class: "off num", style: "font-weight:700", text: frac(m.challenge_correct, m.challenge_attempts) }));
+    tb.appendChild(tr);
+  });
+  table.appendChild(tb);
+  return add(card, [h("div", { class: "heat-wrap" }, table), sourceLine()]);
+}
+
+function voteMap() {
+  var VM = D.vote_matrices, mode = "targeted";
+  var card = h("div", { class: "card card-pad" }, h("h3", { text: "Vote map" }));
+  var sub = h("p", { class: "card-sub" }), body = h("div", { class: "heat-wrap" });
+  function draw() {
+    sub.textContent = mode === "targeted"
+      ? "How many votes each model (row) cast against each other model (column) over the season, revotes included."
+      : "How often two models voted for the same player, out of the councils where both voted. High shares point to a voting bloc.";
+    var table = h("table", { class: "heat" }, h("thead", null, h("tr", null, h("th"), VM.order.map(function (id) { return h("th", { class: "vert" }, h("span", { text: nm(id) })); }))));
+    var tb = h("tbody");
+    var max = 1; VM.order.forEach(function (a) { VM.order.forEach(function (b) { max = Math.max(max, VM.targeted[a][b]); }); });
+    VM.order.forEach(function (a) {
+      var tr = h("tr", null, h("th", { text: nm(a) }));
+      VM.order.forEach(function (b) {
+        if (a === b) { tr.appendChild(h("td", { class: "self" })); return; }
+        if (mode === "targeted") {
+          var n = VM.targeted[a][b];
+          tr.appendChild(h("td", { tabindex: n ? "0" : null, style: n ? "background:" + mix("var(--s1)", 0.25 + 0.65 * n / max) + (n / max > 0.5 ? ";color:#fff" : "") : null, "data-tip": n ? nm(a) + " voted for " + nm(b) + " " + n + (n === 1 ? " time" : " times") : null, text: n || "" }));
+        } else {
+          var sh = VM.shared_rounds[a][b], tg = VM.together[a][b];
+          if (!sh) { tr.appendChild(h("td", { class: "off" })); return; }
+          tr.appendChild(h("td", { tabindex: "0", style: "background:" + mix("var(--s1)", 0.9 * tg / sh) + (tg / sh > 0.6 ? ";color:#fff" : ""), "data-tip": nm(a) + " and " + nm(b) + "\nvoted the same way in " + tg + " of " + sh + " councils", text: tg + "/" + sh }));
+        }
+      });
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb); body.textContent = ""; body.appendChild(table);
+  }
+  var tabs = h("div", { class: "controls" });
+  [["targeted", "Who voted for whom"], ["together", "Who voted together"]].forEach(function (t) {
+    tabs.appendChild(h("button", { class: "chip", type: "button", "aria-pressed": String(t[0] === mode), text: t[1], onclick: function (e) {
+      mode = t[0]; [].forEach.call(tabs.children, function (b) { b.setAttribute("aria-pressed", String(b === e.currentTarget)); }); draw();
+    } }));
+  });
+  draw();
+  return add(card, [tabs, sub, body, sourceLine()]);
+}
+
+function insights() {
+  var sec = section("insights", "02", "Insights", "Six views of the same season: where each score came from, what it cost, how the puzzles went and who voted with whom.");
+  var grid = h("div", { class: "grid2" }, composition(), radar(), scatter(),
+    hasCost ? ranked("Cost, ranked", "Estimated cost per round played, cheapest first. Hover for calls.", function (m) { return m.est_cost_per_round_usd; }, usd, true)
+            : ranked("Votes against, ranked", "Votes cast against each model over the season.", function (m) { return m.votes_received; }, String, false),
+    ladder(), voteMap());
+  return add(sec, [grid]);
+}
+
+/* ---------- rounds */
+function roundCard(r, open) {
+  var counts = Object.keys(r.tally).sort(function (a, b) { return r.tally[b] - r.tally[a]; });
+  var line = r.eliminated_id ? nm(r.eliminated_id) + " voted out" + (counts.length ? " " + counts.map(function (k) { return r.tally[k]; }).join("-") : "") : "no elimination";
+  var imm = r.challenge && r.challenge.immunity_ids.length ? "Immunity: " + r.challenge.immunity_ids.map(nm).join(", ") : (r.challenge ? "No immunity" : "");
+  var body = h("div", { class: "round-b" });
+
+  if (r.challenge) {
+    var ch = h("div", null, h("p", { class: "sub-l", text: r.challenge.type === "ladder" ? "Challenge · five-puzzle ladder" : "Challenge" }));
+    r.challenge.standings.forEach(function (st) {
+      var immune = r.challenge.immunity_ids.indexOf(st.agent_id) >= 0;
+      ch.appendChild(h("div", { class: "ch-row" }, h("span", null, who(st.agent_id), immune ? h("span", { class: "badge", text: "immune" }) : null),
+        st.rungs.length > 1 ? h("span", { class: "rungs", "aria-hidden": "true" }, st.rungs.map(function (ok, i) { return h("i", { class: ok ? "ok" : null, "data-tip": "Puzzle " + (i + 1) + (r.challenge.difficulties[i] ? " (" + r.challenge.difficulties[i] + ")" : "") + ": " + (ok ? "right" : "wrong") }); })) : h("span"),
+        h("span", { class: "sc", text: st.correct + "/" + st.of })));
+    });
+    if (r.challenge.standings.some(function (st) { return st.sudden_death; })) ch.appendChild(h("p", { class: "note", style: "margin-top:8px", text: "Tied at the top, so the leaders played a five-puzzle sudden death." }));
+    body.appendChild(ch);
+  }
+
+  var vt = h("div", null, h("p", { class: "sub-l", text: "Votes" }));
+  if (!r.votes.length) vt.appendChild(h("p", { class: "note", text: "No votes recorded." }));
+  r.votes.forEach(function (v) {
+    var right = r.eliminated_id && v.target_id === r.eliminated_id;
+    vt.appendChild(h("div", { class: "vote" }, h("b", null, who(v.voter_id)), h("span", { class: "arrow", text: v.revote ? "→ (revote)" : "→" }),
+      h("b", { class: right ? "yes" : null }, who(v.target_id)),
+      v.played_idol ? h("span", { class: "badge", text: "played idol" }) : null,
+      v.predicted_of ? h("span", { class: "num", style: "color:var(--muted);font-size:12px;margin-left:8px", text: "predicted " + v.predicted_right + "/" + v.predicted_of }) : null,
+      v.reason ? h("span", { class: "why", text: v.reason }) : null));
+  });
+  body.appendChild(vt);
+
+  var notes = h("div", null, h("p", { class: "sub-l", text: "What happened" }));
+  if (r.idol) notes.appendChild(h("p", { class: "note" }, r.idol.recipient_id ? [h("b", null, who(r.idol.giver_id)), " gave a hidden idol to ", h("b", null, who(r.idol.recipient_id)), "."] : [h("b", null, who(r.idol.giver_id)), " won the idol and gave it to nobody."]));
+  if (r.idols_played && r.idols_played.length) notes.appendChild(h("p", { class: "note" }, h("b", { text: r.idols_played.map(nm).join(", ") }), " played an idol; the votes against them did not count."));
+  if (r.revote_tally) notes.appendChild(h("p", { class: "note", text: "First ballot tied. Revote: " + Object.keys(r.revote_tally).map(function (k) { return nm(k) + " " + r.revote_tally[k]; }).join(", ") + "." }));
+  if (r.promises.length) {
+    var kept = r.promises.filter(function (p) { return p.status === "kept"; }).length, broken = r.promises.filter(function (p) { return p.status === "broken"; });
+    var unclear = r.promises.filter(function (p) { return p.status === "unclear"; }).length;
+    notes.appendChild(h("p", { class: "note", text: (r.promises.length - unclear) + " vote promises: " + kept + " kept, " + broken.length + " broken." + (unclear ? " " + unclear + " more named the listener as the vote target and are not counted as promises." : "") }));
+    broken.forEach(function (p) { notes.appendChild(h("p", { class: "note" }, h("b", { text: nm(p.by_id) }), " promised " + nm(p.to_id) + " a vote for " + nm(p.target_id) + ", then voted for ", h("b", { text: nm(p.actual_id) }), ".")); });
+  }
+  var called = r.plans.filter(function (p) { return p.expected_out_id; });
+  if (called.length) notes.appendChild(h("p", { class: "note", text: called.filter(function (p) { return p.called_it; }).length + " of " + called.length + " players named the right player to leave in their private plan." }));
+  if (r.exit_words) add(notes, [h("p", { class: "sub-l", style: "margin-top:14px", text: "Last words · " + nm(r.eliminated_id) + (ALIAS[r.eliminated_id] ? " (" + ALIAS[r.eliminated_id] + ")" : "") }), h("blockquote", { text: r.exit_words })]);
+  if (notes.children.length > 1) body.appendChild(notes);
+
+  if (r.talks.length) {
+    var talks = h("details", { class: "talks" }, h("summary", { text: "Private talks (" + r.talks.length + ")" }));
+    r.talks.forEach(function (t) {
+      talks.appendChild(h("div", { class: "talk" }, t.lines.map(function (l) { return h("p", null, h("b", null, who(l.agent_id), ": "), l.text); })));
+    });
+    body.appendChild(talks);
+  }
+  return h("details", { class: "card round", open: open },
+    h("summary", null, h("span", { class: "round-t", text: "Round " + r.round }), h("span", { class: "round-s", text: line }), h("span", { class: "round-m", text: r.in_play.length + " players" + (imm ? " · " + imm : "") })), body);
+}
+function rounds() {
+  var sec = section("rounds", "03", "Round by round", "The after-action record: each round's challenge, every vote with the reason the model gave, promises, idols and the last words of the player who left."
+    + (Object.keys(ALIAS).length ? " Players knew each other only by the names in brackets, so their own words use those names." : ""));
+  if (!D.rounds.length) return add(sec, [h("div", { class: "empty", text: "No round has been played yet." })]);
+  var all = false;
+  var btn = h("button", { class: "chip", type: "button", text: "Open all rounds", onclick: function () {
+    all = !all; btn.textContent = all ? "Close all rounds" : "Open all rounds";
+    [].forEach.call(sec.querySelectorAll("details.round"), function (d) { d.open = all; });
+  } });
+  return add(sec, [h("div", { class: "controls" }, btn), D.rounds.map(function (r, i) { return roundCard(r, i === 0); })]);
+}
+
+/* ---------- finale */
+function finale() {
+  var F = D.finale;
+  var sec = section("finale", "04", "Finale", "The finalists' closing pitches and how each juror voted.");
+  if (!F) return add(sec, [h("div", { class: "empty", text: "This season has not reached a jury vote." })]);
+  var pitchOf = {}; F.pitches.forEach(function (p) { pitchOf[p.agent_id] = p.text; });
+  var cards = h("div", { class: "fin-grid" }, F.finalist_ids.map(function (id) {
+    return h("div", { class: "card card-pad fin" }, h("div", { class: "n", text: F.tally[id] || 0 }),
+      h("div", { class: "nm" }, who(id), id === F.winner_id ? h("span", { class: "badge", text: "winner" }) : null),
+      h("p", { text: pitchOf[id] || "No pitch recorded." }));
+  }));
+  var votes = h("div", { class: "card card-pad" }, h("h3", { text: "Jury votes" }), h("p", { class: "card-sub", text: "Each juror is a player voted out earlier in the season." }),
+    F.jury.map(function (j) { return h("div", { class: "vote" }, h("b", null, who(j.juror_id)), h("span", { class: "arrow", text: "→" }), h("b", { class: j.finalist_id === F.winner_id ? "yes" : null }, who(j.finalist_id)), j.reason ? h("span", { class: "why", text: j.reason }) : null); }));
+  return add(sec, [cards, votes]);
+}
+
+/* ---------- cross-season */
+function allSeasons() {
+  var C = D.cross_season;
+  var rulesName = C.rules === "social-game" ? "the one-group rules (since 2026-11-24)" : "the rules before 2026-11-24";
+  var sec = section("seasons", "05", "All seasons", "Every finished live season played under " + rulesName + ", totalled by model. Seasons under other rules are scored differently and are left out.");
+  if (C.season_count < 2) return add(sec, [h("div", { class: "empty", text: C.season_count === 1 ? "One finished live season exists under these rules so far. Totals across seasons appear here from the second season on." : "No finished live season exists under these rules yet. Totals across seasons appear here once there are two." })]);
+  var top = Math.max.apply(null, C.models.map(function (m) { return m.max_index; }));
+  var table = h("table", { class: "lb" }, h("thead", null, h("tr", { class: "cols" }, h("th", { class: "name", text: "Model" }),
+    ["Mean index", "Range", "Seasons", "Wins", "Finals", "Mean place", "Best place", "Puzzles right"].map(function (t, i) { return h("th", { style: i === 1 ? "text-align:left;min-width:180px" : null, text: t }); }))),
+    h("tbody", null, C.models.map(function (m) {
+      var lo = m.min_index / top * 100, hi = m.max_index / top * 100, mean = m.mean_index / top * 100;
+      return h("tr", null,
+        h("td", { class: "name" }, h("div", { class: "who" }, h("span", { class: "mono-badge", text: initials(m.org || m.model) }), h("span", { class: "m", text: m.model }))),
+        h("td", { class: "num idx", text: f1(m.mean_index) }),
+        h("td", { style: "text-align:left" }, h("div", { style: "position:relative;height:16px;background:var(--surface-2);border-radius:4px", tabindex: "0", "data-tip": m.model + "\nIndex from " + f1(m.min_index) + " to " + f1(m.max_index) + " over " + m.seasons + " seasons" + (m.index_sd != null ? "\nStandard deviation " + f1(m.index_sd) : "") },
+          h("span", { style: "position:absolute;top:5px;height:6px;border-radius:3px;background:" + mix("var(--s1)", 0.45) + ";left:" + lo + "%;width:" + Math.max(0.5, hi - lo) + "%" }),
+          h("span", { style: "position:absolute;top:1px;width:4px;height:14px;border-radius:2px;background:var(--s1);left:calc(" + mean + "% - 2px)" }))),
+        h("td", { class: "num", text: m.seasons }), h("td", { class: "num", text: m.wins }), h("td", { class: "num", text: m.finals }),
+        h("td", { class: "num", text: f1(m.mean_place) }), h("td", { class: "num", text: m.best_place }), h("td", { class: "num", text: pct(m.challenge_accuracy) }));
+    })));
+  return add(sec, [h("div", { class: "card tbl-wrap" }, table),
+    h("p", { class: "foot", text: "// " + C.season_count + " finished live seasons · every season rescored with Survivor Index v" + S.index_version + " · range bar = lowest to highest season index, tick = mean" })]);
+}
+
+/* ---------- method */
+function method() {
+  var sec = section("method", "06", "Method", "How to read the numbers, and what they do not show.");
+  var social = S.rules === "social-game";
+  var w = function (k) { return Math.round(S.weights[k] * 100); };
+  var defs = [
+    ["Survivor Index", "A 0 to 100 score for one season, version " + S.index_version + ". It adds five parts: challenge (" + w("challenge_accuracy") + " points), voting (" + w("vote_participation") + "), strategy (" + w("strategic_score") + "), placement (" + w("placement") + ") and social (" + w("social") + "). The winner is chosen by the jury, not by this score, so the two can disagree."],
+    ["Challenge", social ? "The share of ladder puzzles a model answered right. Each round has five puzzles (medium, hard, hard, frontier, frontier), the same for every player. Sudden-death puzzles and puzzles a model says it answered wrong on purpose are left out. Speed never counts." : "The share of challenge puzzles a model answered right."],
+    ["Voting", "The share of councils a model was in the game for in which it cast a vote."],
+    ["Strategy", "Half is how often the model's vote matched the most-voted player of the round. 30% is whether it ever voted for a player who left that round. 20% is the votes it received and survived, relative to the most-targeted survivor of the season."],
+    ["Placement", "Linear by final place: the winner gets the full " + w("placement") + " points and the first player out gets the least."],
+    ["Social", "60% is jury votes received and 40% is alliances joined, each relative to the season's highest."],
+    ["Voted with outcome", "The share of councils in which the model's deciding vote was for the player who left. Reported beside the index, not inside it."],
+    ["Votes predicted", "Before each reveal, players privately predict how the others will vote. This is the share of those predictions that were right. Reported beside the index, not inside it."],
+    ["Promises kept", "Vote promises a model made in private talks that matched the vote it then cast."],
+    ["Estimated cost", "Recorded contestant calls, times a fixed token budget per kind of call, times the model's OpenRouter list price. The engine does not record token counts, so this is an estimate and not a billed amount. Host narration is not included."]
+  ];
+  var top = M[0], winner = S.winner;
+  var faqs = [
+    ["Which model won this season?", winner ? winner + " won. " + (D.takeaways[0] ? D.takeaways[0].text : "") : "The season has no winner yet."],
+    ["Which model has the highest Survivor Index?", top ? top.model + ", at " + f1(top.survivor_index) + " out of 100." + (M[1] ? " " + M[1].model + " is second at " + f1(M[1].survivor_index) + "." : "") : "No model has a score yet."],
+    ["Why can the winner differ from the top of the index?", "The jury picks the winner from the finalists. The index scores every model's whole season, including models that were voted out early, so a strong player who misses the final can outscore the winner."],
+    ["How much can one season tell me?", "One season is one sample. A single vote can end a strong model's run, so treat this page as a record of what happened, and use the totals across seasons to compare models."],
+    social ? ["Do the models know which models they are playing against?", "No. Players go by neutral tree names such as Ash and Cedar and never see a model name or id. Model names on this page are for readers."] : null,
+    ["Can I get the data?", "Yes. The Download data button saves everything on this page as one JSON file."]
+  ].filter(Boolean);
+  function acc(items) { return h("div", null, items.map(function (it) { return h("details", { class: "acc" }, h("summary", { text: it[0] }), h("div", { text: it[1] })); })); }
+  return add(sec, [h("div", { class: "grid2" },
+    h("div", null, h("h3", { text: "Key definitions" }), acc(defs)),
+    h("div", null, h("h3", { text: "Questions" }), acc(faqs)))]);
+}
+
+/* ---------- shell */
+function onResize(el, fn) {
+  var t = null, last = 0;
+  function run() { var w = el.clientWidth; if (w && w !== last) { last = w; fn(); } }
+  if (window.ResizeObserver) new ResizeObserver(function () { clearTimeout(t); t = setTimeout(run, 60); }).observe(el);
+  setTimeout(run, 0);
+}
+function download() {
+  var blob = new Blob([JSON.stringify(D, null, 1)], { type: "application/json" });
+  var a = h("a", { href: URL.createObjectURL(blob), download: "llm-survivor-" + S.season_id + ".json" });
+  document.body.appendChild(a); a.click(); a.remove();
+}
+var app = document.getElementById("app");
+app.appendChild(h("div", { class: "top" }, h("div", { class: "wrap top-in" },
+  h("a", { class: "brand", href: LINKS.site || "#" }, h("span", { class: "dot" }), "LLM Survivor", h("span", { style: "font-weight:400;color:var(--muted)", text: "· season report" })),
+  h("nav", { "aria-label": "Report sections" }, [["leaderboard", "Leaderboard"], ["insights", "Insights"], ["rounds", "Rounds"], ["finale", "Finale"], ["seasons", "All seasons"], ["method", "Method"]].map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
+  h("button", { class: "btn", type: "button", text: "Download data", onclick: download }))));
+var main = h("main", { class: "wrap" }, hero(), leaderboard(), insights(), rounds(), finale(), allSeasons(), method());
+app.appendChild(main);
+app.appendChild(h("footer", null, h("div", { class: "wrap" },
+  LINKS.contact ? h("div", { class: "card cta" }, h("p", { text: "Want a model in the next season, or the full data for every season?" }), h("a", { class: "btn btn-solid", href: LINKS.contact, text: "Get in touch" })) : null,
+  h("p", { text: "LLM Survivor season " + S.season_id + " · report format v" + D.report_version + " · built from the season's own database with no model calls." }))));
+})();
+</script>
+</body>
+</html>

@@ -73,6 +73,21 @@ def latest_report() -> dict[str, Any]:
     return {"ok": False, "error": "no live season has a scorecard"}
 
 
+def _write_season_report(season_dir: Path) -> None:
+    """Save report.json and report.html beside the season database. The season's
+    result is already on disk, so a report failure is logged and never raised."""
+    try:
+        from .season_report import write_report_files
+
+        write_report_files(
+            season_dir,
+            contact_url=os.environ.get("SURVIVOR_REPORT_CONTACT_URL"),
+            site_url=os.environ.get("SURVIVOR_PUBLIC_URL"),
+        )
+    except Exception as exc:
+        print(f"season report failed for {season_dir.name}: {exc}")
+
+
 def run_live_season(
     *,
     roster: str = "frontier_live_8",
@@ -139,7 +154,9 @@ def run_live_season(
                 "generated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()) + " UTC",
             }
         )
+        scorecard["report_url"] = f"/report/{season_dir.name}"
         (season_dir / "scorecard.json").write_text(json.dumps(scorecard, indent=2))
+        _write_season_report(season_dir)
         _current.update(status="done", report=scorecard)
         return scorecard
     except Exception as exc:

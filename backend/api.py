@@ -721,6 +721,70 @@ def api_frontier_roster_lock(_: None = Depends(require_operator)) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+# ---------------------------------------------------------- season report
+# The report page shows text the models wrote, so it runs under a policy that
+# allows only its own inline script and style and no network requests at all.
+REPORT_CSP = (
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+    "img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+
+
+def _report_season_dir(season_id: str | None) -> Path:
+    from . import live_season
+    from .season_report import reportable_season_dir
+
+    seasons_dir = Path(live_season.SEASONS_DIR)
+    if season_id is None:
+        season_dir = reportable_season_dir(seasons_dir)
+    else:
+        season_dir = seasons_dir / season_id if _SEASON_ID.fullmatch(season_id) else None
+    if season_dir is None or not (season_dir / "season.db").exists():
+        raise HTTPException(status_code=404, detail="season not found")
+    return season_dir
+
+
+@app.get("/api/live-season/report")
+def api_live_season_report_latest() -> dict:
+    """Public: full report data for the newest finished season."""
+    from .season_report import cached_season_report
+
+    return cached_season_report(_report_season_dir(None))
+
+
+@app.get("/api/live-season/report/{season_id}")
+def api_live_season_report(season_id: str) -> dict:
+    """Public: full report data for one season (scores, votes, challenges, jury)."""
+    from .season_report import cached_season_report
+
+    return cached_season_report(_report_season_dir(season_id))
+
+
+def _report_page(season_id: str | None) -> Response:
+    from .season_report import cached_season_report, render_report_html
+
+    html = render_report_html(
+        cached_season_report(_report_season_dir(season_id)),
+        contact_url=os.environ.get("SURVIVOR_REPORT_CONTACT_URL"),
+        site_url=os.environ.get("SURVIVOR_PUBLIC_URL"),
+    )
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": PAGE_CACHE_CONTROL, "Content-Security-Policy": REPORT_CSP, "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.api_route("/report", methods=["GET", "HEAD"], include_in_schema=False)
+def season_report_latest_page() -> Response:
+    return _report_page(None)
+
+
+@app.api_route("/report/{season_id}", methods=["GET", "HEAD"], include_in_schema=False)
+def season_report_page(season_id: str) -> Response:
+    return _report_page(season_id)
+
+
 def _resolve_frontend_file(frontend_path: str) -> Path | None:
     if frontend_path.startswith(("api/", "media/")):
         return None

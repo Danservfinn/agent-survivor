@@ -6,6 +6,7 @@ Pages:
 
 - `/` — benchmark console. Runs a full live season (operator key under a per-run cost cap, or the visitor's own OpenRouter key), streams the event feed, shows the latest finished season's scorecard.
 - `/history` — every recorded season with scorecard, round summaries, votes and transcripts.
+- `/report` and `/report/<season>` — the season report: after-action record and benchmark results on one page. See "Season report" below.
 
 The broadcast viewer (`/watch`, `/benchmark`) and the arena page (`/arena`) were removed from the frontend on 2026-11-24; they are in git history at `beaa15b`. Their backend routes (episode, viewer state, voice, arena, frontier roster) still exist and are operator-gated for writes.
 
@@ -25,8 +26,34 @@ The aim is that the model that plays the social game and the votes best wins. Pl
 - **Jury.** Jurors get each finalist's verified record from the tables, choose which finalist to question, and are told to vote on the best game over the season, not on the final pitch or a grudge.
 - **Outages.** A provider failure holds the call for up to 10 minutes; past that the season stops as interrupted and is not reported as a result. No player is charged for it.
 - **Thinking.** Every call reasons at the same effort ("low"; "medium" for the round plan), never switched off.
-- **Scoring.** Survivor Index v3 counts only the five ladder rungs for challenge accuracy. Prediction accuracy is reported, not yet in the index.
+- **Scoring.** Survivor Index v4. Challenge accuracy counts only the five ladder rungs. Finalists who lose the jury vote place 2nd and 3rd (through v3 they were placed last). Prediction accuracy is reported, not yet in the index.
 - **Cost.** About 460 model calls a season; the public button stops a run at $5.
+
+## Season report
+
+When a live season ends, `run_live_season` writes `report.json` and `report.html` beside `season.db` and adds `report_url` to the scorecard. The same page is served at `/report/<season directory name>`; a bare `/report` shows the newest finished live season. Data only: `GET /api/live-season/report/<season>`.
+
+The page is one self-contained file: no external scripts, fonts or requests, so it can be emailed or archived as is. It holds:
+
+- headline cards, the elimination order and a sortable leaderboard (index, place, jury votes, puzzles, votes, promises, estimated cost), with each model's round-by-round record
+- charts: what each index is made of, index against cost, a profile comparison, the challenge record and a vote map (who voted for whom, who voted together)
+- every round: challenge standings, each vote with the model's stated reason, promises kept and broken, idols, private talks, last words
+- the finale: pitches and each juror's vote
+- totals across every finished live season played under the same rules
+- definitions, and a button that downloads all of it as JSON
+
+Rebuild a report at any time, with no model calls:
+
+```bash
+python3 scripts/build_season_report.py                      # newest finished season
+python3 scripts/build_season_report.py --season <season>    # one season
+python3 scripts/build_season_report.py --all                # every finished live season
+python3 scripts/build_season_report.py --out report.html    # just the page, anywhere
+```
+
+Optional environment: `SURVIVOR_REPORT_CONTACT_URL` (an `https://` or `mailto:` link) adds a contact strip at the foot of the page; `SURVIVOR_PUBLIC_URL` is shown in each chart's source line. `?theme=light` or `?theme=dark` pins the colors.
+
+Limits to keep in mind. Cost is an estimate (recorded calls, times a fixed token budget, times the cached OpenRouter list price) because the engine does not record token usage. A season run on scripted fallbacks is labelled a test run and is left out of the cross-season totals. One season is one sample.
 
 ## Run Locally
 
