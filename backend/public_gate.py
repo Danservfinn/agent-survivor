@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 
-PUBLIC_RUN_MAX_COST_CENTS = 250  # $2.50 per public run (9 seats incl. one frontier model), hard server-side cap
+PUBLIC_RUN_MAX_COST_CENTS = 500  # $5 per public run: a 9-seat season makes ~460 calls since 2026-11-24
 PUBLIC_ROSTER = "cheap_recent_openrouter"
 
 _LEDGER_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "public_live_ledger.json"

@@ -19,9 +19,9 @@ class PublicGateTest(unittest.TestCase):
         gate._LEDGER_PATH = self.orig_path
 
     def test_run_cap_is_flat_per_run(self) -> None:
-        gate.record_public_run({"caps": {"estimated_cost_cents": 250.0}, "roster": "x", "finished": True})
+        gate.record_public_run({"caps": {"estimated_cost_cents": 500.0}, "roster": "x", "finished": True})
         caps = gate.public_run_caps()
-        self.assertEqual(caps["max_cost_cents"], 250.0)
+        self.assertEqual(caps["max_cost_cents"], 500.0)
 
     def test_roster_includes_grok(self) -> None:
         from backend.model_rosters import CHEAP_RECENT_OPENROUTER_MODELS
