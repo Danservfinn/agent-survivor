@@ -42,6 +42,24 @@ WEIGHTS = {
 }
 
 
+def _prediction_accuracy(votes: list[dict[str, Any]], agent_id: str) -> float | None:
+    revealed: dict[int, dict[str, str]] = {}
+    for vote in votes:
+        if vote.get("revealed"):
+            revealed.setdefault(vote["round"], {})[vote["voter_id"]] = vote["target_id"]
+    right = total = 0
+    for vote in votes:
+        if vote["voter_id"] != agent_id or not vote.get("revealed"):
+            continue
+        predicted = _load_json(vote.get("predicted_votes"))
+        if not predicted:
+            continue
+        actual = {voter: target for voter, target in revealed.get(vote["round"], {}).items() if voter not in (agent_id, "host")}
+        total += len(actual)
+        right += sum(1 for voter, target in predicted.items() if actual.get(voter) == target)
+    return round(right / total, 4) if total else None
+
+
 def _counts_for_accuracy(attempt: dict[str, Any]) -> bool:
     """Ladder rungs only; seasons before the ladder have no rung_index and count in full."""
     if int(attempt.get("rung_index") or 0) >= LADDER_RUNGS:
@@ -268,6 +286,9 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
                 "jury_votes": jury,
                 "alliances_joined": alliance_count,
                 "mean_strategic_score": round(mean_strat, 4),
+                # reported only, not in the index: share of other players' votes this
+                # player called right in its private predictions (None before 2026-11-24)
+                "prediction_accuracy": _prediction_accuracy(votes, aid),
                 "survivor_index": round(index, 2),
             }
         )

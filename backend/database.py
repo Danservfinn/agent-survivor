@@ -37,7 +37,7 @@ def round_start_step() -> str:
     challenge; the long list opens with a camp scene. Must match
     turn_controller._phase_steps."""
     if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
-        return "challenge_intro"
+        return "round_plan"
     return "camp_pre_challenge_read"
 
 
@@ -159,6 +159,17 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 target_id TEXT NOT NULL,
                 discussion_step TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- each player's private plan for a round, written before the challenge
+            CREATE TABLE IF NOT EXISTS PrivatePlans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                plan TEXT NOT NULL DEFAULT '{}',
+                provider TEXT NOT NULL DEFAULT 'deterministic',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(round, agent_id)
             );
 
             CREATE TABLE IF NOT EXISTS AllianceMemberships (
@@ -381,6 +392,10 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         _ensure_column(conn, "Agents", "idol_held", "INTEGER NOT NULL DEFAULT 0")
         # real model name for people; pseudonym is the neutral name players use in game
         _ensure_column(conn, "Agents", "display_name", "TEXT NOT NULL DEFAULT ''")
+        # private vote predictions, scored against the revealed votes
+        _ensure_column(conn, "Votes", "predicted_eliminated", "TEXT")
+        _ensure_column(conn, "Votes", "predicted_votes", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "Votes", "prediction_confidence", "REAL")
         # challenge ladder: one attempt row per player per puzzle (rungs 0-4, sudden death 5+)
         _ensure_column(conn, "ChallengeAttempts", "rung_index", "INTEGER NOT NULL DEFAULT 0")
         _ensure_agent_model_ids(conn)
@@ -463,6 +478,7 @@ def seed_demo(
         conn.execute("DELETE FROM NextRoundPreloads")
         conn.execute("DELETE FROM ViewerState")
         conn.execute("DELETE FROM Promises")
+        conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
         conn.execute("DELETE FROM Alliances")
         conn.execute("DELETE FROM GroupDiscussionParticipants")

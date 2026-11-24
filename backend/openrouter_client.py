@@ -48,6 +48,11 @@ class AgentAction:
     play_idol: bool = False
     # in a private talk: the player this speaker promises to vote for at this round's council
     promised_vote_target: str | None = None
+    # votes only, private: who the voter expects to go home, and how each other voter will vote
+    # (raw ids or names; the engine resolves them against the players in the game)
+    predicted_eliminated: str | None = None
+    predicted_votes: dict[str, str] | None = None
+    prediction_confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +153,65 @@ def request_agent_action(
         response_kind=response_kind,
         episode_context=episode_context,
     )
+
+
+def request_private_writing(
+    *,
+    actor: dict[str, Any],
+    task: str,
+    fields: dict[str, str],
+    episode_context: dict[str, Any] | None = None,
+    max_tokens: int = 700,
+    reasoning_effort: str | None = None,
+) -> dict[str, Any]:
+    """A private note the player writes for itself (round plan, notebook).
+    Never shown to other players. Returns the parsed JSON object."""
+    settings = get_llm_settings()
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if settings.provider == PROVIDER_OPENROUTER and not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is required for real OpenRouter calls")
+    model_id = actor.get("model_id")
+    if not model_id:
+        raise RuntimeError(f"Actor {actor.get('agent_id', 'unknown')} has no model_id")
+    schema = "{\n" + ",\n".join(f'  "{name}": "{description}"' for name, description in fields.items()) + "\n}"
+    prompt = f"""
+You are a player in an island social-strategy game. Your sole objective is to become the sole winner.
+
+Player:
+{{
+  "agent_id": "{actor['agent_id']}",
+  "name": "{actor['pseudonym']}"
+}}
+
+Game record visible to you:
+{_context_for_prompt(episode_context or {})}
+
+Task (private: no other player will ever see this):
+{task}
+
+Return strict JSON only:
+{schema}
+""".strip()
+    payload: dict[str, Any] = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": "Return only valid JSON with the requested keys. Write in the first person."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.4,
+        "max_tokens": max_tokens,
+    }
+    if reasoning_effort:
+        payload["_reasoning_effort"] = reasoning_effort
+    try:
+        return _parse_json_content(_message_content(_post_chat_completion(payload, api_key)))
+    except (ValueError, KeyError, TypeError):
+        retry = dict(payload)
+        retry["messages"] = [
+            *payload["messages"],
+            {"role": "user", "content": "Return only one complete JSON object with the requested keys. No markdown."},
+        ]
+        return _parse_json_content(_message_content(_post_chat_completion(retry, api_key)))
 
 
 def request_host_narration(
@@ -519,6 +583,9 @@ Return strict JSON only:
   "public_archetype": "2-5 lowercase words describing the strategic role you feel you are embodying",
   "target_id": "allowed target id or null",
   "play_idol": "true only when voting, only if you hold a hidden idol, and you choose to play it now; otherwise false",
+  "predicted_eliminated": "votes only: the id of the player you expect to be voted out tonight; private, scored against the result",
+  "predicted_votes": "votes only: an object mapping each other voter's id to the id you expect them to vote for; private, scored against the revealed votes",
+  "prediction_confidence": 0.0,
   "promised_vote_target": "in a private talk only: the allowed target id you are promising to vote for tonight, or null. Promises are recorded and checked against your vote; breaking one is allowed but the jury will see it",
   "move_type": "pressure_ally | reassure_ally | float_decoy | test_loyalty | target_redirect | vote_commitment | jury_management | public_callout | misdirection | challenge_focus | final_pitch",
   "intended_effect": "short phrase describing what this action is meant to accomplish",
@@ -667,6 +734,13 @@ Rules:
         promised_vote_target=_resolve_target_id(data.get("promised_vote_target"), allowed_targets)
         if data.get("promised_vote_target")
         else None,
+        predicted_eliminated=str(data["predicted_eliminated"]).strip() if data.get("predicted_eliminated") else None,
+        predicted_votes={
+            str(voter): str(target) for voter, target in data["predicted_votes"].items() if voter and target
+        }
+        if isinstance(data.get("predicted_votes"), dict)
+        else None,
+        prediction_confidence=_optional_confidence(data.get("prediction_confidence")),
     )
 
 
@@ -1187,6 +1261,10 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
     outbound_payload = {key: value for key, value in payload.items() if not key.startswith("_")}
     outbound_payload["max_tokens"] = int(outbound_payload.get("max_tokens", 360)) + REASONING_TOKEN_HEADROOM
     outbound_payload["reasoning"] = dict(REASONING_SETTINGS)
+    if payload.get("_reasoning_effort"):
+        # a step may ask every player for more thought (the round plan); still the same for every model
+        outbound_payload["reasoning"]["effort"] = payload["_reasoning_effort"]
+        outbound_payload["max_tokens"] += REASONING_TOKEN_HEADROOM
 
     def _post(outbound: dict[str, Any]) -> dict[str, Any]:
         request = urllib.request.Request(

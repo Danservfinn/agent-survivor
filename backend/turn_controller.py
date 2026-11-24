@@ -38,6 +38,7 @@ from .openrouter_client import (
     request_agent_archetype,
     request_challenge_solution,
     request_host_narration,
+    request_private_writing,
 )
 from .viewer_state import viewer_state_summary
 
@@ -361,6 +362,9 @@ class VoteDecision:
     strategic_score: float | None = None
     prompt_profile: str | None = None
     play_idol: bool = False
+    predicted_eliminated: str | None = None
+    predicted_votes: dict[str, str] | None = None
+    prediction_confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1006,6 +1010,14 @@ def _apply_step(
         event = _challenge_result_event(conn, round_number, turn_id)
         return [event], {"challenge_result": event["payload"]}, event["title"]
 
+    if step == "round_plan":
+        written = _round_plans(conn, round_number)
+        return [], {"round_plans": written}, f"{written} private plans"
+
+    if step == "camp_followup":
+        events = _followup_events(conn, round_number, turn_id)
+        return events, {"followups": len(events)}, f"{len(events)} follow-up messages"
+
     if step == "camp_talks":
         events = _camp_talk_events(conn, round_number, turn_id)
         return events, {"camp_talks": len(events)}, f"{len(events)} private talks"
@@ -1056,7 +1068,7 @@ def _apply_step(
             # sole remaining non-immune player: no council needed, they are out
             return [], {"vote_skipped_walkover": voter_id}, "Walkover: no council"
         decision = _resolve_vote_decision(conn, voter_id, step)
-        _insert_vote(conn, round_number, turn_index, voter_id, decision.target_id)
+        _insert_vote(conn, round_number, turn_index, voter_id, decision.target_id, decision)
         event = _vote_booth_event(conn, round_number, turn_id, voter_id, decision)
         return [event], {"vote_cast_by": voter_id}, f"{_agent_name(conn, voter_id)} cast a vote"
 
@@ -1090,12 +1102,16 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
     vote_reveal_steps = [f"vote_reveal_{index + 1}" for index in range(len(voters))]
     if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
         return [
+            # each player privately plans the round before anything happens
+            "round_plan",
             "challenge_intro",
             "challenge_attempts",
             "challenge_result",
             "challenge_gift",
             # every conversation in a round is one a player chose to have
             "camp_talks",
+            # one short private message to react to what the talks revealed
+            "camp_followup",
             "tribal_vote_call",
             *vote_booth_steps,
             *vote_reveal_steps,
@@ -1405,6 +1421,236 @@ def _group_discussion_event(
         animation="group_huddle",
         payload=payload,
     )
+
+
+# ------------------------------------------------------- private planning
+# Each player writes a private plan before the round, privately predicts the
+# vote, and after the council rewrites a notebook it carries into the next round.
+NOTEBOOK_MAX_CHARS = 1200
+ROUND_PLAN_EFFORT = "medium"
+
+
+def _round_plans(conn, round_number: int) -> int:
+    written = 0
+    for agent in _active_agent_rows(conn):
+        if conn.execute(
+            "SELECT 1 FROM PrivatePlans WHERE round = ? AND agent_id = ?", (round_number, agent["agent_id"])
+        ).fetchone():
+            continue
+        provider = "deterministic"
+        plan: dict[str, Any] = {
+            "threats": "Whoever is gathering votes fastest.",
+            "allies": "Anyone who shared information with me last round.",
+            "talk_plan": "Find out where the votes are going before I commit.",
+            "expected_out": None,
+            "confidence": 0.3,
+        }
+        if should_use_live_llm():
+            context = build_agent_episode_context(
+                conn, actor_id=agent["agent_id"], round_number=round_number, current_step="round_plan"
+            )
+            try:
+                written_plan = request_private_writing(
+                    actor=agent,
+                    task=(
+                        "Plan this round before anything happens. Name the biggest threats to you and why, the "
+                        "players most likely to vote with you, what you will say in your private talk and to whom, "
+                        "and who you expect to go home tonight and how sure you are. Keep it short; you will see "
+                        "this plan again in every decision this round."
+                    ),
+                    fields={
+                        "threats": "who threatens your game and why",
+                        "allies": "who is likely to vote with you",
+                        "talk_plan": "who you will talk to and what you will say",
+                        "expected_out": "the id of the player you expect to go home tonight",
+                        "confidence": "0.0-1.0",
+                    },
+                    episode_context=context,
+                    reasoning_effort=ROUND_PLAN_EFFORT,
+                )
+            except Exception as exc:
+                print(f"live round plan failed for {agent['agent_id']}: {exc}")
+                continue
+            plan = {
+                "threats": str(written_plan.get("threats") or "")[:400],
+                "allies": str(written_plan.get("allies") or "")[:400],
+                "talk_plan": str(written_plan.get("talk_plan") or "")[:400],
+                "expected_out": _resolve_player(conn, written_plan.get("expected_out")),
+                "confidence": written_plan.get("confidence"),
+            }
+            provider = live_llm_provider()
+        conn.execute(
+            "INSERT INTO PrivatePlans (round, agent_id, plan, provider) VALUES (?, ?, ?, ?)",
+            (round_number, agent["agent_id"], json_dumps(plan), provider),
+        )
+        written += 1
+    return written
+
+
+def _write_notebook(conn, round_number: int, agent: dict[str, Any], eliminated_name: str, remaining: int) -> None:
+    """The player rewrites its own private notebook after the council. It replaces
+    the old memory and is capped so it cannot crowd out the game record."""
+    note = None
+    if should_use_live_llm():
+        context = build_agent_episode_context(
+            conn, actor_id=agent["agent_id"], round_number=round_number, current_step="memory_update"
+        )
+        try:
+            written = request_private_writing(
+                actor=agent,
+                task=(
+                    "The council is over. Rewrite your private notebook, which replaces your old one and is the "
+                    "only memory you carry forward besides the public record. Cover what you predicted and what "
+                    "actually happened, which promises held and who lied to you, what you have learned about each "
+                    f"remaining player, and your plan for next round. At most {NOTEBOOK_MAX_CHARS} characters."
+                ),
+                fields={"notebook": f"your new notebook, first person, at most {NOTEBOOK_MAX_CHARS} characters"},
+                episode_context=context,
+                max_tokens=600,
+            )
+            note = str(written.get("notebook") or "").strip() or None
+        except Exception as exc:
+            print(f"live notebook failed for {agent['agent_id']}: {exc}")
+    if note is None:
+        # no model (or it failed): keep the old memory and add one line, still within the cap
+        previous = str(agent.get("confessional_memory") or "")
+        note = f"{previous} | Round {round_number}: {eliminated_name} left; {remaining} players remain.".strip(" |")
+        note = note[-NOTEBOOK_MAX_CHARS:]
+    conn.execute(
+        "UPDATE Agents SET confessional_memory = ? WHERE agent_id = ?",
+        (note[:NOTEBOOK_MAX_CHARS], agent["agent_id"]),
+    )
+
+
+def _followup_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
+    """After the talks each player may send one short private message, or pass."""
+    if not should_use_live_llm():
+        return []
+    active = _active_agent_rows(conn)
+    events = []
+    for agent in active:
+        others = [other for other in active if other["agent_id"] != agent["agent_id"]]
+        context = build_agent_episode_context(
+            conn, actor_id=agent["agent_id"], round_number=round_number, current_step="camp_followup"
+        )
+        try:
+            action = _real_agent_action(
+                conn,
+                actor_id=agent["agent_id"],
+                step="camp_followup",
+                scene_context=(
+                    "The private talks are over. Before the vote you may send one short private message to one "
+                    "player, for example to act on a lie or a swing you noticed. Put their id in target_id and the "
+                    "message in dialogue. To send nothing, set target_id to null."
+                ),
+                response_kind="followup",
+                episode_context=context,
+                allowed_targets=others,
+            )
+        except Exception as exc:
+            print(f"live follow-up failed for {agent['agent_id']}: {exc}")
+            continue
+        legal = {other["agent_id"] for other in others}
+        if not action or action.target_id not in legal or not action.dialogue:
+            continue  # passed
+        recipient = action.target_id
+        message = action.dialogue[:400]
+        events.append(
+            _insert_story_event(
+                conn,
+                turn_id=turn_id,
+                round_number=round_number,
+                phase="camp",
+                kind="followup",
+                scene="camp",
+                shot="private_two_shot",
+                actor_ids=[agent["agent_id"], recipient],
+                target_ids=[recipient],
+                visibility="private",
+                title=f"{agent['pseudonym']} Follows Up",
+                dialogue=message,
+                subtitle=f"Private message to {_agent_name(conn, recipient)}",
+                duration_ms=5000,
+                animation="camp_strategy",
+                payload={
+                    "privacy": "participants_only",
+                    "participant_ids": [agent["agent_id"], recipient],
+                    "speaker_lines": [{"agent_id": agent["agent_id"], "text": message}],
+                    "group_summary": f"{agent['pseudonym']} sent {_agent_name(conn, recipient)} a private message.",
+                    "host_narration": "A last private word before the vote.",
+                    "llm_provider": live_llm_provider(),
+                    "llm_model_id": action.model_id,
+                },
+            )
+        )
+    return events
+
+
+def _resolve_player(conn, raw: Any) -> str | None:
+    """A player id from a model's free text: exact id, or the in-game name."""
+    if not raw:
+        return None
+    text = str(raw).strip().lower()
+    for row in conn.execute("SELECT agent_id, pseudonym FROM Agents").fetchall():
+        if text in (row["agent_id"].lower(), str(row["pseudonym"]).lower()):
+            return row["agent_id"]
+    return None
+
+
+def _resolve_predicted_votes(conn, voter_id: str, raw: dict[str, str] | None) -> dict[str, str] | None:
+    if not raw:
+        return None
+    resolved = {}
+    for voter, target in raw.items():
+        voter_id_resolved = _resolve_player(conn, voter)
+        target_id = _resolve_player(conn, target)
+        if voter_id_resolved and target_id and voter_id_resolved != voter_id:
+            resolved[voter_id_resolved] = target_id
+    return resolved or None
+
+
+def prediction_record(conn, agent_id: str) -> dict[str, Any]:
+    """How well the player read each council: did it name who went home, and how
+    many other voters' votes it called right. Only rounds whose votes are revealed."""
+    rounds = []
+    for row in conn.execute(
+        """
+        SELECT round, predicted_eliminated, predicted_votes, prediction_confidence
+        FROM Votes WHERE voter_id = ? AND revealed = 1 ORDER BY round
+        """,
+        (agent_id,),
+    ).fetchall():
+        predicted = json.loads(row["predicted_votes"] or "{}") if row["predicted_votes"] else {}
+        if not predicted and not row["predicted_eliminated"]:
+            continue
+        actual = {
+            vote["voter_id"]: vote["target_id"]
+            for vote in conn.execute(
+                "SELECT voter_id, target_id FROM Votes WHERE round = ? AND revealed = 1 AND voter_id NOT IN (?, 'host')",
+                (row["round"], agent_id),
+            ).fetchall()
+        }
+        out = conn.execute(
+            "SELECT agent_id FROM Agents WHERE elimination_round = ?", (row["round"],)
+        ).fetchone()
+        right = sum(1 for voter, target in predicted.items() if actual.get(voter) == target)
+        rounds.append(
+            {
+                "round": row["round"],
+                "predicted_out": _agent_name(conn, row["predicted_eliminated"]) if row["predicted_eliminated"] else None,
+                "actual_out": _agent_name(conn, out["agent_id"]) if out else None,
+                "out_correct": bool(out and row["predicted_eliminated"] == out["agent_id"]),
+                "votes_called_right": right,
+                "votes_to_call": len(actual),
+                "confidence": row["prediction_confidence"],
+            }
+        )
+    total = sum(entry["votes_to_call"] for entry in rounds)
+    return {
+        "rounds": rounds,
+        "vote_call_accuracy": round(sum(entry["votes_called_right"] for entry in rounds) / total, 3) if total else None,
+        "out_calls_correct": sum(1 for entry in rounds if entry["out_correct"]),
+    }
 
 
 # ------------------------------------------------------------- camp talks
@@ -2358,18 +2604,7 @@ def _memory_update_event(conn, round_number: int, turn_id: int) -> dict[str, Any
     eliminated_name = _agent_name(conn, eliminated_id) if eliminated_id else "No model"
     active = _active_agent_rows(conn)
     for agent in active:
-        addition = (
-            f" Round {round_number} memory: {eliminated_name} left, and {agent['pseudonym']} now has "
-            f"{len(active)} active competitors remaining."
-        )
-        conn.execute(
-            """
-            UPDATE Agents
-            SET confessional_memory = trim(confessional_memory || ?)
-            WHERE agent_id = ?
-            """,
-            (addition, agent["agent_id"]),
-        )
+        _write_notebook(conn, round_number, agent, eliminated_name, len(active))
     payload = {
         "eliminated_id": eliminated_id,
         "remaining_agent_ids": [agent["agent_id"] for agent in active],
@@ -4253,7 +4488,14 @@ def _vote_analysis(voter_name: str, target_name: str, explanation: str) -> dict[
     }
 
 
-def _insert_vote(conn, round_number: int, turn_index: int, voter_id: str, target_id: str) -> None:
+def _insert_vote(
+    conn,
+    round_number: int,
+    turn_index: int,
+    voter_id: str,
+    target_id: str,
+    decision: VoteDecision | None = None,
+) -> None:
     existing = conn.execute(
         "SELECT id FROM Votes WHERE round = ? AND voter_id = ?",
         (round_number, voter_id),
@@ -4262,10 +4504,21 @@ def _insert_vote(conn, round_number: int, turn_index: int, voter_id: str, target
         return
     conn.execute(
         """
-        INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed)
-        VALUES (?, ?, ?, ?, 0)
+        INSERT INTO Votes (
+            round, turn_index, voter_id, target_id, revealed,
+            predicted_eliminated, predicted_votes, prediction_confidence
+        )
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?)
         """,
-        (round_number, turn_index, voter_id, target_id),
+        (
+            round_number,
+            turn_index,
+            voter_id,
+            target_id,
+            decision.predicted_eliminated if decision else None,
+            json_dumps(decision.predicted_votes or {}) if decision else "{}",
+            decision.prediction_confidence if decision else None,
+        ),
     )
     _mark_alliance_betrayal(conn, round_number, voter_id, target_id)
 
@@ -4333,7 +4586,11 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
     legal_line = None
     for attempt in range(3):
         attempt_context = agent_context
-        scene = "It is time to vote. Choose one active, non-immune competitor and explain why."
+        scene = (
+            "It is time to vote. Choose one active, non-immune competitor and explain why. "
+            "Also privately predict who goes home tonight and how each other voter will vote; "
+            "your predictions are scored against the result and only you see the score."
+        )
         if attempt > 0:
             if legal_line is None:
                 legal_line = _target_roster_line(_eligible_targets(conn, voter_id))
@@ -4383,6 +4640,9 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
         prompt_profile=action.prompt_profile,
         # only a real holder can play; anyone else asking to is ignored
         play_idol=bool(action.play_idol) and _holds_idol(conn, voter_id),
+        predicted_eliminated=_resolve_player(conn, action.predicted_eliminated),
+        predicted_votes=_resolve_predicted_votes(conn, voter_id, action.predicted_votes),
+        prediction_confidence=action.prediction_confidence,
     )
 
 
@@ -4826,6 +5086,11 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         return len(_active_agent_rows(conn))
     if step == "challenge_gift":
         return 1 if _idol_gift_round(conn, int(game["current_round"])) else 0
+    if step in {"round_plan", "camp_followup"}:
+        return len(_active_agent_rows(conn))
+    if step == "memory_update":
+        # every player rewrites its notebook, plus the host line
+        return len(_active_agent_rows(conn)) + 1
     if step == "camp_talks":
         # one partner pick per player, then at most one talk per pick with four lines
         active_count = len(_active_agent_rows(conn))
@@ -4845,6 +5110,8 @@ _STEP_RESPONSE_KIND = {
     "challenge_attempts": "challenge",
     "challenge_gift": "conversation",
     "camp_talks": "conversation",
+    "round_plan": "conversation",
+    "camp_followup": "conversation",
     "vote_booth": "vote",
     "camp_strategy": "conversation",
     "camp_pre_challenge_read": "conversation",

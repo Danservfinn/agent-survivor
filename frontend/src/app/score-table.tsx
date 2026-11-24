@@ -12,6 +12,8 @@ export type ScoreRow = {
   votes_cast: number;
   votes_received: number;
   survivor_index: number;
+  /** share of other players' votes this model predicted correctly; null before 2026-11-24 */
+  prediction_accuracy?: number | null;
 };
 
 /** Season scorecard, best index first. Used by the console and by run history. */
@@ -25,6 +27,7 @@ export function ScoreTable({
   onSelect?: (agentId: string) => void;
 }) {
   const sorted = [...rows].sort((a, b) => b.survivor_index - a.survivor_index);
+  const hasPredictions = rows.some((r) => r.prediction_accuracy != null);
   return (
     <div className="bench-table-wrap">
       <table className="bench-table">
@@ -37,6 +40,7 @@ export function ScoreTable({
             <th className="num">challenges</th>
             <th className="num">median s</th>
             <th className="num">votes cast / against</th>
+            {hasPredictions && <th className="num">votes predicted</th>}
           </tr>
         </thead>
         <tbody>
@@ -69,6 +73,11 @@ export function ScoreTable({
                 <td className="num">
                   {r.votes_cast} / {r.votes_received}
                 </td>
+                {hasPredictions && (
+                  <td className="num">
+                    {r.prediction_accuracy == null ? "-" : `${Math.round(r.prediction_accuracy * 100)}%`}
+                  </td>
+                )}
               </tr>
             );
           })}

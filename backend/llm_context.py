@@ -23,6 +23,8 @@ GAME_RULES = [
     "The player with the most votes leaves. On a tie there is a revote among the tied players only; tied players cannot vote for themselves.",
     "If the revote is also tied, the tied player with the fewest challenge wins this season leaves; if still level, the one who has received the most votes this season leaves.",
     "Each round, before the vote, every player picks one other player for a private talk; only the two of them hear it. A promise to vote for someone, made in a talk, is recorded and later checked against the revealed vote (your_promises).",
+    "Each round you privately write a plan before the challenge, privately predict the vote when you cast yours, and rewrite your private notebook after the council. Only you see these; your prediction accuracy is shown to you (your_predictions).",
+    "After the talks, each player may send one short private message to one other player before the vote.",
     "When three players remain the finale starts. Every eliminated player sits on the jury, questions the finalists, and votes for the winner. Most jury votes wins.",
 ]
 AGENT_PUBLIC_KINDS = {
@@ -88,6 +90,9 @@ def build_agent_episode_context(
         "eliminations": _eliminations(conn),
         # private: promises this player made, and promises made to them, with kept/broken
         "your_promises": _your_promises(conn, actor_id),
+        # private: this round's plan, and how well past vote predictions held up
+        "your_plan_this_round": _your_plan(conn, actor_id, round_number),
+        "your_predictions": _your_predictions(conn, actor_id),
         "visible_game_state": _visible_game_state(conn, current_step),
         "public_timeline": public_timeline,
         "actor_private_memory": actor_private_memory,
@@ -389,6 +394,24 @@ def _challenge_history(conn) -> list[dict[str, Any]]:
             }
         )
     return history
+
+
+def _your_plan(conn, actor_id: str, round_number: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT plan FROM PrivatePlans WHERE agent_id = ? AND round = ?", (actor_id, round_number)
+    ).fetchone()
+    if row is None:
+        return None
+    plan = json.loads(row["plan"] or "{}")
+    if plan.get("expected_out"):
+        plan["expected_out"] = _names_by_id(conn).get(plan["expected_out"], plan["expected_out"])
+    return plan
+
+
+def _your_predictions(conn, actor_id: str) -> dict[str, Any]:
+    from .turn_controller import prediction_record
+
+    return prediction_record(conn, actor_id)
 
 
 def _your_promises(conn, actor_id: str) -> dict[str, list[dict[str, Any]]]:
