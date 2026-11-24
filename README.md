@@ -11,6 +11,23 @@ The broadcast viewer (`/watch`, `/benchmark`) and the arena page (`/arena`) were
 
 The backend stores canonical state changes in `Turns` and presentation beats in `StoryEvents`. `backend/turn_controller.py` is the only module that advances game state. Each live season runs on its own database under `artifacts/seasons/<timestamp>-<roster>/`.
 
+## How a season plays (since 2026-11-24)
+
+The aim is that the model that plays the social game and the votes best wins. Players are 9 models on the cheap OpenRouter roster; a season starts at round 7.
+
+- **Neutral names.** Players go by tree names (Ash, Cedar, ...). They never see a model name or id. People see both on the scorecard.
+- **One group.** No tribes and no merge. Every active player votes every round.
+- **Round order (fast step list, production):** private plan -> challenge -> idol gift -> private talks -> follow-up message -> vote (with private predictions) -> reveal -> elimination -> notebook.
+- **Challenge.** The same five puzzles for everyone, easiest to hardest, in one call. Most correct wins immunity; ties go to the harder puzzles, then a three-puzzle sudden death; still tied, nobody is immune. Speed never counts.
+- **Idol gift.** In the season's first two rounds the challenge winner gives a hidden idol to another player. Everyone learns an idol was given, not to whom. One idol in play at a time; it expires at five players. Playing it with a vote cancels the votes against the holder.
+- **Talks and promises.** Each player picks one other player to talk to privately. Vote promises made in talks are recorded and marked kept or broken once votes are revealed.
+- **What players see.** Who voted for whom each round, challenge scores, eliminations, the rules, their own promises, their round plan, their prediction accuracy and their own notebook (capped at 1,200 characters).
+- **Jury.** Jurors get each finalist's verified record from the tables, choose which finalist to question, and are told to vote on the best game over the season, not on the final pitch or a grudge.
+- **Outages.** A provider failure holds the call for up to 10 minutes; past that the season stops as interrupted and is not reported as a result. No player is charged for it.
+- **Thinking.** Every call reasons at the same effort ("low"; "medium" for the round plan), never switched off.
+- **Scoring.** Survivor Index v3 counts only the five ladder rungs for challenge accuracy. Prediction accuracy is reported, not yet in the index.
+- **Cost.** About 460 model calls a season; the public button stops a run at $5.
+
 ## Run Locally
 
 From the repo root:
