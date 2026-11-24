@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
+import subprocess
+import sys
+import threading
 import time
+from contextlib import closing
 from pathlib import Path
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query
@@ -25,7 +30,6 @@ from .arena import (
 )
 from .auth import require_operator
 from .database import ensure_database, seed_demo
-from .demo_harness import latest_report, run_demo
 from .live_season import current_status as live_season_status
 from .live_season import latest_report as live_latest_report
 from .live_season import run_live_season
@@ -167,20 +171,6 @@ def api_game_summary() -> dict:
     return get_game_summary()
 
 
-@app.post("/api/demo/run")
-def api_demo_run() -> dict:
-    """Public one-click benchmark. Full deterministic season, no auth, no spend."""
-    return run_demo()
-
-
-@app.get("/api/demo/report")
-def api_demo_report() -> dict:
-    report = latest_report()
-    if report is None:
-        raise HTTPException(status_code=404, detail="No benchmark run yet")
-    return report
-
-
 @app.post("/api/live-season/run")
 def api_live_season_run(request: LiveSeasonRequest, _: None = Depends(require_operator)) -> dict:
     """Operator-only. Runs a full live OpenRouter season under hard caps."""
@@ -192,42 +182,42 @@ def api_live_season_run(request: LiveSeasonRequest, _: None = Depends(require_op
     )
 
 
+_launch_lock = threading.Lock()
+
+
+def _runner_flag() -> dict | None:
+    from .live_season import SEASONS_DIR
+
+    try:
+        return json.loads((Path(SEASONS_DIR) / "runner_status.json").read_text())
+    except Exception:
+        return None
+
+
+def _detached_runner_alive() -> bool:
+    """True while scripts/run_public_season.py is running. Seasons can run
+    long, so never expire on time alone: the process itself must be alive."""
+    flag = _runner_flag()
+    if not flag or flag.get("status") != "running":
+        return False
+    try:
+        return subprocess.run(["pgrep", "-f", "run_public_season.py"], capture_output=True, timeout=5).returncode == 0
+    except Exception:
+        return True  # can't tell; trust the flag
+
+
 @app.get("/api/live-season/status")
 def api_live_season_status() -> dict:
-    """Status works across processes: prefer the runner flag file, fall back to
-    the in-process lock. A done-flag older than the latest season dir means the
-    runner finished; show its report."""
-    import json as _json
-    from pathlib import Path as _Path
-    from .live_season import SEASONS_DIR as _SEASONS
-
-    flag = _Path(_SEASONS) / "runner_status.json"
-    try:
-        data = _json.loads(flag.read_text())
-    except Exception:
-        data = None
-    if data and data.get("status") == "running":
-        # stale guard: the runner process itself must be alive. seasons can
-        # legitimately run long, so never expire on time alone.
-        import subprocess as _sp
-
-        alive = False
-        try:
-            _r = _sp.run(["pgrep", "-f", "run_public_season.py"], capture_output=True, timeout=5)
-            alive = _r.returncode == 0
-        except Exception:
-            alive = True  # can't tell; trust the flag
-        if alive:
-            return {
-                "status": "running",
-                "started_at": data.get("started_at"),
-                "report": None,
-            }
+    """Status works across processes: the public runner is detached, so prefer
+    its flag file, then fall back to the in-process operator run."""
+    flag = _runner_flag()
+    if _detached_runner_alive():
+        return {"status": "running", "started_at": (flag or {}).get("started_at"), "report": None}
     inproc = live_season_status()
     if inproc.get("status") == "running":
         return inproc
-    if data and data.get("status") == "done":
-        return {"status": "done", "started_at": None, "report": data.get("report")}
+    if flag and flag.get("status") == "done":
+        return {"status": "done", "started_at": None, "report": flag.get("report")}
     return inproc
 
 
@@ -235,15 +225,15 @@ def api_live_season_status() -> dict:
 def api_live_season_public_run(payload: dict | None = Body(default=None)) -> dict:
     """Public live OpenRouter season under hard budget gates.
 
-    Anyone can click; the server enforces a $1/run cap and a $3/day global
-    ledger, and refuses when either is exhausted. Runs the cheap roster.
+    Anyone can click. The runner enforces the per-run cost cap in
+    public_gate.PUBLIC_RUN_MAX_COST_CENTS; there is no daily cap. One season
+    runs at a time. Runs the cheap roster.
 
     Body (optional): {"openrouter_key": "sk-or-..."} — run the season on the
     visitor's own OpenRouter key instead of the operator's. The key is used
     only for this run's subprocess environment, never logged or persisted.
     """
-    from .public_gate import check_public_run_allowed, public_run_caps, record_public_run
-    from .live_season import run_live_season, current_status
+    from .live_season import current_status
 
     byok_raw = (payload or {}).get("openrouter_key")
     byok: str | None = None
@@ -266,37 +256,30 @@ def api_live_season_public_run(payload: dict | None = Body(default=None)) -> dic
         except Exception:
             raise HTTPException(status_code=400, detail="could not verify that key with OpenRouter, try again")
 
-    allowed, reason, status = check_public_run_allowed()
-    if not allowed:
-        raise HTTPException(status_code=429, detail=reason)
-    if current_status().get("status") == "running":
-        raise HTTPException(status_code=409, detail="a season is already running, check status")
-
-    caps = public_run_caps()
-
-    # run the season as a DETACHED subprocess so API restarts can't kill it.
-    # the runner writes report.json + status into the season dir when done.
-    import subprocess
-    import sys
-    from pathlib import Path
-
-    runner = Path(__file__).resolve().parent.parent / "scripts" / "run_public_season.py"
-    seasons_dir = Path(__file__).resolve().parent.parent / "artifacts" / "seasons"
+    runner = APP_ROOT / "scripts" / "run_public_season.py"
+    seasons_dir = APP_ROOT / "artifacts" / "seasons"
     seasons_dir.mkdir(parents=True, exist_ok=True)
-    log_path = seasons_dir / "runner.log"
-    log_file = open(log_path, "ab")
     child_env = dict(os.environ)
     if byok:
         child_env["OPENROUTER_API_KEY"] = byok
         child_env["SURVIVOR_BYOK"] = "1"
-    subprocess.Popen(
-        [sys.executable, str(runner)],
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        env=child_env,
-    )
-    log_file.close()
+
+    # One season at a time. The runner is a detached process, so the check must
+    # look at the runner itself; the lock closes the gap between check and launch.
+    with _launch_lock:
+        if _detached_runner_alive() or current_status().get("status") == "running":
+            raise HTTPException(status_code=409, detail="a season is already running, check status")
+        (seasons_dir / "runner_status.json").write_text(json.dumps({"status": "running", "started_at": time.time()}))
+        # detached so API restarts can't kill it; it writes its report and
+        # status into the seasons dir when done
+        with open(seasons_dir / "runner.log", "ab") as log_file:
+            subprocess.Popen(
+                [sys.executable, str(runner)],
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                env=child_env,
+            )
     msg = "season launched, poll /api/live-season/status"
     if byok:
         msg = "season launched on your OpenRouter key, poll /api/live-season/status"
@@ -376,21 +359,8 @@ def api_live_season_feed(after: int = 0, season: str | None = None) -> dict:
     except Exception:
         pass
     from .live_season import current_status
-    from .live_season import SEASONS_DIR as _SD
-    from pathlib import Path as _P
-    import json as _json
 
-    running = current_status().get("status") == "running"
-    if not running:
-        try:
-            _flag = _json.loads((_P(_SD) / "runner_status.json").read_text())
-            if _flag.get("status") == "running":
-                import subprocess as _sp
-
-                _r = _sp.run(["pgrep", "-f", "run_public_season.py"], capture_output=True, timeout=5)
-                running = _r.returncode == 0
-        except Exception:
-            pass
+    running = current_status().get("status") == "running" or _detached_runner_alive()
     return {
         "ok": True,
         "season_id": season_dir.name,
@@ -414,9 +384,9 @@ def api_live_season_history() -> dict:
         if not db.exists():
             continue
         try:
-            events = 0
-            import sqlite3
-            with sqlite3.connect(str(db)) as conn:
+            # sqlite3's context manager commits but does not close; close explicitly
+            # or every request leaks one file handle per season
+            with closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as conn:
                 events = conn.execute("SELECT COUNT(*) FROM StoryEvents").fetchone()[0]
             if events == 0:
                 continue  # failed smoke attempt, not a real season

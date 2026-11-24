@@ -78,13 +78,6 @@ def _clean(text: str, limit: int = 4000) -> str:
     return text[:limit].rstrip() + "..."
 
 
-def _short(text: str, limit: int = 220) -> str:
-    text = " ".join((text or "").split())
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3].rstrip() + "..."
-
-
 def season_narrative(season_id: str) -> dict[str, Any]:
     conn = _connect(season_id)
     try:

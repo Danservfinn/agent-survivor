@@ -30,6 +30,46 @@ class TurnControllerTest(unittest.TestCase):
         self.env_patch.stop()
         self.temp_dir.cleanup()
 
+    def test_second_deadlock_eliminates_the_weaker_record_not_the_survivor(self) -> None:
+        from types import SimpleNamespace
+
+        conn = database.get_db_connection()
+        self.addCleanup(conn.close)
+        conn.execute("PRAGMA foreign_keys = OFF")
+        for voter, target in (("agent-alpha", "agent-bravo"), ("agent-bravo", "agent-alpha")):
+            conn.execute(
+                "INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed) VALUES (7, 0, ?, ?, 1)",
+                (voter, target),
+            )
+        first = Counter({"agent-alpha": 1, "agent-bravo": 1})
+
+        def same_vote_again(conn, voter_id, round_number, tied, allowed):
+            return SimpleNamespace(
+                target_id=allowed[0]["agent_id"],
+                explanation="",
+                inner_thought="",
+                provider="test",
+                model_id=None,
+                fallback_from=None,
+            )
+
+        with patch.object(turn_controller, "_resolve_revote_decision", side_effect=same_vote_again):
+            final = turn_controller._maybe_run_revote(conn, 7, 1, first)
+        tiebreak = conn.execute("SELECT dialogue, payload FROM StoryEvents WHERE kind = 'tiebreak'").fetchone()
+
+        payload = json.loads(tiebreak["payload"])
+        self.assertEqual(payload["survivor_id"], "agent-alpha")
+        self.assertEqual(payload["eliminated_id"], "agent-bravo")
+        # the caller eliminates the leader of the returned tally
+        self.assertEqual(final.most_common(1)[0][0], "agent-bravo")
+        self.assertNotIn("agent-alpha", final)
+
+    def test_season_seed_is_read_when_used_not_at_import(self) -> None:
+        with patch.dict(os.environ, {"SURVIVOR_SEASON_SEED": "4242"}):
+            self.assertEqual(turn_controller._season_seed(), 4242)
+        with patch.dict(os.environ, {"SURVIVOR_SEASON_SEED": ""}):
+            self.assertEqual(turn_controller._season_seed(), 0)
+
     def test_advance_turn_creates_one_turn_and_ordered_story_events(self) -> None:
         result = turn_controller.advance_turn()
 

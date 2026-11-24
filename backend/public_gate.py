@@ -3,10 +3,11 @@
 The site's public button may run a live OpenRouter season on the operator's
 key. To keep that safe this module enforces:
 
-- a hard per-run cap (max_cost_cents) enforced by the existing runner caps
-- a global daily USD ledger persisted under artifacts/, so N visitors
-  clicking cannot exceed the daily allowance
-- one concurrent public run at a time (shared with the operator lock)
+- a per-run cost cap (max_cost_cents), enforced by the runner from its own
+  cost estimate
+- a daily USD ledger under artifacts/, for display only: there is no daily cap
+
+The API allows one season at a time (see api.api_live_season_public_run).
 """
 
 from __future__ import annotations
@@ -52,11 +53,6 @@ def public_budget_status() -> dict[str, Any]:
         "per_run_cap_cents": PUBLIC_RUN_MAX_COST_CENTS,
         "roster": PUBLIC_ROSTER,
     }
-
-
-def check_public_run_allowed() -> tuple[bool, str | None, dict[str, Any]]:
-    # no daily budget: every run is allowed up to the per-run cap
-    return True, None, public_budget_status()
 
 
 def record_public_run(report: dict[str, Any]) -> None:

@@ -173,10 +173,6 @@ def _grid_family_puzzle(family: str, difficulty: str, seed: int) -> dict[str, An
 # ------------------------------------------------------------ sequence family
 
 
-def _sequence_answer(start: int, step: int) -> int:
-    return start + step
-
-
 def _sequence_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
     rng = _rng("sequence_next", difficulty, seed)
     lo, hi = {"easy": (2, 9), "medium": (-12, 20), "hard": (-40, 60), "frontier": (-90, 120)}[difficulty]
@@ -518,9 +514,3 @@ def canonical_answer(value: Any) -> str:
 def grade_answer(answer: Any, expected: Any) -> bool:
     return canonical_answer(answer) == canonical_answer(expected)
 
-
-def grade_json_response(raw: str | None, expected: Any) -> bool:
-    """Grade a raw model answer field that may be a string containing JSON."""
-    if raw is None:
-        return False
-    return grade_answer(raw, expected)

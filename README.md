@@ -2,65 +2,39 @@
 
 LLM Survivor is a turn-based social strategy simulation with a TV-style episode replay viewer.
 
-Routes:
+Pages:
 
-- `/watch` — public live exhibition (read-only).
-- `/benchmark` — operator replay. Mutations need `OPERATOR_TOKEN`.
-- `/arena` — closed paid-beta arena flow with human entries, CPU fill seats, start votes, and payout/refund simulation.
+- `/` — benchmark console. Runs a full live season (operator key under a per-run cost cap, or the visitor's own OpenRouter key), streams the event feed, shows the latest finished season's scorecard.
+- `/history` — every recorded season with scorecard, round summaries, votes and transcripts.
 
-Before a public episode, lock the live OpenRouter frontier roster:
+The broadcast viewer (`/watch`, `/benchmark`) and the arena page (`/arena`) were removed from the frontend on 2026-11-24; they are in git history at `beaa15b`. Their backend routes (episode, viewer state, voice, arena, frontier roster) still exist and are operator-gated for writes.
 
-```bash
-export OPENROUTER_API_KEY='...'
-python3 scripts/select_frontier_roster.py --lock
-python3 scripts/verify_frontier_roster.py
-```
-
-The benchmark MVP is a deterministic Tribal Conference episode:
-
-- camp strategy conversations
-- one-on-one confessionals
-- host questions
-- vote-booth moments
-- vote-card reveal
-- elimination
-- exit confessional
-
-The backend stores canonical state changes in `Turns` and stable presentation beats in `StoryEvents`. The frontend plays those events like an edited episode and never advances game state except by calling the turn API.
+The backend stores canonical state changes in `Turns` and presentation beats in `StoryEvents`. `backend/turn_controller.py` is the only module that advances game state. Each live season runs on its own database under `artifacts/seasons/<timestamp>-<roster>/`.
 
 ## Run Locally
 
-From `/Users/kurultai/llm-survivor`:
+From the repo root:
 
 ```bash
 python3 -m uvicorn backend.api:app --reload --port 8000
+cd frontend && npm install && npm run build   # static export to frontend/out, served by the backend
 ```
 
-In another terminal:
+Open `http://localhost:8000/`. The pages call `/api/...` on the same origin, so serve them through the backend rather than `next dev`.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+Set `OPERATOR_TOKEN` in the backend environment. Without it, operator POSTs return 503; with it they need `Authorization: Bearer <token>`.
 
-Then open `http://localhost:3000/watch` or `http://localhost:3000/benchmark`.
+## Production (Mac Mini)
 
-Set `OPERATOR_TOKEN` in the backend environment. Unauthenticated `POST /api/dev/reset` and other mutations return 401 or 503.
+launchd job `ai.kurult.llm-survivor-live` runs `run_live.sh` on `127.0.0.1:18800`; cloudflared serves it at `llmsurvivor.kurult.ai`. Secrets load from `~/.kublai/secrets/llm-survivor.env`. The service reads Python code at start and serves `frontend/out` from disk, so a deploy is: `cd frontend && npm run build`, then `launchctl kickstart -k gui/$(id -u)/ai.kurult.llm-survivor-live`.
 
-If the backend is on a non-default port, point the frontend at it:
+## Live season API (used by the pages)
 
-```bash
-NEXT_PUBLIC_API_URL=http://localhost:8001 npm run dev -- --port 3000
-```
+- `POST /api/live-season/public-run` — public; launches one detached season, 409 if one is running. Optional body `{"openrouter_key": "sk-or-..."}`.
+- `GET /api/live-season/status`, `/feed`, `/budget`, `/scorecard`, `/history`, `/narrative/{season_id}`
+- `POST /api/live-season/run` — operator only.
 
-If port 3000 is already occupied, run `npm run dev -- --port 3001` and open:
-
-- `http://localhost:3001/watch`
-- `http://localhost:3001/benchmark`
-- `http://localhost:3001/arena`
-
-## APIs
+## Game engine APIs (no page uses these now)
 
 - `GET /api/state`
 - `GET /api/episode/current?round=7&phase=tribal`
@@ -81,7 +55,7 @@ Benchmarking defaults to deterministic fallbacks unless a live provider is confi
 export LLM_PROVIDER=openrouter
 ```
 
-To allow OpenRouter turns, load an OpenRouter key only in the backend shell and switch the Benchmarking header provider to `OpenRouter`:
+To allow OpenRouter turns, load an OpenRouter key only in the backend shell:
 
 ```bash
 export OPENROUTER_API_KEY='...'
@@ -89,7 +63,7 @@ export LLM_PROVIDER=openrouter
 python3 -m uvicorn backend.api:app --reload --port 8000
 ```
 
-If `OpenRouter` is selected without `OPENROUTER_API_KEY`, the UI shows `Needs key` and the backend uses deterministic fallbacks.
+Without `OPENROUTER_API_KEY` the game engine uses deterministic fallbacks and live seasons refuse to start.
 
 Do not put `OPENROUTER_API_KEY` in repo files, wiki pages, frontend code, API payloads, logs, or generated artifacts.
 
@@ -113,7 +87,7 @@ export OLLAMA_TIMEOUT_SECONDS=180
 python3 -m uvicorn backend.api:app --reload --port 8000
 ```
 
-Select `Local Ollama` in the frontend provider dropdown, then select `All Local Ollama Models` or reset with the local roster. The local roster starts at round 7 and uses `qwen3.5:9b`, `qwen3.5:4b`, `gemma3:4b`, `llama3.2:3b`, `phi4-mini`, and `deepseek-r1:7b`.
+Reset with the `local_ollama` roster (`POST /api/dev/reset`). The model list is `LOCAL_OLLAMA_MODELS` in `backend/model_rosters.py`.
 
 ## ElevenLabs Voice
 

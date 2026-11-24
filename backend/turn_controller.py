@@ -7,7 +7,7 @@ import random
 import os
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass
 from typing import Any
 
@@ -866,7 +866,7 @@ def start_next_round() -> dict[str, Any]:
 
         next_round = state["current_round"] + 1
         conn.execute("UPDATE Agents SET has_immunity = 0 WHERE status = 'active'")
-        _grant_season_idols(conn, next_round, SEASON_SEED)
+        _grant_season_idols(conn, next_round, _season_seed())
         if len(_active_agent_rows(conn)) <= MERGE_AT:
             already_merged = conn.execute(
                 "SELECT COUNT(*) AS n FROM StoryEvents WHERE kind = 'merge'"
@@ -1782,113 +1782,6 @@ def _stable_index(seed: str, modulo: int) -> int:
     return int(digest[:10], 16) % modulo
 
 
-def _camp_pre_challenge_read_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
-    active = _active_agent_rows(conn)
-    if len(active) < 2:
-        raise RuntimeError("Cannot create camp strategy scene without enough active agents")
-    first = active[(round_number - 7) % len(active)]
-    second = active[(round_number - 6) % len(active)]
-    pressure = active[(round_number - 5) % len(active)]
-    dialogue = (
-        f"{first['pseudonym']} checks in with {second['pseudonym']} before the challenge. "
-        f"They agree that {pressure['pseudonym']} is becoming hard to sit next to if immunity keeps changing the vote math."
-    )
-    payload = {
-        "speaker_lines": [
-            {
-                "agent_id": first["agent_id"],
-                "text": f"If {pressure['pseudonym']} wins again, the whole vote board changes.",
-            },
-            {
-                "agent_id": second["agent_id"],
-                "text": "Then we need a plan before the challenge decides it for us.",
-            },
-        ],
-        "host_narration": "Before the challenge, camp is already gaming out immunity. The vote has not started, but the target map is forming.",
-        "llm_provider": "deterministic",
-    }
-    _maybe_generate_host_narration(
-        conn,
-        round_number=round_number,
-        step="camp_pre_challenge_read",
-        payload=payload,
-        kind="conversation",
-        title="Camp | Before the Challenge",
-        dialogue=dialogue,
-        subtitle="The tribe maps out risk before immunity is decided.",
-        inner_thought="I want the challenge result to narrow my options, not create chaos.",
-    )
-    return _insert_story_event(
-        conn,
-        turn_id=turn_id,
-        round_number=round_number,
-        phase="camp",
-        kind="conversation",
-        scene="camp",
-        shot="shoreline_two_shot",
-        actor_ids=[first["agent_id"], second["agent_id"]],
-        target_ids=[pressure["agent_id"]],
-        visibility="audience",
-        title="Camp | Before the Challenge",
-        dialogue=dialogue,
-        subtitle="The tribe maps out risk before immunity is decided.",
-        inner_thought="I want the challenge result to narrow my options, not create chaos.",
-        trust_telemetry={first["agent_id"]: 52, second["agent_id"]: 47, pressure["agent_id"]: 34},
-        duration_ms=11000,
-        animation="camp_strategy",
-        payload=payload,
-    )
-
-
-def _camp_pre_challenge_confessional_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
-    active = _active_agent_rows(conn)
-    if not active:
-        raise RuntimeError("Cannot create confessional without active agents")
-    actor = active[(round_number - 4) % len(active)]
-    dialogue = (
-        "This challenge is not just a puzzle for me. It decides whether I can vote from strength "
-        "or have to scramble from the bottom."
-    )
-    payload = {
-        "host_narration": (
-            f"{actor['pseudonym']} frames the challenge as strategy, not just performance. "
-            "This is the pre-challenge pressure point."
-        ),
-        "llm_provider": "deterministic",
-    }
-    _maybe_generate_host_narration(
-        conn,
-        round_number=round_number,
-        step="camp_pre_challenge_confessional",
-        payload=payload,
-        kind="confessional",
-        title=f"{actor['pseudonym']} | Pre-Challenge Confessional",
-        dialogue=dialogue,
-        subtitle="Before immunity",
-        inner_thought="I am trying to keep both voting paths alive until the challenge result is known.",
-    )
-    return _insert_story_event(
-        conn,
-        turn_id=turn_id,
-        round_number=round_number,
-        phase="camp",
-        kind="confessional",
-        scene="confessional",
-        shot="direct_to_camera",
-        actor_ids=[actor["agent_id"]],
-        target_ids=[],
-        visibility="audience",
-        title=f"{actor['pseudonym']} | Pre-Challenge Confessional",
-        dialogue=dialogue,
-        subtitle="Before immunity",
-        inner_thought="I am trying to keep both voting paths alive until the challenge result is known.",
-        trust_telemetry={actor["agent_id"]: 50},
-        duration_ms=10000,
-        animation="confessional_cut",
-        payload=payload,
-    )
-
-
 def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     puzzle = _round_puzzle(conn, round_number, _challenge_type(conn))
     challenge_type = _challenge_type(conn)
@@ -2194,67 +2087,6 @@ def _challenge_solver_spotlight_event(conn, round_number: int, turn_id: int) -> 
     )
 
 
-def _camp_strategy_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
-    active = _active_agent_rows(conn)
-    immune = [agent for agent in active if agent["has_immunity"]]
-    vulnerable = [agent for agent in active if not agent["has_immunity"]]
-    immune_names = ", ".join(agent["pseudonym"] for agent in immune) or "no one"
-    vulnerable_names = ", ".join(agent["pseudonym"] for agent in vulnerable) or "no one"
-    driver = vulnerable[0] if vulnerable else active[0]
-    target = vulnerable[-1] if len(vulnerable) > 1 else (active[-1] if active else driver)
-    dialogue = (
-        f"Back at camp, immunity belongs to {immune_names}. "
-        f"The vulnerable pool is {vulnerable_names}, and the first serious plan forms around {target['pseudonym']}."
-    )
-    payload = {
-        "speaker_lines": [
-            {
-                "agent_id": driver["agent_id"],
-                "text": f"If {immune_names} is safe, we need a vote that still leaves us room next round.",
-            },
-            {
-                "agent_id": target["agent_id"],
-                "text": "Everyone is saying the obvious name, which usually means someone is hiding the real one.",
-            },
-        ],
-        "host_narration": "The challenge result reshapes camp. Immunity removes one option, so the social game has to find a new landing spot.",
-        "immunity_agent_ids": [agent["agent_id"] for agent in immune],
-        "vulnerable_agent_ids": [agent["agent_id"] for agent in vulnerable],
-        "llm_provider": "deterministic",
-    }
-    _maybe_generate_host_narration(
-        conn,
-        round_number=round_number,
-        step="camp_strategy",
-        payload=payload,
-        kind="conversation",
-        title="Camp | Post-Challenge Strategy",
-        dialogue=dialogue,
-        subtitle="The target map changes after immunity.",
-        inner_thought="I am watching whether the vote forms naturally or too quickly.",
-    )
-    return _insert_story_event(
-        conn,
-        turn_id=turn_id,
-        round_number=round_number,
-        phase="camp",
-        kind="conversation",
-        scene="camp",
-        shot="strategy_wide",
-        actor_ids=[driver["agent_id"], target["agent_id"]],
-        target_ids=[target["agent_id"]],
-        visibility="audience",
-        title="Camp | Post-Challenge Strategy",
-        dialogue=dialogue,
-        subtitle="The target map changes after immunity.",
-        inner_thought="I am watching whether the vote forms naturally or too quickly.",
-        trust_telemetry={driver["agent_id"]: 54, target["agent_id"]: 38},
-        duration_ms=13000,
-        animation="camp_strategy",
-        payload=payload,
-    )
-
-
 def _memory_update_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     eliminated_id = _current_eliminated_agent_id(conn)
     eliminated_name = _agent_name(conn, eliminated_id) if eliminated_id else "No model"
@@ -2322,7 +2154,12 @@ def _challenge_type(conn) -> str:
     return "individual"
 
 
-SEASON_SEED = int(os.environ.get("SURVIVOR_SEASON_SEED", "0") or 0)
+def _season_seed() -> int:
+    """Read at call time: live_season sets SURVIVOR_SEASON_SEED after this module is imported."""
+    try:
+        return int(os.environ.get("SURVIVOR_SEASON_SEED", "0") or 0)
+    except ValueError:
+        return 0
 
 
 def _round_puzzle(conn, round_number: int, challenge_type: str) -> dict[str, Any]:
@@ -2341,7 +2178,7 @@ def _round_puzzle(conn, round_number: int, challenge_type: str) -> dict[str, Any
         ]
     except Exception:
         active_model_ids = None
-    plan = season_puzzle_plan(SEASON_SEED, rounds=32, active_model_ids=active_model_ids)
+    plan = season_puzzle_plan(_season_seed(), rounds=32, active_model_ids=active_model_ids)
     puzzles = plan.get(round_number)
     if puzzles:
         chosen = puzzles[round_number % len(puzzles)]
@@ -2400,26 +2237,6 @@ def _tribe_of(conn, agent_id: str) -> str | None:
     row = conn.execute("SELECT team_id FROM Agents WHERE agent_id = ?", (agent_id,)).fetchone()
     team = row["team_id"] if row else None
     return team if team and team.startswith("tribe-") else None
-
-
-def _tribe_members(conn, tribe_id: str) -> list[dict[str, Any]]:
-    return [
-        row_to_dict(row)
-        for row in conn.execute(
-            "SELECT * FROM Agents WHERE status = 'active' AND team_id = ? ORDER BY agent_id",
-            (tribe_id,),
-        ).fetchall()
-    ]
-
-
-def _assign_initial_tribes(conn) -> None:
-    """Split the active cast into two balanced tribes at season start."""
-    active = _active_agent_rows(conn)
-    for index, agent in enumerate(active):
-        tribe = "tribe-a" if index % 2 == 0 else "tribe-b"
-        conn.execute(
-            "UPDATE Agents SET team_id = ? WHERE agent_id = ?", (tribe, agent["agent_id"])
-        )
 
 
 def _merge_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
@@ -4007,20 +3824,26 @@ def _maybe_run_revote(
         scene="tribal",
         shot="flame_out",
         actor_ids=["host"],
-        target_ids=[ranked[0]],
+        target_ids=[ranked[-1]],
         visibility="audience",
         title="Tiebreak: Challenge Record Decides",
         dialogue=(
             f"The revote is deadlocked. Season-long challenge record breaks the tie: "
-            f"{_agent_name(conn, ranked[0])} stays."
+            f"{_agent_name(conn, ranked[0])} stays, {_agent_name(conn, ranked[-1])} goes."
         ),
         subtitle="Deterministic tiebreak",
         duration_ms=10000,
         animation="flame_out",
         spoiler_group="elimination",
-        payload={"tiebreak": "challenge_record", "survivor_id": ranked[0], "revote_tally": dict(revote_counts)},
+        payload={
+            "tiebreak": "challenge_record",
+            "survivor_id": ranked[0],
+            "eliminated_id": ranked[-1],
+            "revote_tally": dict(revote_counts),
+        },
     )
-    return Counter({ranked[0]: 1})
+    # the caller eliminates whoever leads the returned tally: the weakest record, not the strongest
+    return Counter({ranked[-1]: 1})
 
 
 def _target_roster_line(allowed: list[dict[str, Any]]) -> str:
@@ -4606,7 +4429,6 @@ def _real_agent_action(
     )
 
 
-
 def _scripted_host_fallback(step: str, payload: dict[str, Any]) -> str | None:
     """Deterministic host line used only when the live host model call fails.
     Keeps a live season alive instead of aborting the whole run."""
@@ -4715,28 +4537,6 @@ def _eligible_targets(conn, actor_id: str) -> list[dict[str, Any]]:
 
 def _agent_row(conn, agent_id: str) -> dict[str, Any] | None:
     return row_to_dict(conn.execute("SELECT * FROM Agents WHERE agent_id = ?", (agent_id,)).fetchone())
-
-
-def _merge_speaker_lines(existing: Any, actor_id: str, dialogue: str) -> list[dict[str, str]]:
-    if not isinstance(existing, list):
-        return [{"agent_id": actor_id, "text": dialogue}]
-    merged: list[dict[str, str]] = []
-    replaced = False
-    for line in existing:
-        if not isinstance(line, dict):
-            continue
-        line_agent_id = line.get("agent_id")
-        text = line.get("text")
-        if not isinstance(line_agent_id, str) or not isinstance(text, str):
-            continue
-        if line_agent_id == actor_id:
-            merged.append({"agent_id": actor_id, "text": dialogue})
-            replaced = True
-        else:
-            merged.append({"agent_id": line_agent_id, "text": text})
-    if not replaced:
-        merged.insert(0, {"agent_id": actor_id, "text": dialogue})
-    return merged
 
 
 def _add_context_digest(payload: dict[str, Any], key: str, digest: dict[str, Any]) -> None:

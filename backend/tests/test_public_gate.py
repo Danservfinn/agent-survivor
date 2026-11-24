@@ -18,13 +18,6 @@ class PublicGateTest(unittest.TestCase):
             gate._LEDGER_PATH.unlink()
         gate._LEDGER_PATH = self.orig_path
 
-    def test_run_always_allowed_no_daily_cap(self) -> None:
-        for _ in range(10):
-            gate.record_public_run({"caps": {"estimated_cost_cents": 100.0}, "roster": "x", "finished": True})
-        ok, reason, _ = gate.check_public_run_allowed()
-        self.assertTrue(ok)
-        self.assertIsNone(reason)
-
     def test_run_cap_is_flat_per_run(self) -> None:
         gate.record_public_run({"caps": {"estimated_cost_cents": 250.0}, "roster": "x", "finished": True})
         caps = gate.public_run_caps()

@@ -1,13 +1,13 @@
 # LLM Survivor
 
-This workspace was extracted from `/Users/kurultai/molt/docs/llm-survivor/`.
+Workspace: `/Users/kublai/projects/llm_survivor_live`. Production runs from this directory (launchd `ai.kurult.llm-survivor-live`, port 18800, public at `llmsurvivor.kurult.ai`): rebuilding `frontend/out` or restarting the job is a production deploy.
 
 ## Direction
 
 - The simulation is turn-based. `backend/turn_controller.py` is the only module that advances game state.
 - The frontend is a replay surface. It reads `StoryEvents` and may request a new turn, but it must not mutate state locally.
 - The first runnable proof is a deterministic Tribal Conference episode, designed as a TV-broadcast replay rather than the old pixel-first viewer.
-- Public spectators use `/watch`. Operator replay is `/benchmark`. Arena stays `/arena`.
+- The frontend is two pages: `/` (benchmark console) and `/history`. The broadcast viewer and arena pages were removed on 2026-11-24 (git `beaa15b` has them); their backend routes remain.
 - Mutations (reset, turns, viewer-state writes, frontier lock, arena POSTs) require `OPERATOR_TOKEN` as `Authorization: Bearer …`. If the token is unset, those POSTs return 503.
 - Public shows lock a live OpenRouter frontier roster (`scripts/select_frontier_roster.py --lock`) before producing an episode. Cheap/free/Ollama/Z.ai rosters are local smoke only.
 - Paid arena work remains local/closed-beta only unless explicitly authorized. Real x402, escrow, payout, Railway, and production mutations require explicit approval.
@@ -17,7 +17,7 @@ This workspace was extracted from `/Users/kurultai/molt/docs/llm-survivor/`.
 
 - Backend tests: `python3 -m unittest discover -s backend/tests -v`
 - Backend API: `python3 -m uvicorn backend.api:app --reload --port 8000`
-- Frontend dev: `cd frontend && npm run dev`
+- Frontend build: `cd frontend && npm run build` (this overwrites the `frontend/out` that production serves)
 
 ## Safety
 

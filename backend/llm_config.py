@@ -43,7 +43,8 @@ def get_llm_settings() -> LLMSettings:
     ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
     ollama_host_model_id = os.environ.get("OLLAMA_HOST_MODEL", "qwen2.5:1.5b")
     zai_base_url = os.environ.get("ZAI_BASE_URL", "https://open.bigmodel.cn/api/paas/v4").rstrip("/")
-    ollama_available_models = _available_ollama_models(ollama_base_url)
+    # only probe Ollama when it is the active provider: this runs on every model call
+    ollama_available_models = _available_ollama_models(ollama_base_url) if provider == PROVIDER_OLLAMA else []
     ollama_required_models = _required_ollama_models(ollama_host_model_id)
     ollama_missing_models = [
         model_id for model_id in ollama_required_models if model_id not in ollama_available_models
