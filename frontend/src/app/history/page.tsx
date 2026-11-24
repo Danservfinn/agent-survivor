@@ -16,6 +16,8 @@ type Season = {
   cost_cents: number | null;
   live_calls: number | null;
   cap_reached: string | null;
+  // set when a model's provider stayed down: the season stopped and is not a result
+  interrupted?: { step: string; model_id: string; reason: string } | null;
   index_version: number | null;
   game: { rounds: number | null; winner: string | null } | null;
   rows: HistoryRow[] | null;
@@ -408,7 +410,9 @@ export default function HistoryPage() {
             >
               <span>{open ? "v" : ">"}</span>
               <span>{seasonDate(s.season_id)}</span>
-              <strong>{s.error ? "error" : finished ? `${s.game?.winner} won` : "unfinished"}</strong>
+              <strong>
+                {s.error ? "error" : finished ? `${s.game?.winner} won` : s.interrupted ? "interrupted" : "unfinished"}
+              </strong>
               <span className="season-head-meta">
                 {finished ? "ended in" : "stopped in"} round {s.game?.rounds ?? "-"}
                 {s.cost_cents != null ? ` | ${usd(s.cost_cents)}` : ""}
@@ -425,7 +429,11 @@ export default function HistoryPage() {
                     s.index_version != null ? `index v${s.index_version}` : null,
                     s.elapsed_s != null ? `${Math.round(s.elapsed_s / 60)} min` : null,
                     s.cap_reached ? `cap reached: ${s.cap_reached}` : null,
-                    finished ? null : "run stopped before a winner was declared",
+                    s.interrupted
+                      ? `interrupted at ${s.interrupted.step}: provider outage, not a result`
+                      : finished
+                        ? null
+                        : "run stopped before a winner was declared",
                   ]
                     .filter(Boolean)
                     .join(" | ")}

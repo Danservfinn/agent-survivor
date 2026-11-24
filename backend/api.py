@@ -427,6 +427,7 @@ def api_live_season_history() -> dict:
                     "cost_cents": (report.get("caps") or {}).get("estimated_cost_cents"),
                     "live_calls": (report.get("caps") or {}).get("estimated_live_calls"),
                     "cap_reached": (report.get("caps") or {}).get("cap_reached"),
+                    "interrupted": report.get("interrupted"),
                     "index_version": card.get("index_version"),
                     "game": card.get("game"),
                     "rows": card.get("rows"),

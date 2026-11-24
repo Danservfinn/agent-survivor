@@ -32,6 +32,7 @@ from .openrouter_client import (
     AgentAction,
     ChallengeSolution,
     HostNarration,
+    SeasonInterrupted,
     request_host_event_text,
     request_agent_action,
     request_agent_archetype,
@@ -342,6 +343,17 @@ GENERATED_BEAT_INTENTS: dict[str, dict[str, Any]] = {
 }
 
 
+class StepInterrupted(RuntimeError):
+    """A step stopped because a model's provider stayed unavailable. The step's
+    writes were rolled back; the season can resume from the same step later."""
+
+    def __init__(self, step: str, model_id: str, reason: str):
+        super().__init__(f"step {step} interrupted: provider for {model_id} unavailable ({reason})")
+        self.step = step
+        self.model_id = model_id
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class VoteDecision:
     target_id: str
@@ -587,6 +599,7 @@ def get_episode(
 def advance_turn() -> dict[str, Any]:
     ensure_database()
     conn = get_db_connection()
+    state: dict[str, Any] | None = None
     try:
         conn.execute("BEGIN IMMEDIATE")
         _assert_live_roster_compatible(conn)
@@ -627,6 +640,10 @@ def advance_turn() -> dict[str, Any]:
         turn = row_to_dict(conn.execute("SELECT * FROM Turns WHERE id = ?", (turn_id,)).fetchone())
         conn.commit()
         return {"turn": turn, "story_events": story_events, "state": get_state()}
+    except SeasonInterrupted as outage:
+        # nothing from the interrupted step is kept, so no player is charged for it
+        conn.rollback()
+        raise StepInterrupted(str(state["phase_step"]) if state else "?", outage.model_id, outage.reason) from None
     except Exception:
         conn.rollback()
         raise
@@ -693,6 +710,7 @@ def auto_run_to_end(
     estimated_live_calls = 0
     estimated_cost_cents = 0.0
     cap_reached: str | None = None
+    interrupted: dict[str, Any] | None = None
     pricing_table = get_pricing_table() if should_use_live_llm() else None
 
     while len(turns) < max_turns:
@@ -732,7 +750,11 @@ def auto_run_to_end(
                 estimated_cost_cents += projected_cost_cents
             estimated_live_calls += projected_calls
 
-        result = advance_turn()
+        try:
+            result = advance_turn()
+        except StepInterrupted as outage:
+            interrupted = {"step": outage.step, "model_id": outage.model_id, "reason": outage.reason}
+            break
         if result["turn"] is None:
             break
         turns.append(result["turn"])
@@ -743,6 +765,8 @@ def auto_run_to_end(
         "story_events": story_events,
         "state": get_state(),
         "summary": get_game_summary(),
+        # set when a provider stayed down: the season stopped, nobody was charged for it
+        "interrupted": interrupted,
         "caps": {
             "max_rounds": max_rounds,
             "max_turns": max_turns,

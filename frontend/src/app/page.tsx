@@ -8,6 +8,7 @@ import { ScoreRow, ScoreTable, seasonDate, usd } from "./score-table";
 type LiveScorecard = {
   ok: boolean;
   error?: string;
+  interrupted?: { step: string; model_id: string; reason: string } | null;
   season_id?: string;
   elapsed_s?: number;
   game?: { rounds?: number; winner?: string | null };
@@ -179,7 +180,12 @@ export default function Benchmark() {
         break;
       }
       const rep = sdata.report;
-      if (rep?.ok) {
+      if (rep?.ok && rep.interrupted) {
+        log(
+          `season interrupted at ${rep.interrupted.step}: the model provider stayed unavailable, so the season stopped and is not a result`,
+          "error",
+        );
+      } else if (rep?.ok) {
         log(
           `live season complete: ended in round ${rep.game?.rounds ?? "?"}, winner ${rep.game?.winner ?? "none"}, ${(rep.elapsed_s ?? 0).toFixed(0)}s`,
           "result",

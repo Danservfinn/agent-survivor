@@ -89,6 +89,14 @@ class SeasonReadPathsTest(unittest.TestCase):
         self.assertTrue(report["ok"])
         self.assertEqual(report["season_id"], "20260101-000000")
 
+    def test_latest_report_skips_interrupted_seasons(self) -> None:
+        interrupted = self.seasons / "20260303-000000-cheap_recent_openrouter"
+        interrupted.mkdir()
+        (interrupted / "scorecard.json").write_text(
+            json.dumps({"ok": True, "season_id": "20260303-000000", "interrupted": {"step": "camp_talks"}})
+        )
+        self.assertEqual(live_season.latest_report()["season_id"], "20260101-000000")
+
     def test_latest_report_with_no_scorecards(self) -> None:
         with mock.patch.object(live_season, "SEASONS_DIR", self.seasons / "missing"):
             self.assertFalse(live_season.latest_report()["ok"])

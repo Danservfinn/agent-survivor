@@ -570,6 +570,10 @@ class TurnControllerLLMWiringTest(unittest.TestCase):
                 with patch(
                     "backend.turn_controller.request_host_narration",
                     side_effect=RuntimeError("host unavailable"),
+                ), patch(
+                    # never reach the network from a test
+                    "backend.turn_controller.request_host_event_text",
+                    side_effect=RuntimeError("host unavailable"),
                 ):
                     with patch("builtins.print"):
                         result = turn_controller.advance_turn()

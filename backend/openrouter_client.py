@@ -24,6 +24,48 @@ REASONING_SETTINGS = {"effort": "low", "exclude": True}
 # Reasoning tokens count against max_tokens ("low" is about 20% of it), so each
 # call's visible-reply budget gets this much extra room on top.
 REASONING_TOKEN_HEADROOM = 1600
+
+# A provider failure (rate limit, 5xx, timeout, empty reply) never counts against
+# the player: the call is held and retried for up to this long, then the season
+# stops as interrupted instead of recording a wrong answer or a missed vote.
+PROVIDER_HOLD_SECONDS = 600
+PROVIDER_HOLD_MAX_WAIT_SECONDS = 120
+
+
+class ProviderOutage(Exception):
+    """A retryable provider failure. Internal to _post_chat_completion."""
+
+    def __init__(self, message: str, retry_after: float = 0.0):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class SeasonInterrupted(BaseException):
+    """The provider stayed unavailable past the hold window, or the account or
+    model cannot be reached at all. A BaseException on purpose: no
+    `except Exception` between the HTTP call and the step boundary may turn an
+    outage into a player's wrong answer, skipped talk or missed vote.
+    turn_controller.advance_turn converts it at the step boundary."""
+
+    def __init__(self, model_id: str, reason: str):
+        super().__init__(f"{model_id}: {reason}")
+        self.model_id = model_id
+        self.reason = reason
+
+
+def _retry_after_seconds(headers: Any, body: str) -> float:
+    value = None
+    try:
+        value = headers.get("Retry-After") if headers is not None else None
+    except Exception:
+        value = None
+    if value is None:
+        match = re.search(r'"Retry-After"\s*:\s*"?(\d+(?:\.\d+)?)', body or "")
+        value = match.group(1) if match else None
+    try:
+        return max(0.0, float(value)) if value is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
 AGENT_PROMPT_PROFILE_ID = "win-max-v2-strategy-contract"
 
 
@@ -1285,13 +1327,16 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                redact_secrets(RuntimeError(f"OpenRouter HTTP {exc.code}: {body}"))
-            ) from exc
+            error = RuntimeError(redact_secrets(RuntimeError(f"OpenRouter HTTP {exc.code}: {body}")))
+            error.retry_after = _retry_after_seconds(exc.headers, body)  # type: ignore[attr-defined]
+            raise error from exc
         except Exception as exc:
             raise RuntimeError(redact_secrets(exc)) from exc
 
     retryable_codes = {408, 429, 500, 502, 503, 504}
+    # the account or the model cannot be reached at all: waiting will not help,
+    # and it is not the player's fault, so the season stops as interrupted
+    unreachable_codes = {401, 403, 404}
 
     def _post_with_retries(outbound: dict[str, Any]) -> dict[str, Any]:
         last_exc: Exception | None = None
@@ -1303,6 +1348,8 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
                 msg = str(exc)
                 code_match = re.search(r"OpenRouter HTTP (\d{3})", msg)
                 code = int(code_match.group(1)) if code_match else None
+                if code in unreachable_codes or (code == 402 and "in_flight" not in msg):
+                    raise SeasonInterrupted(str(outbound.get("model")), msg[:300])
                 if code == 400 and "reasoning" in msg.lower() and "reasoning" in outbound and not dropped_reasoning:
                     # this endpoint rejects the reasoning parameter itself; let
                     # the provider apply its own default instead of failing the season
@@ -1311,31 +1358,50 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
                     dropped_reasoning = True
                     continue
                 transient = any(t in msg for t in ("timed out", "timeout", "temporarily rate-limited", "aborted"))
-                if (code in retryable_codes or transient) and attempt < 3:
-                    last_exc = exc
-                    wait_s = 3 * (attempt + 1)
-                    print(f"OpenRouter transient failure (attempt {attempt + 1}, HTTP {code}); retrying in {wait_s}s: {msg[:200]}")
-                    time.sleep(wait_s)
-                    continue
+                if code in retryable_codes or (code == 402 and "in_flight" in msg) or transient:
+                    if attempt < 3:
+                        last_exc = exc
+                        wait_s = 3 * (attempt + 1)
+                        print(f"OpenRouter transient failure (attempt {attempt + 1}, HTTP {code}); retrying in {wait_s}s: {msg[:200]}")
+                        time.sleep(wait_s)
+                        continue
+                    raise ProviderOutage(msg[:300], getattr(exc, "retry_after", 0.0)) from exc
                 raise
-        raise last_exc or RuntimeError("OpenRouter request failed after retries")
+        raise ProviderOutage(str(last_exc or "OpenRouter request failed after retries")[:300])
 
-    response_payload = _post_with_retries(outbound_payload)
-    choices = response_payload.get("choices") or [{}]
-    content = (choices[0].get("message") or {}).get("content")
-    finish = choices[0].get("finish_reason")
-    if (content is None or (isinstance(content, str) and not content.strip())) and finish in (
-        "length",
-        "stop",
-        None,
-    ):
-        # The model spent the whole budget on reasoning and returned no visible
-        # text. Retry once with double the budget. Reasoning stays on: some
-        # models make it mandatory and reject a request that disables it.
-        retry = dict(outbound_payload)
-        retry["max_tokens"] = int(outbound_payload["max_tokens"]) * 2
-        response_payload = _post_with_retries(retry)
-    return response_payload
+    def _empty(response: dict[str, Any]) -> bool:
+        choices = response.get("choices") or [{}]
+        content = (choices[0].get("message") or {}).get("content")
+        finish = choices[0].get("finish_reason")
+        return (content is None or (isinstance(content, str) and not content.strip())) and finish in (
+            "length",
+            "stop",
+            None,
+        )
+
+    held_s = 0.0
+    wait_s = 5.0
+    while True:
+        try:
+            response_payload = _post_with_retries(outbound_payload)
+            if _empty(response_payload):
+                # The model spent the whole budget on reasoning and returned no visible
+                # text. Retry once with double the budget. Reasoning stays on: some
+                # models make it mandatory and reject a request that disables it.
+                retry = dict(outbound_payload)
+                retry["max_tokens"] = int(outbound_payload["max_tokens"]) * 2
+                response_payload = _post_with_retries(retry)
+                if _empty(response_payload):
+                    raise ProviderOutage("empty reply after a doubled token budget")
+            return response_payload
+        except ProviderOutage as outage:
+            delay = max(wait_s, outage.retry_after)
+            if held_s + delay > PROVIDER_HOLD_SECONDS:
+                raise SeasonInterrupted(str(outbound_payload.get("model")), str(outage)) from None
+            print(f"Provider unavailable for {outbound_payload.get('model')}; holding the turn {delay:.0f}s: {outage}")
+            time.sleep(delay)
+            held_s += delay
+            wait_s = min(wait_s * 2, PROVIDER_HOLD_MAX_WAIT_SECONDS)
 
 
 def _post_zai_chat(payload: dict[str, Any], settings) -> dict[str, Any]:

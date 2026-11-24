@@ -54,8 +54,9 @@ def latest_season_dir() -> Path | None:
 
 
 def latest_report() -> dict[str, Any]:
-    """Scorecard of the newest season that finished. Aborted runs leave a
-    season dir with no scorecard; those must not hide the last real result."""
+    """Scorecard of the newest season with a result. Aborted runs leave a season
+    dir with no scorecard, and interrupted runs are skipped; neither may hide
+    the last real result."""
     if not SEASONS_DIR.exists():
         return {"ok": False, "error": "no live seasons recorded"}
     for season_dir in sorted((p for p in SEASONS_DIR.iterdir() if p.is_dir()), reverse=True):
@@ -63,9 +64,12 @@ def latest_report() -> dict[str, Any]:
         if not report_path.exists():
             continue
         try:
-            return json.loads(report_path.read_text())
+            report = json.loads(report_path.read_text())
         except Exception as exc:
             return {"ok": False, "error": f"scorecard unreadable: {exc}"}
+        if report.get("interrupted"):
+            continue  # a provider outage stopped it; it is not a result
+        return report
     return {"ok": False, "error": "no live season has a scorecard"}
 
 
@@ -129,7 +133,9 @@ def run_live_season(
                 "caps": result.get("caps") or {},
                 "elapsed_s": round(elapsed, 1),
                 "finished": bool((result.get("state") or {}).get("game", {}).get("winner"))
-                and (result.get("caps") or {}).get("cap_reached") is None,
+                and (result.get("caps") or {}).get("cap_reached") is None
+                and not result.get("interrupted"),
+                "interrupted": result.get("interrupted"),
                 "generated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()) + " UTC",
             }
         )
