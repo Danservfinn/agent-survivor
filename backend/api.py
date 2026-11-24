@@ -570,7 +570,7 @@ def api_auto_run_to_end(request: AutoRunToEndRequest, _: None = Depends(require_
 
 @app.post("/api/voice/build-episode")
 def api_voice_build_episode(
-    round_number: int = Query(default=7, alias="round"),
+    round_number: int = Query(default=1, alias="round"),
     phase: str = "tribal",
     _: None = Depends(require_operator),
 ) -> dict:
@@ -584,7 +584,7 @@ def api_voice_build_episode(
 
 @app.get("/api/voice/status")
 def api_voice_status(
-    round_number: int = Query(default=7, alias="round"),
+    round_number: int = Query(default=1, alias="round"),
     phase: str = "tribal",
 ) -> dict:
     try:

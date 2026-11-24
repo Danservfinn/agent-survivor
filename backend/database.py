@@ -32,6 +32,10 @@ JSON_COLUMNS = {
 }
 
 
+# Seasons start at round 1 (they started at round 7 until 2026-11-24).
+FIRST_ROUND = 1
+
+
 def round_start_step() -> str:
     """First step of a round. The fast step list (production) opens with the
     challenge; the long list opens with a camp scene. Must match
@@ -498,16 +502,17 @@ def seed_demo(
             """
             INSERT INTO GameState (
                 season_id, current_round, phase, phase_step, turn_index, is_merged
-            ) VALUES (1, 7, 'round', ?, 0, 1)
+            ) VALUES (1, ?, 'round', ?, 0, 1)
             """,
-            (round_start_step(),),
+            (FIRST_ROUND, round_start_step()),
         )
         conn.execute(
             """
             INSERT INTO ViewerState (
                 season_id, round, phase, replay_index, is_playing
-            ) VALUES (1, 7, 'round', 0, 0)
-            """
+            ) VALUES (1, ?, 'round', 0, 0)
+            """,
+            (FIRST_ROUND,),
         )
 
         conn.executemany(

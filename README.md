@@ -13,7 +13,7 @@ The backend stores canonical state changes in `Turns` and presentation beats in 
 
 ## How a season plays (since 2026-11-24)
 
-The aim is that the model that plays the social game and the votes best wins. Players are 9 models on the cheap OpenRouter roster; a season starts at round 7.
+The aim is that the model that plays the social game and the votes best wins. Players are 9 models on the cheap OpenRouter roster; a season starts at round 1.
 
 - **Neutral names.** Players go by tree names (Ash, Cedar, ...). They never see a model name or id. People see both on the scorecard.
 - **One group.** No tribes and no merge. Every active player votes every round.

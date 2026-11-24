@@ -25,8 +25,8 @@ class RoundPreloaderTest(unittest.TestCase):
         after = turn_controller.get_state()
 
         self.assertEqual(status["status"], "complete")
-        self.assertEqual(status["source_round"], 7)
-        self.assertEqual(status["target_round"], 8)
+        self.assertEqual(status["source_round"], 1)
+        self.assertEqual(status["target_round"], 2)
         self.assertEqual(status["provider"], "deterministic")
         active_count = len([agent for agent in before["agents"] if agent["status"] == "active"])
         self.assertGreaterEqual(status["event_count"], active_count)
@@ -43,7 +43,7 @@ class RoundPreloaderTest(unittest.TestCase):
         state_text = json.dumps(state)
         preload = state["next_round_preload"]
 
-        self.assertEqual(preload["target_round"], 8)
+        self.assertEqual(preload["target_round"], 2)
         self.assertIn("agent_response_count", preload["context_digest"])
         self.assertNotIn("agent_responses", state_text)
         self.assertNotIn("host_response", state_text)

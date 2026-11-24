@@ -13,7 +13,7 @@ from backend import turn_controller as tc
 from backend.llm_context import build_agent_episode_context
 from backend.openrouter_client import AgentAction
 
-ROUND = 7
+ROUND = 1
 
 
 class CampTalksTest(unittest.TestCase):

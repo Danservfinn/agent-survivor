@@ -17,7 +17,7 @@ from backend.challenge_bank import LADDER_TIERS
 from backend.llm_context import build_agent_episode_context
 from backend.openrouter_client import ChallengeSolution
 
-ROUND = 7
+ROUND = 1
 
 
 class _SeasonDb(unittest.TestCase):
@@ -108,7 +108,7 @@ class LadderScoringTest(_SeasonDb):
 
 
 class IdolGiftTest(_SeasonDb):
-    """Deterministic season: the round-7 winner is the first player and gives the
+    """Deterministic season: the round-1 winner is the first player and gives the
     idol to the first other player."""
 
     def _advance_to(self, step: str, round_number: int) -> None:
@@ -151,7 +151,7 @@ class IdolGiftTest(_SeasonDb):
         self.assertTrue(bystander_ctx["challenge_history"][0]["idol_given_by_winner"])
 
     def test_no_second_idol_while_one_is_held(self) -> None:
-        # stop after round 8's result, before its gift step runs
+        # stop after round 2's result, before its gift step runs
         self._advance_to("challenge_gift", ROUND + 1)
         winner = self.conn.execute("SELECT winning_agent_id FROM ChallengeResults WHERE round = ?", (ROUND + 1,)).fetchone()[0]
         holder = next(
@@ -216,7 +216,7 @@ class IdolGiftTest(_SeasonDb):
         holder, *rest = self.players
         self.conn.execute("UPDATE Agents SET idol_held = 1 WHERE agent_id = ?", (holder,))
         for agent in rest[: len(self.players) - tc.IDOL_EXPIRES_AT]:
-            self.conn.execute("UPDATE Agents SET status = 'eliminated', elimination_round = 7 WHERE agent_id = ?", (agent,))
+            self.conn.execute("UPDATE Agents SET status = 'eliminated', elimination_round = 1 WHERE agent_id = ?", (agent,))
         tc._expire_idols_if_due(self.conn)
         self.assertEqual(self._holders(), [])
         memory = self.conn.execute("SELECT confessional_memory FROM Agents WHERE agent_id = ?", (holder,)).fetchone()[0]

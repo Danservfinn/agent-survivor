@@ -31,7 +31,7 @@ class LLMContextBoundaryTest(unittest.TestCase):
             context = build_agent_episode_context(
                 conn,
                 actor_id="agent-bravo",
-                round_number=7,
+                round_number=1,
                 current_step="vote_booth_agent-bravo",
             )
         finally:
@@ -41,14 +41,14 @@ class LLMContextBoundaryTest(unittest.TestCase):
         private_text = json.dumps(context["actor_private_memory"])
         full_text = json.dumps(context)
 
-        self.assertIn("Night 7 | Tribal Conference", public_text)
+        self.assertIn("Tribal Conference", public_text)
         self.assertIn("Camp | The Quiet Count", public_text)
         self.assertIn("I am trying to keep two alliances", private_text)
         self.assertIn("I am privately weighing", private_text)
         self.assertNotIn("Grok 4.3 knows the room is tilted", full_text)
         self.assertNotIn("People are smiling too much", full_text)
 
-    def _context(self, actor_id: str, round_number: int = 7, step: str = "tribal_vote_call") -> dict:
+    def _context(self, actor_id: str, round_number: int = 1, step: str = "tribal_vote_call") -> dict:
         conn = database.get_db_connection()
         try:
             return build_agent_episode_context(
@@ -73,13 +73,13 @@ class LLMContextBoundaryTest(unittest.TestCase):
         self._run_until_elimination()
         conn = database.get_db_connection()
         try:
-            votes = conn.execute("SELECT voter_id, target_id FROM Votes WHERE round = 7 AND voter_id != 'host'").fetchall()
+            votes = conn.execute("SELECT voter_id, target_id FROM Votes WHERE round = 1 AND voter_id != 'host'").fetchall()
             names = {row["agent_id"]: row["pseudonym"] for row in conn.execute("SELECT agent_id, pseudonym FROM Agents")}
             active = conn.execute("SELECT agent_id FROM Agents WHERE status = 'active' ORDER BY agent_id").fetchone()["agent_id"]
         finally:
             conn.close()
-        context = self._context(active, round_number=7)
-        round_7 = next(entry for entry in context["vote_history"] if entry["round"] == 7)
+        context = self._context(active, round_number=1)
+        round_7 = next(entry for entry in context["vote_history"] if entry["round"] == 1)
         expected = sorted((names[row["voter_id"]], names[row["target_id"]]) for row in votes)
         self.assertEqual(sorted((v["voter"], v["target"]) for v in round_7["votes"]), expected)
         self.assertIsNotNone(round_7["eliminated"])
@@ -90,7 +90,7 @@ class LLMContextBoundaryTest(unittest.TestCase):
         context = self._context("agent-alpha")
         self.assertTrue(any("revote" in rule for rule in context["game_rules"]))
         self.assertTrue(any("jury" in rule for rule in context["game_rules"]))
-        self.assertEqual(context["challenge_history"][0]["round"], 7)
+        self.assertEqual(context["challenge_history"][0]["round"], 1)
         self.assertTrue(context["challenge_history"][0]["winner"])
 
     def test_revote_ballots_stay_hidden_until_the_elimination(self) -> None:
@@ -101,7 +101,7 @@ class LLMContextBoundaryTest(unittest.TestCase):
                 """
                 INSERT INTO StoryEvents (turn_id, round, sequence, phase, kind, scene, shot, actor_ids, target_ids,
                                          visibility, title, dialogue, payload)
-                VALUES (1, 7, 1, 'tribal', 'revote_booth', 'tribal', 'vote_booth', '["agent-alpha"]', '["agent-bravo"]',
+                VALUES (1, 1, 1, 'tribal', 'revote_booth', 'tribal', 'vote_booth', '["agent-alpha"]', '["agent-bravo"]',
                         'audience', 'Revote', 'Revote', '{"revote": true, "vote_target_id": "agent-bravo"}')
                 """
             )
@@ -118,7 +118,7 @@ class LLMContextBoundaryTest(unittest.TestCase):
                 """
                 INSERT INTO StoryEvents (turn_id, round, sequence, phase, kind, scene, shot, actor_ids, target_ids,
                                          visibility, title, dialogue, payload)
-                VALUES (1, 7, 2, 'tribal', 'elimination', 'tribal', 'wide', '["host"]', '["agent-bravo"]',
+                VALUES (1, 1, 2, 'tribal', 'elimination', 'tribal', 'wide', '["host"]', '["agent-bravo"]',
                         'audience', 'Out', 'Out', '{}')
                 """
             )
@@ -145,7 +145,7 @@ class LLMContextBoundaryTest(unittest.TestCase):
             context = build_agent_episode_context(
                 conn,
                 actor_id="agent-cipher",
-                round_number=7,
+                round_number=1,
                 current_step="vote_booth_agent-cipher",
             )
         finally:
@@ -170,13 +170,13 @@ class LLMContextBoundaryTest(unittest.TestCase):
             participant_context = build_agent_episode_context(
                 conn,
                 actor_id="agent-cipher",
-                round_number=7,
+                round_number=1,
                 current_step="camp_pre_challenge_confessional",
             )
             outsider_context = build_agent_episode_context(
                 conn,
                 actor_id="agent-echo",
-                round_number=7,
+                round_number=1,
                 current_step="camp_pre_challenge_confessional",
             )
         finally:
@@ -204,7 +204,7 @@ class LLMContextBoundaryTest(unittest.TestCase):
         try:
             context = build_host_episode_context(
                 conn,
-                round_number=7,
+                round_number=1,
                 current_step="vote_booth_agent-cipher",
             )
         finally:
@@ -548,7 +548,7 @@ class TurnControllerLLMWiringTest(unittest.TestCase):
                 result = turn_controller.advance_turn()
 
         event = result["story_events"][0]
-        episode = turn_controller.get_episode(round_number=7)
+        episode = turn_controller.get_episode(round_number=1)
         payload_text = json.dumps(episode["events"][0]["payload"])
 
         self.assertEqual(event["payload"]["host_narration"], "A context-aware host line lands here.")
@@ -648,7 +648,7 @@ class NeutralNamesInPromptsTest(unittest.TestCase):
         agents = [dict(row) for row in conn.execute("SELECT * FROM Agents ORDER BY agent_id").fetchall()]
         actor, others = agents[0], agents[1:]
         context = build_agent_episode_context(
-            conn, actor_id=actor["agent_id"], round_number=7, current_step="tribal_vote_call"
+            conn, actor_id=actor["agent_id"], round_number=1, current_step="tribal_vote_call"
         )
         sent: list[dict] = []
 

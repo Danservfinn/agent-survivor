@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .database import (
+    FIRST_ROUND,
     ensure_database,
     get_db_connection,
     json_dumps,
@@ -268,7 +269,7 @@ GENERATED_BEAT_INTENTS: dict[str, dict[str, Any]] = {
         "kind": "establishing",
         "scene": "tribal",
         "shot": "conference_wide",
-        "title": "Night 7 | Tribal Conference",
+        "title": "Tribal Conference",
         "actor_roles": ["host"],
         "target_roles": ["agent-alpha", "agent-bravo", "agent-cipher", "agent-delta", "agent-echo", "agent-flint"],
         "response_kind": "host",
@@ -2443,7 +2444,7 @@ IDOL_EXPIRES_AT = 5
 
 def _season_first_round(conn) -> int:
     row = conn.execute("SELECT MIN(round) AS first FROM Turns").fetchone()
-    return int(row["first"]) if row and row["first"] is not None else 7
+    return int(row["first"]) if row and row["first"] is not None else FIRST_ROUND
 
 
 def _idol_gift_round(conn, round_number: int) -> bool:
@@ -2717,7 +2718,7 @@ def _deterministic_challenge_attempts(
 ) -> list[ChallengeAttemptDecision]:
     """No-model season: one designated player solves every puzzle; the others solve
     a varying number of the easiest ones, always fewer, so there is never a tie."""
-    winner_index = (round_number - 7) % len(players)
+    winner_index = (round_number - FIRST_ROUND) % len(players)
     attempts: list[ChallengeAttemptDecision] = []
     for index, agent in enumerate(players):
         solved = len(puzzles) if index == winner_index else index % len(puzzles)

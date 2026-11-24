@@ -20,7 +20,7 @@ class ViewerStateTest(unittest.TestCase):
     def test_seeded_viewer_state_starts_at_first_replay_beat(self) -> None:
         state = get_viewer_state()
 
-        self.assertEqual(state["round"], 7)
+        self.assertEqual(state["round"], 1)
         self.assertEqual(state["phase"], "round")
         self.assertEqual(state["replay_index"], 0)
         self.assertFalse(state["is_playing"])

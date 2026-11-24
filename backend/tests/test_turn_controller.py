@@ -38,7 +38,7 @@ class TurnControllerTest(unittest.TestCase):
         conn.execute("PRAGMA foreign_keys = OFF")
         for voter, target in (("agent-alpha", "agent-bravo"), ("agent-bravo", "agent-alpha")):
             conn.execute(
-                "INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed) VALUES (7, 0, ?, ?, 1)",
+                "INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed) VALUES (1, 0, ?, ?, 1)",
                 (voter, target),
             )
         first = Counter({"agent-alpha": 1, "agent-bravo": 1})
@@ -54,7 +54,7 @@ class TurnControllerTest(unittest.TestCase):
             )
 
         with patch.object(turn_controller, "_resolve_revote_decision", side_effect=same_vote_again):
-            final = turn_controller._maybe_run_revote(conn, 7, 1, first)
+            final = turn_controller._maybe_run_revote(conn, 1, 1, first)
         tiebreak = conn.execute("SELECT dialogue, payload FROM StoryEvents WHERE kind = 'tiebreak'").fetchone()
 
         payload = json.loads(tiebreak["payload"])
@@ -255,7 +255,7 @@ class TurnControllerTest(unittest.TestCase):
 
     def test_vote_booth_shows_target_and_explanation(self) -> None:
         turn_controller.auto_run(90)
-        events = turn_controller.list_story_events(round_number=7)
+        events = turn_controller.list_story_events(round_number=1)
         vote_events = [event for event in events if event["kind"] == "vote_booth"]
 
         # pre-merge: only the losing tribe attends tribal council
@@ -277,7 +277,7 @@ class TurnControllerTest(unittest.TestCase):
 
     def test_vote_reveal_keeps_elimination_payload_until_elimination_event(self) -> None:
         turn_controller.auto_run(90)
-        events = turn_controller.list_story_events(round_number=7)
+        events = turn_controller.list_story_events(round_number=1)
         reveal_events = [event for event in events if event["kind"] == "vote_reveal"]
 
         active = turn_controller.get_state()["agents"]
@@ -464,8 +464,8 @@ class TurnControllerTest(unittest.TestCase):
     def test_replaying_story_events_does_not_mutate_state(self) -> None:
         turn_controller.auto_run(12)
         before = turn_controller.get_state()
-        first_read = turn_controller.list_story_events(round_number=7)
-        second_read = turn_controller.list_story_events(round_number=7)
+        first_read = turn_controller.list_story_events(round_number=1)
+        second_read = turn_controller.list_story_events(round_number=1)
         after = turn_controller.get_state()
 
         self.assertEqual(first_read, second_read)
@@ -484,11 +484,11 @@ class TurnControllerTest(unittest.TestCase):
         result = turn_controller.start_next_round()
 
         self.assertTrue(result["round_started"])
-        self.assertEqual(result["state"]["game"]["current_round"], 8)
+        self.assertEqual(result["state"]["game"]["current_round"], 2)
         self.assertEqual(result["state"]["game"]["phase"], "round")
         self.assertEqual(result["state"]["game"]["phase_step"], "camp_pre_challenge_read")
         self.assertEqual(result["state"]["game"]["turn_index"], 0)
-        self.assertEqual(result["state"]["viewer_state"]["round"], 8)
+        self.assertEqual(result["state"]["viewer_state"]["round"], 2)
         self.assertEqual(result["state"]["viewer_state"]["replay_index"], 0)
         self.assertFalse(result["state"]["viewer_state"]["is_playing"])
 
