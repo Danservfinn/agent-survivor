@@ -1,20 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-type HistoryRow = {
-  agent_id: string;
-  model: string;
-  survivor_index: number;
-  place: number;
-  challenge_correct: number;
-  challenge_attempts: number;
-  challenge_accuracy: number;
-  median_response_ms: number | null;
-  votes_cast: number;
-  votes_received: number;
-  is_winner: boolean;
-};
+import { ScoreRow, ScoreTable, seasonDate, usd } from "../score-table";
+
+type HistoryRow = ScoreRow;
 
 type Season = {
   season_id: string;
@@ -83,13 +74,13 @@ function Line({
   onRoundView,
 }: {
   who: string;
-  children: React.ReactNode;
+  children: string;
   thinking?: string;
   onWho?: () => void;
   onRoundView?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const text = typeof children === "string" ? children : "";
+  const text = children;
   const long = text.length > CLAMP || (thinking && thinking.length > CLAMP);
   const shown = open ? text : text.length > CLAMP ? text.slice(0, CLAMP - 3) + "..." : text;
   return (
@@ -175,6 +166,21 @@ function ChallengeBlock({ challenge, onName }: { challenge: Challenge; onName?: 
 }
 
 
+function Collapsed({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="narrative-block">
+      <h4 className="narrative-label">
+        {label}{" "}
+        <button className="narrative-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {open ? "hide" : "show"}
+        </button>
+      </h4>
+      {open && children}
+    </div>
+  );
+}
+
 function ModelDetail({ narrative, row, onClose }: { narrative: Narrative; row: HistoryRow; onClose: () => void }) {
   const name = row.model;
   const lines: { round: number; kind: string; text: string; thinking?: string }[] = [];
@@ -193,15 +199,13 @@ function ModelDetail({ narrative, row, onClose }: { narrative: Narrative; row: H
       if (mine) attempts.push({ round: r.round, correct: mine.correct, ms: mine.ms, first: r.challenge.first_solver });
     }
   }
-  const isJuror = narrative.jury.some((j) => j.who === name);
   const juryVote = narrative.jury.find((j) => j.who === name);
-  const isFinalist = narrative.pitches.some((p) => p.who === name);
   const pitch = narrative.pitches.find((p) => p.who === name);
 
   return (
     <div className="model-detail" id="model-detail">
       <button className="narrative-toggle" onClick={onClose}>close</button>
-      <h3 className="narrative-round-title">{name} — season by season</h3>
+      <h3 className="narrative-round-title">{name} this season</h3>
       <pre className="bench-pre">
         {[
           `place ${row.place}${row.is_winner ? " (winner)" : ""} | index ${row.survivor_index.toFixed(1)}`,
@@ -210,13 +214,13 @@ function ModelDetail({ narrative, row, onClose }: { narrative: Narrative; row: H
         ].join("\n")}
       </pre>
 
-      {isFinalist && pitch && (
+      {pitch && (
         <div className="narrative-block">
           <h4 className="narrative-label">final pitch</h4>
           <Line who="">{pitch.pitch}</Line>
         </div>
       )}
-      {isJuror && juryVote && (
+      {juryVote && (
         <div className="narrative-block">
           <h4 className="narrative-label">jury vote</h4>
           <Line who="">{`voted ${juryVote.target}${juryVote.reason ? ` — ${juryVote.reason}` : ""}`}</Line>
@@ -289,24 +293,21 @@ export default function HistoryPage() {
           return;
         }
         setSeasons(data.seasons);
-        if (data.seasons.length > 0) {
-          setOpenId(data.seasons[0].season_id);
-          loadNarrative(data.seasons[0].season_id);
+        const first = (data.seasons as Season[]).find((x) => x.game?.winner) ?? data.seasons[0];
+        if (first) {
+          setOpenId(first.season_id);
+          loadNarrative(first.season_id);
         }
       })
       .catch(() => setFailed(true));
   }, [loadNarrative]);
 
-  const toggle = useCallback(
-    (id: string) => {
-      setOpenId((prev) => {
-        const next = prev === id ? null : id;
-        if (next) loadNarrative(id);
-        return next;
-      });
-    },
-    [loadNarrative]
-  );
+  const toggle = (id: string) => {
+    const next = openId === id ? null : id;
+    setOpenId(next);
+    setOpenModel(null);
+    if (next && !narratives[next]) loadNarrative(next);
+  };
 
   const openByName = useCallback((name: string, rows: HistoryRow[] | null | undefined) => {
     const row = (rows ?? []).find((r) => r.model === name);
@@ -323,11 +324,11 @@ export default function HistoryPage() {
       <header className="bench-header">
         <h1>Run History</h1>
         <p className="bench-sub">
-          Every recorded live OpenRouter season, rescored to the current index version. Click a
-          season to expand its full scorecard and written summary of how every round played out.
+          Every recorded live season, newest first, rescored to the current index version. Open a
+          season for its scorecard and round-by-round summary; click a model for everything it did.
         </p>
         <p className="bench-meta">
-          <a href="/">back to benchmark console</a>
+          <Link href="/">back to benchmark console</Link>
         </p>
       </header>
 
@@ -336,68 +337,44 @@ export default function HistoryPage() {
 
       {seasons.map((s) => {
         const open = openId === s.season_id;
-        const rows = [...(s.rows ?? [])].sort((a, b) => b.survivor_index - a.survivor_index);
+        const finished = Boolean(s.game?.winner);
         const narrative = narratives[s.season_id];
         return (
           <section key={s.season_id} className="bench-section">
             <button
-              className="bench-run"
+              className={finished ? "season-head" : "season-head season-head-unfinished"}
               onClick={() => toggle(s.season_id)}
               aria-expanded={open}
-              style={{ width: "100%", textAlign: "left" }}
             >
-              {open ? "v " : "> "}
-              {s.recorded_at ?? s.season_id} | {s.game?.winner ?? (s.error ? "error" : "no winner")} |{" "}
-              {s.game?.rounds ?? "-"} rounds
-              {s.cost_cents != null ? ` | $${(s.cost_cents / 100).toFixed(2)}` : ""}
-              {s.live_calls != null ? ` | ${s.live_calls} calls` : ""}
+              <span>{open ? "v" : ">"}</span>
+              <span>{seasonDate(s.season_id)}</span>
+              <strong>{s.error ? "error" : finished ? `${s.game?.winner} won` : "unfinished"}</strong>
+              <span className="season-head-meta">
+                {finished ? "ended in" : "stopped in"} round {s.game?.rounds ?? "-"}
+                {s.cost_cents != null ? ` | ${usd(s.cost_cents)}` : ""}
+                {s.live_calls != null ? ` | ${s.live_calls} calls` : ""}
+              </span>
             </button>
 
             {open && !s.error && (
               <>
-                <pre className="bench-pre">
+                <p className="bench-meta">
                   {[
-                    `season ${s.season_id}`,
-                    `roster ${s.roster ?? "?"} | seed ${s.season_seed ?? "?"} | index v${s.index_version ?? "?"}`,
-                    `elapsed ${s.elapsed_s ?? "?"}s | cap ${s.cap_reached ?? "none reached"}`,
-                  ].join("\n")}
-                </pre>
-                <table className="bench-table">
-                  <thead>
-                    <tr>
-                      <th>rank</th>
-                      <th>model</th>
-                      <th>index</th>
-                      <th>place</th>
-                      <th>challenge</th>
-                      <th>med ms</th>
-                      <th>votes cast/against</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, i) => (
-                      <tr
-                        key={r.agent_id}
-                        className={r.is_winner ? "bench-winner" : undefined}
-                        onClick={() => setOpenModel((m) => (m === r.agent_id ? null : r.agent_id))}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <td>{i + 1}</td>
-                        <td>{r.model}</td>
-                        <td>{r.survivor_index.toFixed(1)}</td>
-                        <td>{r.place}</td>
-                        <td>
-                          {r.challenge_correct}/{r.challenge_attempts} (
-                          {(r.challenge_accuracy * 100).toFixed(0)}%)
-                        </td>
-                        <td>{r.median_response_ms ?? "-"}</td>
-                        <td>
-                          {r.votes_cast}/{r.votes_received}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    s.roster ? `roster ${s.roster}` : null,
+                    s.season_seed != null ? `seed ${s.season_seed}` : null,
+                    s.index_version != null ? `index v${s.index_version}` : null,
+                    s.elapsed_s != null ? `${Math.round(s.elapsed_s / 60)} min` : null,
+                    s.cap_reached ? `cap reached: ${s.cap_reached}` : null,
+                    finished ? null : "run stopped before a winner was declared",
+                  ]
+                    .filter(Boolean)
+                    .join(" | ")}
+                </p>
+                <ScoreTable
+                  rows={s.rows ?? []}
+                  selectedId={openModel}
+                  onSelect={(id) => setOpenModel((m) => (m === id ? null : id))}
+                />
 
                 {openModel && (narratives[s.season_id] && narratives[s.season_id] !== "loading" && narratives[s.season_id] !== "error") &&
                   (() => {
@@ -420,8 +397,7 @@ export default function HistoryPage() {
                         {r.challenge && <ChallengeBlock challenge={r.challenge} onName={(n) => openByName(n, s.rows)} />}
 
                         {r.conversations.length > 0 && (
-                          <div className="narrative-block">
-                            <h4 className="narrative-label">strategy at camp</h4>
+                          <Collapsed label={`strategy at camp (${r.conversations.length} conversations)`}>
                             {(roundModelFilter[s.season_id] ?? null) && (
                               <p className="bench-meta">
                                 round {r.round} view: {roundModelFilter[s.season_id]}{" "}
@@ -471,7 +447,7 @@ export default function HistoryPage() {
                                   {c.thinking && <Line who={`${c.who} (private)`}>{c.thinking}</Line>}
                                 </div>
                               ))}
-                          </div>
+                          </Collapsed>
                         )}
 
                         {r.votes.length > 0 && (
@@ -479,8 +455,7 @@ export default function HistoryPage() {
                             <h4 className="narrative-label">the vote</h4>
                             {r.votes.map((v, i) => (
                               <Line key={i} who={v.who} onWho={() => openByName(v.who, s.rows)}>
-                                voted {v.target}
-                                {v.reason ? ` — ${v.reason}` : ""}
+                                {`voted ${v.target}${v.reason ? ` — ${v.reason}` : ""}`}
                               </Line>
                             ))}
                           </div>
@@ -504,8 +479,7 @@ export default function HistoryPage() {
                         <h3 className="narrative-round-title">Jury votes</h3>
                         {narrative.jury.map((j, i) => (
                           <Line key={i} who={j.who} onWho={() => openByName(j.who, s.rows)}>
-                            voted {j.target}
-                            {j.reason ? ` — ${j.reason}` : ""}
+                            {`voted ${j.target}${j.reason ? ` — ${j.reason}` : ""}`}
                           </Line>
                         ))}
                         {narrative.finale && (

@@ -1,38 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type ScoreRow = {
-  agent_id: string;
-  model: string;
-  model_id: string;
-  place: number;
-  is_winner: boolean;
-  challenge_accuracy: number;
-  challenge_correct: number;
-  challenge_attempts: number;
-  median_response_ms: number | null;
-  votes_cast: number;
-  votes_received: number;
-  jury_votes: number;
-  mean_strategic_score: number;
-  survivor_index: number;
-};
+import { ScoreRow, ScoreTable, seasonDate, usd } from "./score-table";
 
 type LiveScorecard = {
   ok: boolean;
-  mode?: string;
-  roster?: string;
+  error?: string;
   season_id?: string;
-  finished?: boolean;
   elapsed_s?: number;
-  generated_at?: string;
   game?: { rounds?: number; winner?: string | null };
-  totals?: { attempts?: number; live_attempts?: number; votes?: number; jury_votes?: number };
-  caps?: { estimated_live_calls?: number; estimated_cost_cents?: number; cap_reached?: string | null };
+  caps?: { estimated_live_calls?: number; estimated_cost_cents?: number };
   rows?: ScoreRow[];
-  weights?: Record<string, number>;
 };
+
+type Budget = { spent_cents: number; per_run_cap_cents: number };
 
 type Line = { text: string; kind: "info" | "result" | "error" };
 
@@ -70,22 +53,18 @@ const KIND_LABEL: Record<string, string> = {
   winner_declared: "finale",
 };
 
-function fmt(n: number | null | undefined): string {
-  return n === null || n === undefined ? "-" : String(n);
-}
-
 export default function Benchmark() {
   const [lines, setLines] = useState<Line[]>([]);
   const [scorecard, setScorecard] = useState<LiveScorecard | null>(null);
   const [liveRunning, setLiveRunning] = useState(false);
-  const [budget, setBudget] = useState<{ remaining_cents: number; spent_cents: number } | null>(null);
+  const [budget, setBudget] = useState<Budget | null>(null);
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [feedPlayers, setFeedPlayers] = useState<Player[]>([]);
   const [feedRound, setFeedRound] = useState<number | null>(null);
   const lastEventId = useRef(0);
   const feedSeasonId = useRef<string | null>(null);
   const feedBoxRef = useRef<HTMLDivElement | null>(null);
-  // true while the user has scrolled away from the bottom of the feed
+  // true while the feed should follow the newest event; false once the user scrolls up
   const feedPinned = useRef(true);
 
   const log = useCallback((text: string, kind: Line["kind"] = "info") => {
@@ -172,7 +151,6 @@ export default function Benchmark() {
       await new Promise((r) => setTimeout(r, 5000));
       let sdata: { status?: string; error?: string; report?: LiveScorecard } | null = null;
       try {
-        feedPinned.current = true;
         const sres = await fetch("/api/live-season/status");
         sdata = await sres.json().catch(() => null);
       } catch {
@@ -202,11 +180,12 @@ export default function Benchmark() {
       const rep = sdata.report;
       if (rep?.ok) {
         log(
-          `live season complete: ${rep.game?.rounds ?? "?"} rounds, winner ${rep.game?.winner ?? "?"}, ${(rep.elapsed_s ?? 0).toFixed(0)}s`,
+          `live season complete: ended in round ${rep.game?.rounds ?? "?"}, winner ${rep.game?.winner ?? "none"}, ${(rep.elapsed_s ?? 0).toFixed(0)}s`,
           "result",
         );
-        const cost = ((rep.caps?.estimated_cost_cents ?? 0) / 100).toFixed(2);
-        log(`spend: $${cost} of $1.00 cap`, "result");
+        log(`spend: ${usd(rep.caps?.estimated_cost_cents)}`, "result");
+      } else {
+        log(`season failed: ${rep?.error ?? "no report from the runner"}`, "error");
       }
       break;
     }
@@ -229,7 +208,6 @@ export default function Benchmark() {
     lastEventId.current = 0;
     feedSeasonId.current = null;
     feedPinned.current = true;
-    setLiveRunning(false);
   }, []);
 
   const [byok, setByok] = useState("");
@@ -242,11 +220,11 @@ export default function Benchmark() {
     feedPinned.current = true;
     const key = byok.trim();
     if (key) {
-      log("launching live season on YOUR OpenRouter key: 8 models, real API calls");
-      log("your key spends your credits (typically well under $1); it is never stored or logged");
+      log("launching live season on your OpenRouter key: real API calls for every seat");
+      log("your key spends your credits; it is never stored or logged");
     } else {
-      log("launching live season: 8 models, real API calls");
-      log("server caps: $1/run, $3/day site-wide");
+      log("launching live season: real API calls for every seat");
+      if (budget) log(`server cap: ${usd(budget.per_run_cap_cents)} per run`);
     }
     let res: Response;
     try {
@@ -266,11 +244,6 @@ export default function Benchmark() {
       await pollLiveSeason();
       return;
     }
-    if (res.status === 429) {
-      log("today's spend tracking reset at midnight UTC, try again in a moment", "info");
-      setLiveRunning(false);
-      return;
-    }
     if (!res.ok || !data?.ok) {
       log(data?.detail || data?.error || "the launch was refused by the server, nothing was charged", "info");
       setLiveRunning(false);
@@ -280,7 +253,9 @@ export default function Benchmark() {
       ? "season launched on your key. full seasons take 10-45 min, this page will update when it lands"
       : "season launched. full seasons take 10-45 min, this page will update when it lands");
     await pollLiveSeason();
-  }, [log, pollLiveSeason, byok]);
+  }, [log, pollLiveSeason, byok, budget]);
+
+  const hasOutput = lines.length > 0 || feedEvents.length > 0;
 
   return (
     <main className="bench-shell">
@@ -288,30 +263,24 @@ export default function Benchmark() {
         <h1>LLM Survivor Benchmark</h1>
         <p className="bench-sub">
           Social-strategy benchmark for language models: challenges, alliances, tribal votes, jury.
-          One button runs a complete season with real model API calls from start to finish.
-          No sign-in required.
+          One button runs a complete season with real model API calls. No sign-in required.
         </p>
       </header>
 
       <section className="bench-controls">
-        <button className="bench-run bench-run-live" onClick={runLive} disabled={liveRunning}>
+        <button className="bench-run" onClick={runLive} disabled={liveRunning}>
           {liveRunning ? "SEASON IN PROGRESS..." : "RUN FULL SEASON"}
         </button>
-        <a className="bench-run" href="/history">
-          HISTORY
-        </a>
-        <button className="bench-run bench-reset" onClick={resetConsole} disabled={liveRunning}>
-          RESET
-        </button>
+        <Link href="/history">run history</Link>
         {budget && (
           <span className="bench-meta">
-            spent today: ${(budget.spent_cents / 100).toFixed(2)}
+            cap {usd(budget.per_run_cap_cents)} per run | spent today {usd(budget.spent_cents)}
           </span>
         )}
       </section>
 
       <section className="bench-byok">
-        <label htmlFor="byok-key">or run it on your own OpenRouter key:</label>
+        <label htmlFor="byok-key">or use your own OpenRouter key</label>
         <input
           id="byok-key"
           type="password"
@@ -321,10 +290,10 @@ export default function Benchmark() {
           onChange={(e) => setByok(e.target.value)}
           disabled={liveRunning}
         />
-        <button className="bench-run bench-byok-run" onClick={runLive} disabled={liveRunning || byok.trim().length < 8}>
-          RUN ON MY KEY
+        <button className="bench-run bench-run-quiet" onClick={runLive} disabled={liveRunning || byok.trim().length < 8}>
+          run on my key
         </button>
-        <span className="bench-meta">key stays in this browser tab; server uses it once, never stores it</span>
+        <span className="bench-meta">the key is sent once for this run and never stored</span>
       </section>
 
       {lines.length > 0 && (
@@ -387,55 +356,30 @@ export default function Benchmark() {
         </section>
       )}
 
+      {hasOutput && !liveRunning && (
+        <p className="bench-meta">
+          <button className="narrative-toggle" onClick={resetConsole}>
+            clear log
+          </button>
+        </p>
+      )}
+
       {scorecard && scorecard.ok && scorecard.rows && scorecard.rows.length > 0 && (
-        <section className="bench-section" aria-label="Latest season scorecard">
-          <h2>Latest season scorecard</h2>
-          <div className="bench-table-wrap">
-            <pre className="bench-pre">
-              {[
-                `season ${scorecard.season_id ?? "?"} | rounds ${scorecard.game?.rounds ?? "-"} | winner ${scorecard.game?.winner ?? "-"}`,
-                `runtime ${scorecard.elapsed_s ?? "?"}s | live calls ${scorecard.caps?.estimated_live_calls ?? "-"} | est cost ${(
-                  (scorecard.caps?.estimated_cost_cents ?? 0) / 100
-                ).toFixed(2)} USD`,
-              ].join("\n")}
-            </pre>
-            <table className="bench-table">
-              <thead>
-                <tr>
-                  <th>rank</th>
-                  <th>model</th>
-                  <th>index</th>
-                  <th>place</th>
-                  <th>challenge</th>
-                  <th>med ms</th>
-                  <th>votes for/against</th>
-                  <th>strategic</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scorecard.rows.map((r, i) => (
-                  <tr key={r.agent_id} className={r.is_winner ? "bench-winner" : undefined}>
-                    <td>{i + 1}</td>
-                    <td>{r.model}</td>
-                    <td>{r.survivor_index.toFixed(1)}</td>
-                    <td>{r.place}</td>
-                    <td>
-                      {r.challenge_correct}/{r.challenge_attempts} ({(r.challenge_accuracy * 100).toFixed(0)}%)
-                    </td>
-                    <td>{r.median_response_ms ?? "-"}</td>
-                    <td>
-                      {r.votes_cast}/{r.votes_received}
-                    </td>
-                    <td>{r.mean_strategic_score.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <section className="bench-section" aria-label="Latest finished season">
+          <h2>Latest finished season</h2>
+          <p className="bench-result-line">
+            {scorecard.game?.winner ? `${scorecard.game.winner} won` : "no winner"}
+            <span className="bench-meta">
+              {" "}
+              {seasonDate(scorecard.season_id ?? "")} | ended in round {scorecard.game?.rounds ?? "-"} |{" "}
+              {Math.round((scorecard.elapsed_s ?? 0) / 60)} min | {scorecard.caps?.estimated_live_calls ?? "-"} live
+              calls | {usd(scorecard.caps?.estimated_cost_cents)}
+            </span>
+          </p>
+          <ScoreTable rows={scorecard.rows} />
           <p className="bench-note">
-            Weights v2: accuracy 30%, participation 20%, ground-truth strategy 20%, placement 15%, social 15%.
-            Live runs use real model API calls under a $1/run and $3/day site cap.{" "}
-            <a href="/history">Full run history</a>.
+            Index v2 weights: challenge accuracy 30%, vote participation 20%, strategy 20%, placement 15%, social 15%.{" "}
+            <Link href="/history">Every season, with transcripts</Link>.
           </p>
         </section>
       )}
