@@ -51,7 +51,9 @@ python3 scripts/build_season_report.py --all                # every finished liv
 python3 scripts/build_season_report.py --out report.html    # just the page, anywhere
 ```
 
-Optional environment: `SURVIVOR_REPORT_CONTACT_URL` (an `https://` or `mailto:` link) adds a contact strip at the foot of the page; `SURVIVOR_PUBLIC_URL` is shown in each chart's source line. `?theme=light` or `?theme=dark` pins the colors.
+The look is cloned from LiveBench 2.0 (livebench.ai): its color tokens, system sans and mono type, pill chips, sticky-header table with top-of-column shading, white cards on a pale ground, maker-colored dots and the source strip under each chart. Like LiveBench it is a light page whatever the system setting; `?theme=dark` switches to a dark set on the same hues.
+
+Optional environment: `SURVIVOR_REPORT_CONTACT_URL` (an `https://` or `mailto:` link) adds a contact strip at the foot of the page; `SURVIVOR_PUBLIC_URL` is shown in each chart's source line.
 
 Limits to keep in mind. Cost is an estimate (recorded calls, times a fixed token budget, times the cached OpenRouter list price) because the engine does not record token usage. A season run on scripted fallbacks is labelled a test run and is left out of the cross-season totals. One season is one sample.
 
