@@ -18,8 +18,12 @@ from pathlib import Path
 from typing import Any
 
 
-PUBLIC_RUN_MAX_COST_CENTS = 500  # $5 per public run: a 9-seat season makes ~460 calls since 2026-11-24
-PUBLIC_ROSTER = "cheap_recent_openrouter"
+# $10 per public run (raised from $5 on 2026-11-24 with the move to one model per
+# lab). The cap is checked against the runner's own estimate, which ran about 1.3x
+# under the OpenRouter bill on the 2026-11-24 test season; the roster is sized to
+# estimate near $4.50 so a season finishes well inside the cap.
+PUBLIC_RUN_MAX_COST_CENTS = 1000
+PUBLIC_ROSTER = "lab_mix_openrouter"
 
 _LEDGER_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "public_live_ledger.json"
 

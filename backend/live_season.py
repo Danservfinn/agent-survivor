@@ -34,7 +34,7 @@ MAX_TURNS = 2500
 MAX_LIVE_CALLS = 2500
 MAX_COST_CENTS = float(os.environ.get("SURVIVOR_MAX_COST_CENTS", "2500"))
 
-ALLOWED_ROSTERS = ("frontier_live_8", "cheap_recent_openrouter")
+ALLOWED_ROSTERS = ("frontier_live_8", "cheap_recent_openrouter", "lab_mix_openrouter")
 
 # shared with demo_harness: both swap database.DATABASE_PATH process-wide, so
 # only one season (demo or live) may run at a time

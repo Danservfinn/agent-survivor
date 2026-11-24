@@ -78,7 +78,7 @@ class ResetRequest(BaseModel):
 
 
 class LiveSeasonRequest(BaseModel):
-    roster: str = Field(default="frontier_live_8", pattern="^(frontier_live_8|cheap_recent_openrouter)$")
+    roster: str = Field(default="frontier_live_8", pattern="^(frontier_live_8|cheap_recent_openrouter|lab_mix_openrouter)$")
     season_seed: int | None = Field(default=None, ge=0, le=10_000_000)
     max_cost_cents: float | None = Field(default=None, ge=0, le=2500)
     max_live_calls: int | None = Field(default=None, ge=0, le=2500)

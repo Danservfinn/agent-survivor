@@ -55,7 +55,7 @@ class LiveSeasonGuardTest(unittest.TestCase):
         self.assertIn("roster must be", result["error"])
 
     def test_allowed_rosters_exact(self) -> None:
-        self.assertEqual(ALLOWED_ROSTERS, ("frontier_live_8", "cheap_recent_openrouter"))
+        self.assertEqual(ALLOWED_ROSTERS, ("frontier_live_8", "cheap_recent_openrouter", "lab_mix_openrouter"))
 
     def test_refuses_when_provider_not_openrouter(self) -> None:
         with mock.patch("backend.live_season.should_use_live_llm", return_value=False), mock.patch(

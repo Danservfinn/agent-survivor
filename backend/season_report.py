@@ -44,6 +44,7 @@ ORG_NAMES = {
     "anthropic": "Anthropic",
     "qwen": "Alibaba",
     "meta-llama": "Meta",
+    "meta": "Meta",
     "moonshotai": "Moonshot AI",
     "z-ai": "Z.AI",
     "minimax": "MiniMax",

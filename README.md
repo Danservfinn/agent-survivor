@@ -14,7 +14,7 @@ The backend stores canonical state changes in `Turns` and presentation beats in 
 
 ## How a season plays (since 2026-11-24)
 
-The aim is that the model that plays the social game and the votes best wins. Players are 9 models on the cheap OpenRouter roster; a season starts at round 1.
+The aim is that the model that plays the social game and the votes best wins. Players are 9 models, one from each of nine labs (Anthropic, OpenAI, Google, xAI, Meta, Alibaba, DeepSeek, Moonshot, Z.AI; `LAB_MIX_OPENROUTER_MODELS` in `backend/model_rosters.py`); a season starts at round 1.
 
 - **Neutral names.** Players go by tree names (Ash, Cedar, ...). They never see a model name or id. People see both on the scorecard.
 - **One group.** No tribes and no merge. Every active player votes every round.
@@ -27,7 +27,7 @@ The aim is that the model that plays the social game and the votes best wins. Pl
 - **Outages.** A provider failure holds the call for up to 10 minutes; past that the season stops as interrupted and is not reported as a result. No player is charged for it.
 - **Thinking.** Every call reasons at the same effort ("low"; "medium" for the round plan), never switched off.
 - **Scoring.** Survivor Index v4. Challenge accuracy counts only the five ladder rungs. Finalists who lose the jury vote place 2nd and 3rd (through v3 they were placed last). Prediction accuracy is reported, not yet in the index.
-- **Cost.** About 460 model calls a season; the public button stops a run at $5.
+- **Cost.** About 280 player calls plus the host's a season; the public button stops a run at $10 (raised from $5 on 2026-11-24). The cap is checked against the runner's estimate, which ran about 1.3x under the real bill on the 2026-11-24 test season.
 
 ## Season report
 

@@ -71,6 +71,24 @@ CHEAP_RECENT_OPENROUTER_MODELS = [
 ]
 
 
+# One current model from each of nine labs, the public roster since 2026-11-24.
+# Mid-tier on purpose: a full season (about 280 player calls) estimates near $4.50
+# and bills near $6, inside the $10 public cap with room to finish. Every model
+# answered a game-style JSON prompt through the engine's own call path on
+# 2026-11-24 before it was added.
+LAB_MIX_OPENROUTER_MODELS = [
+    {"model_id": "anthropic/claude-sonnet-5.5", "display_name": "Claude Sonnet 5.5", "status": "lab_mix"},
+    {"model_id": "openai/gpt-6.2-sol", "display_name": "GPT-6.2 Sol", "status": "lab_mix"},
+    {"model_id": "google/gemini-4-carbon", "display_name": "Gemini 4 Carbon", "status": "lab_mix"},
+    {"model_id": "x-ai/grok-4.7", "display_name": "Grok 4.7", "status": "lab_mix"},
+    {"model_id": "meta/muse-spark-1.3", "display_name": "Muse Spark 1.3", "status": "lab_mix"},
+    {"model_id": "qwen/qwen4-max", "display_name": "Qwen4 Max", "status": "lab_mix"},
+    {"model_id": "deepseek/deepseek-v4.1-flash-1017", "display_name": "DeepSeek V4.1 Flash", "status": "lab_mix"},
+    {"model_id": "moonshotai/kimi-k3.1-pro", "display_name": "Kimi K3.1 Pro", "status": "lab_mix"},
+    {"model_id": "z-ai/glm-5.3", "display_name": "GLM-5.3", "status": "lab_mix"},
+]
+
+
 FREE_OPENROUTER_MODELS = [
     model for model in CHEAP_RECENT_OPENROUTER_MODELS if model["status"] == "free_test"
 ]
@@ -149,6 +167,11 @@ def list_model_rosters() -> list[dict[str, Any]]:
             ],
         },
         {
+            "id": "lab_mix_openrouter",
+            "name": "One model per lab",
+            "models": LAB_MIX_OPENROUTER_MODELS,
+        },
+        {
             "id": "cheap_recent_openrouter",
             "name": "Cheap Recent OpenRouter",
             "models": CHEAP_RECENT_OPENROUTER_MODELS,
@@ -186,6 +209,8 @@ def agents_for_roster(roster_preset: str | None = None) -> list[dict[str, Any]]:
     if roster_preset == "cheap_recent_openrouter":
         models = [m for m in CHEAP_RECENT_OPENROUTER_MODELS if m["status"] == "cheap_recent"]
         return _agents_for_models(models)
+    if roster_preset == "lab_mix_openrouter":
+        return _agents_for_models(LAB_MIX_OPENROUTER_MODELS)
     if roster_preset == "all_free_openrouter":
         return _agents_for_models(FREE_OPENROUTER_MODELS)
     if roster_preset == "local_ollama":
