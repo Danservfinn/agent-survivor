@@ -84,8 +84,7 @@ Choose the public archetype you feel you are embodying in this game.
 
 Actor:
 {{
-  "display_name": "{actor.get('pseudonym', '')}",
-  "model_id": "{model_id}",
+  "name": "{actor.get('pseudonym', '')}",
   "private_memory": "{actor_memory}"
 }}
 
@@ -331,8 +330,7 @@ Objective:
 Contestant:
 {{
   "agent_id": "{actor['agent_id']}",
-  "display_name": "{actor['pseudonym']}",
-  "model_id": "{model_id}"
+  "name": "{actor['pseudonym']}"
 }}
 
 Prior context visible to you:
@@ -466,8 +464,7 @@ Step priorities:
 Actor:
 {{
   "agent_id": "{actor['agent_id']}",
-  "display_name": "{actor['pseudonym']}",
-  "model_id": "{model_id}",
+  "name": "{actor['pseudonym']}",
   "private_memory": "{actor.get('confessional_memory') or ''}"
 }}
 

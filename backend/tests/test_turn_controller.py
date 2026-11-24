@@ -337,8 +337,12 @@ class TurnControllerTest(unittest.TestCase):
             "Qwen3.7 Max",
         ]:
             self.assertNotIn(default_only_name, full_text)
-        self.assertIn("LFM 2.5 2.6B Free", full_text)
-        self.assertIn("Nemotron 3 Super 120B Free", full_text)
+        # the seated models are recorded for people, but never named in the game itself
+        display_names = {agent["display_name"] for agent in result["state"]["agents"]}
+        self.assertIn("LFM 2.5 2.6B Free", display_names)
+        self.assertIn("Nemotron 3 Super 120B Free", display_names)
+        for display_name in display_names:
+            self.assertNotIn(display_name, full_text)
 
     def test_default_benchmark_starts_with_sixteen_survivor_models(self) -> None:
         rosters = model_rosters.list_model_rosters()
@@ -435,9 +439,12 @@ class TurnControllerTest(unittest.TestCase):
         events = result["story_events"]
         state = result["state"]
         agent_names = {agent["pseudonym"] for agent in state["agents"]}
+        display_names = {agent["display_name"] for agent in state["agents"]}
 
-        self.assertIn("Grok 4.3", agent_names)
-        self.assertIn("Claude Opus 4.8", agent_names)
+        self.assertIn("Grok 4.3", display_names)
+        self.assertIn("Claude Opus 4.8", display_names)
+        # players go by neutral aliases, not model names
+        self.assertTrue(agent_names.isdisjoint(display_names))
         broadcast_text = json.dumps(
             [
                 {
@@ -450,6 +457,8 @@ class TurnControllerTest(unittest.TestCase):
             ]
         )
         self.assertNotIn("x-ai/grok-4.3", broadcast_text)
+        for display_name in display_names:
+            self.assertNotIn(display_name, broadcast_text)
 
         for event in events:
             narration = event["payload"].get("host_narration")

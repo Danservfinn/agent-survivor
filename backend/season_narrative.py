@@ -8,6 +8,7 @@ byte-identical on every render.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -25,10 +26,33 @@ def _connect(season_id: str) -> sqlite3.Connection:
 
 
 def _names(conn: sqlite3.Connection) -> dict[str, str]:
+    """agent id -> the name people see: the real model name."""
+    return {r["agent_id"]: _display(r) for r in conn.execute("SELECT * FROM Agents")}
+
+
+def _display(row: sqlite3.Row) -> str:
+    # seasons before 2026-11-24 have no display_name and kept the model name in pseudonym
+    if "display_name" in row.keys() and row["display_name"]:
+        return row["display_name"]
+    return row["pseudonym"]
+
+
+def _alias_map(conn: sqlite3.Connection) -> dict[str, str]:
+    """in-game alias -> real model name, for names parsed out of stored event text."""
     return {
-        r["agent_id"]: r["pseudonym"]
-        for r in conn.execute("SELECT agent_id, pseudonym FROM Agents")
+        r["pseudonym"]: r["display_name"]
+        for r in conn.execute("SELECT * FROM Agents")
+        if "display_name" in r.keys() and r["display_name"]
     }
+
+
+def _swap_names(text: str, aliases: dict[str, str]) -> str:
+    """Replace whole-word aliases with model names in short engine-written strings
+    (vote targets, eliminations, tallies). Quoted speech is left as the model said it."""
+    if not text or not aliases:
+        return text
+    pattern = re.compile(r"\b(" + "|".join(re.escape(a) for a in sorted(aliases, key=len, reverse=True)) + r")\b")
+    return pattern.sub(lambda m: aliases[m.group(1)], text)
 
 
 def _actor_id(raw: Any) -> str:
@@ -82,6 +106,7 @@ def season_narrative(season_id: str) -> dict[str, Any]:
     conn = _connect(season_id)
     try:
         names = _names(conn)
+        aliases = _alias_map(conn)
         rounds: list[dict[str, Any]] = []
         for r in conn.execute(
             "SELECT DISTINCT round FROM StoryEvents ORDER BY round"
@@ -97,14 +122,14 @@ def season_narrative(season_id: str) -> dict[str, Any]:
             for e in events:
                 if e["kind"] == "challenge_result":
                     sub = e["subtitle"] or ""
-                    challenge_line = sub
+                    challenge_line = _swap_names(sub, aliases)
                     try:
                         payload = json.loads(e["payload"] or "{}")
                         winners = payload.get("immunity_agent_ids") or []
                         immunity = [names.get(w, w) for w in winners]
                         challenge = {
                             "type": payload.get("challenge_type", ""),
-                            "winner": payload.get("winning_agent_name", ""),
+                            "winner": names.get(payload.get("winning_agent_id", ""), payload.get("winning_agent_name", "")),
                             "winner_id": payload.get("winning_agent_id", ""),
                             "tribe": payload.get("winning_tribe_id") or "",
                             "solved": not str(payload.get("result_status", "")).endswith("unsolved_fastest"),
@@ -183,7 +208,7 @@ def season_narrative(season_id: str) -> dict[str, Any]:
                         _actor_id(e["actor_ids"]),
                         (e["title"] or "?").replace(" Votes", "").replace(" Revotes", ""),
                     )
-                    target = e["subtitle"].replace("Vote: ", "").replace("Revote: ", "")
+                    target = _swap_names(e["subtitle"].replace("Vote: ", "").replace("Revote: ", ""), aliases)
                     votes.append(
                         {
                             "who": voter,
@@ -195,7 +220,7 @@ def season_narrative(season_id: str) -> dict[str, Any]:
             elimination = None
             for e in events:
                 if e["kind"] == "elimination":
-                    elimination = (e["title"] or "").replace(" Leaves the Game", "")
+                    elimination = _swap_names((e["title"] or "").replace(" Leaves the Game", ""), aliases)
                     break
 
             # tally of first-ballot targets
@@ -238,7 +263,7 @@ def season_narrative(season_id: str) -> dict[str, Any]:
         for e in conn.execute(
             "SELECT * FROM StoryEvents WHERE kind='winner_declared' ORDER BY id DESC LIMIT 1"
         ):
-            tally_line = e["subtitle"] or ""
+            tally_line = _swap_names(e["subtitle"] or "", aliases)
             winner = ""
             # "Jury tally: Reka Edge: 3, Gemma 4 26B A4B: 2, Command R7B: 1"
             if tally_line.startswith("Jury tally: "):
@@ -259,6 +284,7 @@ def season_narrative(season_id: str) -> dict[str, Any]:
             sub = e["subtitle"] or ""
             for prefix in ("Winner vote: ", "Jury vote: ", "Vote: "):
                 sub = sub.replace(prefix, "")
+            sub = _swap_names(sub, aliases)
             jury.append(
                 {
                     "who": juror,

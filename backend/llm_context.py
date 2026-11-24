@@ -292,9 +292,8 @@ def _visible_game_state(conn, current_step: str) -> dict[str, Any]:
     agents = [
         {
             "agent_id": row["agent_id"],
+            # in-game name only: players never see which model another player is
             "name": row["pseudonym"],
-            "model_id": row["model_id"],
-            "archetype": row["archetype"],
             "status": row["status"],
             "has_immunity": bool(row["has_immunity"]),
         }

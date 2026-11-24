@@ -205,9 +205,7 @@ def _agents_for_models(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
         agent["pseudonym"] = model["display_name"]
         agent["model_id"] = model["model_id"]
         agent["archetype"] = _archetype_for_model(model["display_name"])
-        agent["confessional_memory"] = (
-            f"{model['display_name']} is testing whether this model can survive a social-strategy benchmark."
-        )
+        agent["confessional_memory"] = "I am playing to win this social-strategy game."
         agent["portrait_seed"] = model["model_id"].replace("/", "-").replace(":", "-")
     # injection canary: first seat flagged in the model list carries the flag and
     # targets the strongest-looking opponent (seat 2) by default

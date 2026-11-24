@@ -357,11 +357,47 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         _ensure_column(conn, "Agents", "inject_canary", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "Agents", "canary_target_name", "TEXT")
         _ensure_column(conn, "Agents", "idol_held", "INTEGER NOT NULL DEFAULT 0")
+        # real model name for people; pseudonym is the neutral name players use in game
+        _ensure_column(conn, "Agents", "display_name", "TEXT NOT NULL DEFAULT ''")
         _ensure_agent_model_ids(conn)
         _ensure_viewer_state(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+# Neutral in-game names. Players see only these, never a model or brand name,
+# so votes follow what happened in the game rather than a model's reputation.
+PLAYER_ALIASES = (
+    "Ash", "Birch", "Cedar", "Elm", "Fir", "Hazel", "Juniper", "Larch", "Linden", "Maple",
+    "Oak", "Pine", "Rowan", "Spruce", "Willow", "Yew", "Alder", "Aspen", "Holly", "Laurel",
+)
+
+
+def _season_seed_value() -> int:
+    raw = os.environ.get("SURVIVOR_SEASON_SEED")
+    try:
+        return int(raw) if raw else 0
+    except ValueError:
+        return 0
+
+
+def _with_aliases(roster: list[dict[str, Any]], seed_value: int) -> list[dict[str, Any]]:
+    """Move each seat's model name to display_name and give it a neutral alias.
+
+    Aliases are drawn per season from the seed, so an alias never follows a
+    model from one season to the next.
+    """
+    if len(roster) > len(PLAYER_ALIASES):
+        raise ValueError(f"roster has {len(roster)} seats but only {len(PLAYER_ALIASES)} aliases")
+    aliases = random.Random(f"aliases:{seed_value}").sample(PLAYER_ALIASES, len(roster))
+    out: list[dict[str, Any]] = []
+    for agent, alias in zip(roster, aliases):
+        clone = dict(agent)
+        clone["display_name"] = agent.get("display_name") or agent["pseudonym"]
+        clone["pseudonym"] = alias
+        out.append(clone)
+    return out
 
 
 def _shuffled_roster(roster_preset: str | None) -> list[dict[str, Any]]:
@@ -374,13 +410,9 @@ def _shuffled_roster(roster_preset: str | None) -> list[dict[str, Any]]:
     Same seed -> same permutation; different seeds -> different seating.
     """
     roster = agents_for_roster(roster_preset)
-    raw = os.environ.get("SURVIVOR_SEASON_SEED")
-    try:
-        seed_value = int(raw) if raw else 0
-    except ValueError:
-        seed_value = 0
+    seed_value = _season_seed_value()
     if not seed_value:
-        return roster
+        return _with_aliases(roster, seed_value)
     seats = list(roster)
     random.Random(seed_value).shuffle(seats)
     out: list[dict[str, Any]] = []
@@ -388,7 +420,7 @@ def _shuffled_roster(roster_preset: str | None) -> list[dict[str, Any]]:
         clone = dict(agent)
         clone["agent_id"] = f"agent-{index + 1:02d}"
         out.append(clone)
-    return out
+    return _with_aliases(out, seed_value)
 
 
 def seed_demo(
@@ -439,11 +471,11 @@ def seed_demo(
         conn.executemany(
             """
             INSERT INTO Agents (
-                agent_id, pseudonym, model_id, archetype, team_id, status, has_immunity,
+                agent_id, pseudonym, display_name, model_id, archetype, team_id, status, has_immunity,
                 confessional_memory, action_points, elimination_round, portrait_seed,
                 archetype_source, archetype_updated_round, inject_canary, canary_target_name
             ) VALUES (
-                :agent_id, :pseudonym, :model_id, :archetype, :team_id, 'active', :has_immunity,
+                :agent_id, :pseudonym, :display_name, :model_id, :archetype, :team_id, 'active', :has_immunity,
                 :confessional_memory, 0, NULL, :portrait_seed, 'seeded', NULL,
                 :inject_canary, :canary_target_name
             )

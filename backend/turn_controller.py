@@ -3318,11 +3318,10 @@ def _agent_public_identity(conn, agent_id: str) -> dict[str, Any]:
         return {"agent_id": agent_id, "name": agent_id}
     return {
         "agent_id": row["agent_id"],
+        # in-game name only; this feeds scene text that players read
         "name": row["pseudonym"],
-        "model_id": row["model_id"],
         "has_immunity": bool(row["has_immunity"]),
         "status": row["status"],
-        "archetype": row["archetype"],
     }
 
 

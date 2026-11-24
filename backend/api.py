@@ -361,13 +361,16 @@ def api_live_season_feed(after: int = 0, season: str | None = None) -> dict:
                 "turn_index": gs["turn_index"],
             }
         active = conn.execute(
-            "SELECT agent_id, pseudonym, model_id, team_id FROM Agents WHERE status = 'active' ORDER BY agent_id"
+            "SELECT * FROM Agents WHERE status = 'active' ORDER BY agent_id"
         ).fetchall()
         for r in active:
+            # event text uses the in-game alias; people also need the real model name
+            display_name = r["display_name"] if "display_name" in r.keys() and r["display_name"] else None
             players.append(
                 {
                     "agent_id": r["agent_id"],
-                    "name": r["pseudonym"],
+                    "name": display_name or r["pseudonym"],
+                    "alias": r["pseudonym"] if display_name else None,
                     "model": r["model_id"],
                     "tribe": r["team_id"] if r["team_id"] and str(r["team_id"]).startswith("tribe-") else None,
                 }

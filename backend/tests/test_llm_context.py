@@ -531,3 +531,63 @@ class TurnControllerLLMWiringTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NeutralNamesInPromptsTest(unittest.TestCase):
+    """Players must never learn which model another player is."""
+
+    def setUp(self) -> None:
+        self.env_patch = patch.dict(
+            os.environ, {"OPENROUTER_API_KEY": "test-key", "LLM_PROVIDER": "openrouter"}, clear=False
+        )
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        database.DATABASE_PATH = Path(self.temp_dir.name) / "survivor.db"
+        database.seed_demo(reset=True, roster_preset="cheap_recent_openrouter")
+
+    def test_contestant_prompt_has_no_model_names_or_ids(self) -> None:
+        conn = database.get_db_connection()
+        self.addCleanup(conn.close)
+        agents = [dict(row) for row in conn.execute("SELECT * FROM Agents ORDER BY agent_id").fetchall()]
+        actor, others = agents[0], agents[1:]
+        context = build_agent_episode_context(
+            conn, actor_id=actor["agent_id"], round_number=7, current_step="tribal_vote_call"
+        )
+        sent: list[dict] = []
+
+        def fake_post(payload: dict, api_key: str) -> dict:
+            sent.append(payload)
+            reply = {
+                "dialogue": "I am keeping my options open tonight.",
+                "strategic_summary": "I stay flexible.",
+                "win_condition": "I win by staying flexible.",
+                "threat_assessment": "I see the loudest player as the threat.",
+                "leverage_plan": "I trade information for safety.",
+                "risk_control": "I avoid naming targets early.",
+                "jury_positioning": "I want to look deliberate.",
+                "target_id": others[0]["agent_id"],
+                "move_type": "information_trade",
+                "intended_effect": "Stay safe.",
+                "confidence": 0.6,
+            }
+            return {"choices": [{"message": {"content": json.dumps(reply)}}]}
+
+        with patch("backend.openrouter_client._post_chat_completion", side_effect=fake_post):
+            openrouter_client.request_agent_action(
+                actor=actor,
+                step="tribal_vote_call",
+                scene_context="The vote is next.",
+                allowed_targets=others,
+                response_kind="vote",
+                episode_context=context,
+            )
+
+        prompt_text = json.dumps([message["content"] for message in sent[0]["messages"]])
+        for agent in agents:
+            self.assertNotEqual(agent["display_name"], agent["pseudonym"])
+            self.assertNotIn(agent["display_name"], prompt_text)
+            self.assertNotIn(agent["model_id"], prompt_text)
+        self.assertIn(actor["pseudonym"], prompt_text)
+        self.assertIn(others[0]["pseudonym"], prompt_text)

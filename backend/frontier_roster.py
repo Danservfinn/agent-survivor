@@ -346,9 +346,7 @@ def agents_from_snapshot(snapshot: dict[str, Any], base_agents: list[dict[str, A
         agent["pseudonym"] = seat["display_name"]
         agent["model_id"] = seat["model_id"]
         agent["portrait_seed"] = seat["model_id"].replace("/", "-").replace(":", "-")
-        agent["confessional_memory"] = (
-            f"{seat['display_name']} is playing to win a live frontier social-strategy exhibition."
-        )
+        agent["confessional_memory"] = "I am playing to win this social-strategy game."
     return roster
 
 

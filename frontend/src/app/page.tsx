@@ -28,7 +28,7 @@ type FeedEvent = {
   subtitle: string | null;
 };
 
-type Player = { agent_id: string; name: string; model: string; tribe: string | null };
+type Player = { agent_id: string; name: string; alias?: string | null; model: string; tribe: string | null };
 
 type Feed = {
   ok: boolean;
@@ -321,6 +321,7 @@ export default function Benchmark() {
                 <thead>
                   <tr>
                     <th>still in ({feedPlayers.length})</th>
+                    <th>plays as</th>
                     <th>model</th>
                     <th>tribe</th>
                   </tr>
@@ -329,6 +330,7 @@ export default function Benchmark() {
                   {feedPlayers.map((p) => (
                     <tr key={p.agent_id}>
                       <td>{p.name}</td>
+                      <td>{p.alias ?? "-"}</td>
                       <td>{p.model}</td>
                       <td>{p.tribe ?? "merged"}</td>
                     </tr>

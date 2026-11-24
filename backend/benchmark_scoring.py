@@ -61,6 +61,11 @@ def _load_json_list(value: Any) -> list[Any]:
     return []
 
 
+def _display_name(agent: dict[str, Any]) -> str:
+    """Real model name. Seasons before neutral aliases kept it in pseudonym."""
+    return agent.get("display_name") or agent.get("pseudonym") or agent.get("agent_id", "?")
+
+
 def score_season(db_path: Path | str) -> dict[str, Any]:
     import sqlite3
 
@@ -236,7 +241,9 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
         rows.append(
             {
                 "agent_id": aid,
-                "model": agent.get("pseudonym"),
+                "model": _display_name(agent),
+                # in-game name the other players knew this model by (seasons since 2026-11-24)
+                "alias": agent.get("pseudonym") if agent.get("display_name") else None,
                 "model_id": agent.get("model_id"),
                 "place": place,
                 "is_winner": aid == winner_id,
@@ -260,7 +267,7 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
         "weights": WEIGHTS,
         "game": {
             "rounds": last_round,
-            "winner": next((a["pseudonym"] for a in agents if a["agent_id"] == winner_id), None),
+            "winner": next((_display_name(a) for a in agents if a["agent_id"] == winner_id), None),
         },
         "totals": {
             "attempts": len(attempts),

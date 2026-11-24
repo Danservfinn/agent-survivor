@@ -1,6 +1,8 @@
 export type ScoreRow = {
   agent_id: string;
   model: string;
+  /** in-game name other players knew this model by; absent for seasons before 2026-11-24 */
+  alias?: string | null;
   place: number;
   is_winner: boolean;
   challenge_accuracy: number;
@@ -53,6 +55,7 @@ export function ScoreTable({
                   ) : (
                     r.model
                   )}
+                  {r.alias ? <span className="bench-meta"> as {r.alias}</span> : null}
                   {r.is_winner ? " (winner)" : ""}
                 </td>
                 <td className="num">{r.survivor_index.toFixed(1)}</td>

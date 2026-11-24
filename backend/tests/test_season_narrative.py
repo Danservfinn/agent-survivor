@@ -24,9 +24,14 @@ class SeasonNarrativeTest(unittest.TestCase):
             seed_demo(reset=True, path=db)
             conn = sqlite3.connect(db)
             conn.row_factory = sqlite3.Row
+            # stored event text uses in-game aliases; the narrative shows model names
             names = {
                 r["agent_id"]: r["pseudonym"]
                 for r in conn.execute("SELECT agent_id, pseudonym FROM Agents")
+            }
+            shown = {
+                r["agent_id"]: r["display_name"]
+                for r in conn.execute("SELECT agent_id, display_name FROM Agents")
             }
             aid = sorted(names)[0]
             bid = sorted(names)[1]
@@ -68,11 +73,12 @@ class SeasonNarrativeTest(unittest.TestCase):
             self.assertEqual(len(result["rounds"]), 2)
             r7 = result["rounds"][0]
             self.assertIn("Alpha leads tribe-a", r7["summary"])
-            self.assertEqual(r7["elimination"], names[bid])
-            self.assertEqual(r7["votes"][0]["who"], names[aid])
-            self.assertEqual(r7["votes"][0]["target"], names[bid])
-            self.assertEqual(r7["conversations"][0]["who"], names[aid])
-            self.assertEqual(result["finale"]["winner"], names[cid])
+            self.assertEqual(r7["elimination"], shown[bid])
+            self.assertEqual(r7["votes"][0]["who"], shown[aid])
+            self.assertEqual(r7["votes"][0]["target"], shown[bid])
+            self.assertEqual(r7["conversations"][0]["who"], shown[aid])
+            self.assertEqual(result["finale"]["winner"], shown[cid])
+            self.assertNotEqual(names[bid], shown[bid])
             self.assertEqual(result["jury"], [])
             self.assertEqual(result["pitches"], [])
 
