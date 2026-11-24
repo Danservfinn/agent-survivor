@@ -25,7 +25,7 @@ REASONING_SETTINGS = {"effort": "low", "exclude": True}
 # call's visible-reply budget gets this much extra room on top.
 REASONING_TOKEN_HEADROOM = 1600
 
-# A provider failure (rate limit, 5xx, timeout, empty reply) never counts against
+# A provider failure (rate limit, 5xx, timeout) never counts against
 # the player: the call is held and retried for up to this long, then the season
 # stops as interrupted instead of recording a wrong answer or a missed vote.
 PROVIDER_HOLD_SECONDS = 600
@@ -1390,9 +1390,11 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
                 # models make it mandatory and reject a request that disables it.
                 retry = dict(outbound_payload)
                 retry["max_tokens"] = int(outbound_payload["max_tokens"]) * 2
+                # Still empty is the model's own answer, not an outage: on the
+                # 2026-11-24 test season one model went empty on every hard
+                # sudden-death prompt, and treating that as an outage stopped the
+                # whole season. The caller's parser turns it into a bad reply.
                 response_payload = _post_with_retries(retry)
-                if _empty(response_payload):
-                    raise ProviderOutage("empty reply after a doubled token budget")
             return response_payload
         except ProviderOutage as outage:
             delay = max(wait_s, outage.retry_after)

@@ -67,6 +67,14 @@ class HoldTest(unittest.TestCase):
         hold_waits = [delay for delay in self.sleeps if delay not in (3, 6, 9)]  # 3/6/9 are the quick retries
         self.assertLessEqual(sum(hold_waits), PROVIDER_HOLD_SECONDS)
 
+    def test_empty_reply_is_the_models_answer_not_an_outage(self) -> None:
+        empty = lambda: io.BytesIO(  # noqa: E731
+            json.dumps({"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}).encode()
+        )
+        result = self._run([empty(), empty()])
+        self.assertEqual(result["choices"][0]["message"]["content"], "")
+        self.assertEqual(self.sleeps, [])  # no hold
+
     def test_bad_key_interrupts_at_once(self) -> None:
         with self.assertRaises(SeasonInterrupted):
             self._run([_http(401, "Missing Authentication header")])
