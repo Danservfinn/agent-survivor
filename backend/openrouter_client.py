@@ -46,6 +46,8 @@ class AgentAction:
     prompt_profile: str = AGENT_PROMPT_PROFILE_ID
     public_archetype: str | None = None
     play_idol: bool = False
+    # in a private talk: the player this speaker promises to vote for at this round's council
+    promised_vote_target: str | None = None
 
 
 @dataclass(frozen=True)
@@ -517,6 +519,7 @@ Return strict JSON only:
   "public_archetype": "2-5 lowercase words describing the strategic role you feel you are embodying",
   "target_id": "allowed target id or null",
   "play_idol": "true only when voting, only if you hold a hidden idol, and you choose to play it now; otherwise false",
+  "promised_vote_target": "in a private talk only: the allowed target id you are promising to vote for tonight, or null. Promises are recorded and checked against your vote; breaking one is allowed but the jury will see it",
   "move_type": "pressure_ally | reassure_ally | float_decoy | test_loyalty | target_redirect | vote_commitment | jury_management | public_callout | misdirection | challenge_focus | final_pitch",
   "intended_effect": "short phrase describing what this action is meant to accomplish",
   "confidence": 0.0
@@ -661,6 +664,9 @@ Rules:
         prompt_profile=AGENT_PROMPT_PROFILE_ID,
         public_archetype=public_archetype or None,
         play_idol=_as_bool(data.get("play_idol")),
+        promised_vote_target=_resolve_target_id(data.get("promised_vote_target"), allowed_targets)
+        if data.get("promised_vote_target")
+        else None,
     )
 
 
@@ -985,6 +991,9 @@ def _strategy_priorities(response_kind: str) -> str:
         ),
         "jury_vote": (
             "- For jury votes: this vote decides the winner of the entire competition. Vote for the finalist you believe is most deserving of the win, judged on how they actually played: agency, control, adaptability, challenge performance, and respect for the game."
+        ),
+        "talk_choice": (
+            "- For choosing who to talk to: pick the one player whose information, vote, or trust you most need before tonight's vote."
         ),
         "challenge_gift": (
             "- For the idol gift: give it to the player whose loyalty, debt, or protection most improves your own path to the win."

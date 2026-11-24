@@ -32,6 +32,15 @@ JSON_COLUMNS = {
 }
 
 
+def round_start_step() -> str:
+    """First step of a round. The fast step list (production) opens with the
+    challenge; the long list opens with a camp scene. Must match
+    turn_controller._phase_steps."""
+    if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
+        return "challenge_intro"
+    return "camp_pre_challenge_read"
+
+
 def json_dumps(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
 
@@ -138,6 +147,18 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 summary TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- a vote promise made in a private talk; broken when the promiser's
+            -- revealed vote that round goes to someone else
+            CREATE TABLE IF NOT EXISTS Promises (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                promiser_id TEXT NOT NULL,
+                listener_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                discussion_step TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS AllianceMemberships (
@@ -441,6 +462,7 @@ def seed_demo(
         conn.execute("DELETE FROM VoiceLines")
         conn.execute("DELETE FROM NextRoundPreloads")
         conn.execute("DELETE FROM ViewerState")
+        conn.execute("DELETE FROM Promises")
         conn.execute("DELETE FROM AllianceMemberships")
         conn.execute("DELETE FROM Alliances")
         conn.execute("DELETE FROM GroupDiscussionParticipants")
@@ -460,8 +482,9 @@ def seed_demo(
             """
             INSERT INTO GameState (
                 season_id, current_round, phase, phase_step, turn_index, is_merged
-            ) VALUES (1, 7, 'round', 'camp_pre_challenge_read', 0, 1)
-            """
+            ) VALUES (1, 7, 'round', ?, 0, 1)
+            """,
+            (round_start_step(),),
         )
         conn.execute(
             """

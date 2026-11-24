@@ -15,6 +15,7 @@ from .database import (
     ensure_database,
     get_db_connection,
     json_dumps,
+    round_start_step,
     row_to_dict,
     seed_demo,
 )
@@ -877,12 +878,12 @@ def start_next_round() -> dict[str, Any]:
             UPDATE GameState
                 SET current_round = ?,
                     phase = 'round',
-                    phase_step = 'camp_pre_challenge_read',
+                    phase_step = ?,
                     turn_index = 0,
                 updated_at = CURRENT_TIMESTAMP
             WHERE season_id = 1
             """,
-            (next_round,),
+            (next_round, round_start_step()),
         )
         conn.execute(
             """
@@ -1005,6 +1006,10 @@ def _apply_step(
         event = _challenge_result_event(conn, round_number, turn_id)
         return [event], {"challenge_result": event["payload"]}, event["title"]
 
+    if step == "camp_talks":
+        events = _camp_talk_events(conn, round_number, turn_id)
+        return events, {"camp_talks": len(events)}, f"{len(events)} private talks"
+
     if step == "challenge_gift":
         events = _challenge_gift_events(conn, round_number, turn_id)
         return events, {"challenge_gift": bool(events)}, "Challenge gift" if events else "No gift this round"
@@ -1085,11 +1090,12 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
     vote_reveal_steps = [f"vote_reveal_{index + 1}" for index in range(len(voters))]
     if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
         return [
-            "camp_pre_challenge_read",
             "challenge_intro",
             "challenge_attempts",
             "challenge_result",
             "challenge_gift",
+            # every conversation in a round is one a player chose to have
+            "camp_talks",
             "tribal_vote_call",
             *vote_booth_steps,
             *vote_reveal_steps,
@@ -1401,6 +1407,126 @@ def _group_discussion_event(
     )
 
 
+# ------------------------------------------------------------- camp talks
+# Each player picks who to talk to privately; nobody is seated by the engine.
+PRIVATE_TALKS_PER_ROUND = 1
+
+
+def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
+    """Every active player names one other player to talk to. Each pick becomes a
+    private two-person talk (two lines each); mutual picks share one talk."""
+    active = _active_agent_rows(conn)
+    if len(active) < 2:
+        return []
+    picks: list[tuple[str, str]] = []
+    for index, agent in enumerate(active):
+        others = [other for other in active if other["agent_id"] != agent["agent_id"]]
+        for _ in range(PRIVATE_TALKS_PER_ROUND):
+            partner = _choose_talk_partner(conn, round_number, agent["agent_id"], others, index)
+            if partner:
+                picks.append((agent["agent_id"], partner))
+    talks: list[list[str]] = []
+    seen: set[frozenset[str]] = set()
+    for chooser, partner in picks:
+        pair = frozenset((chooser, partner))
+        if pair in seen:
+            continue  # a mutual pick is one conversation
+        seen.add(pair)
+        talks.append([chooser, partner])
+    events = []
+    for number, (chooser, partner) in enumerate(talks):
+        event = _group_discussion_event(
+            conn, round_number, turn_id, f"camp_talk_{number}", force_participants=[chooser, partner]
+        )
+        if event:
+            event["payload"]["chosen_by"] = chooser
+            events.append(event)
+    return events
+
+
+def _choose_talk_partner(
+    conn,
+    round_number: int,
+    agent_id: str,
+    others: list[dict[str, Any]],
+    index: int,
+) -> str | None:
+    if not should_use_live_llm():
+        return others[index % len(others)]["agent_id"]
+    context = build_agent_episode_context(conn, actor_id=agent_id, round_number=round_number, current_step="camp_talks")
+    try:
+        action = _real_agent_action(
+            conn,
+            actor_id=agent_id,
+            step="camp_talks",
+            scene_context=(
+                "Before tonight's vote you get one private conversation. Choose the one player you want to talk to; "
+                "only the two of you will hear it. Put their id in target_id. Your dialogue is the opening line you "
+                "will say to them."
+            ),
+            response_kind="talk_choice",
+            episode_context=context,
+            allowed_targets=others,
+        )
+    except Exception as exc:
+        print(f"live talk choice failed for {agent_id}: {exc}")
+        return None
+    legal = {other["agent_id"] for other in others}
+    return action.target_id if action and action.target_id in legal else None
+
+
+def _record_promise(
+    conn,
+    round_number: int,
+    promiser_id: str,
+    participant_ids: list[str],
+    target_id: str,
+    step: str,
+) -> None:
+    for listener_id in participant_ids:
+        if listener_id == promiser_id:
+            continue
+        conn.execute(
+            """
+            INSERT INTO Promises (round, promiser_id, listener_id, target_id, discussion_step)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (round_number, promiser_id, listener_id, target_id, step),
+        )
+
+
+def promise_record(conn, agent_id: str, *, as_listener: bool = False) -> list[dict[str, Any]]:
+    """Vote promises the player made (or, with as_listener, received), and whether
+    the promiser's revealed vote kept them. Open until that round's votes are revealed."""
+    column = "listener_id" if as_listener else "promiser_id"
+    rows = conn.execute(
+        f"""
+        SELECT p.round, p.promiser_id, p.listener_id, p.target_id,
+               (SELECT v.target_id FROM Votes v
+                WHERE v.round = p.round AND v.voter_id = p.promiser_id AND v.revealed = 1
+                ORDER BY v.id LIMIT 1) AS voted_for
+        FROM Promises p
+        WHERE p.{column} = ?
+        ORDER BY p.round, p.id
+        """,
+        (agent_id,),
+    ).fetchall()
+    record = []
+    for row in rows:
+        voted_for = row["voted_for"]
+        record.append(
+            {
+                "round": row["round"],
+                "promised_by": _agent_name(conn, row["promiser_id"]),
+                "promised_to": _agent_name(conn, row["listener_id"]),
+                "promised_vote": _agent_name(conn, row["target_id"]),
+                "actual_vote": _agent_name(conn, voted_for) if voted_for else None,
+                "status": "open" if voted_for is None else ("kept" if voted_for == row["target_id"] else "broken"),
+            }
+        )
+    return record
+
+
 def _social_group_proposer_id(conn, round_number: int, step: str) -> str | None:
     active = _active_agent_rows(conn)
     if not active:
@@ -1565,6 +1691,8 @@ def _group_speaker_lines(
                 provider = live_llm_provider()
                 model_id = action.model_id
                 join_intent = "reinforce" if action.move_type in {"reassure_ally", "vote_commitment"} else "none"
+                if action.promised_vote_target:
+                    _record_promise(conn, round_number, agent_id, participant_ids, action.promised_vote_target, step)
             else:
                 if should_use_live_llm():
                     raise RuntimeError(
@@ -4698,6 +4826,10 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         return len(_active_agent_rows(conn))
     if step == "challenge_gift":
         return 1 if _idol_gift_round(conn, int(game["current_round"])) else 0
+    if step == "camp_talks":
+        # one partner pick per player, then at most one talk per pick with four lines
+        active_count = len(_active_agent_rows(conn))
+        return active_count * PRIVATE_TALKS_PER_ROUND * 5
     if step in GENERATED_BEAT_INTENTS:
         return 1 if GENERATED_BEAT_INTENTS[step]["response_kind"] == "host" else 2
     if step.startswith("vote_booth_"):
@@ -4712,6 +4844,7 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
 _STEP_RESPONSE_KIND = {
     "challenge_attempts": "challenge",
     "challenge_gift": "conversation",
+    "camp_talks": "conversation",
     "vote_booth": "vote",
     "camp_strategy": "conversation",
     "camp_pre_challenge_read": "conversation",
