@@ -25,7 +25,8 @@ GAME_RULES = [
     "Each round, before the vote, every player picks one other player for a private talk; only the two of them hear it. A promise to vote for someone, made in a talk, is recorded and later checked against the revealed vote (your_promises).",
     "Each round you privately write a plan before the challenge, privately predict the vote when you cast yours, and rewrite your private notebook after the council. Only you see these; your prediction accuracy is shown to you (your_predictions).",
     "After the talks, each player may send one short private message to one other player before the vote.",
-    "When three players remain the finale starts. Every eliminated player sits on the jury, questions the finalists, and votes for the winner. Most jury votes wins.",
+    "When three players remain the finale starts. Every eliminated player sits on the jury. Jurors receive each finalist's verified record (votes cast and received, promises kept and broken, challenge results, idol gifts, alliances and betrayals), each juror questions one finalist of their choosing, and then votes. Most jury votes wins.",
+    "Jurors are told to vote for the finalist who played the best game over the whole season, judged on that record, not on the final pitch alone and not on a grudge. Play with that jury in mind from round one.",
 ]
 AGENT_PUBLIC_KINDS = {
     "merge",

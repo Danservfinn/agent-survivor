@@ -1064,7 +1064,7 @@ def _strategy_priorities(response_kind: str) -> str:
             "- For votes: choose the legal target that most improves your survival, future leverage, and endgame position; explain the vote as a deliberate game action."
         ),
         "jury_vote": (
-            "- For jury votes: this vote decides the winner of the entire competition. Vote for the finalist you believe is most deserving of the win, judged on how they actually played: agency, control, adaptability, challenge performance, and respect for the game."
+            "- For jury votes: this vote decides the winner. Vote for the finalist who played the best game over the whole season, judged on the verified record (votes, promises kept and broken, challenge results, alliances and betrayals), not on the final pitch alone and not on a grudge."
         ),
         "talk_choice": (
             "- For choosing who to talk to: pick the one player whose information, vote, or trust you most need before tonight's vote."

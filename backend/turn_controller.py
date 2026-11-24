@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import random
 import os
 import time
 from collections import Counter
@@ -3048,15 +3047,13 @@ def _jury_questions_event(conn, round_number: int, turn_id: int) -> dict[str, An
     ]
     live_metadata: list[dict[str, Any]] = []
     if should_use_live_llm() and jury and finalists:
-        # adversarial cross-examination: each juror questions the finalist they
-        # are least convinced by; the finalist must answer live. This tests
-        # consistency under pressure instead of one-shot pitches.
-        rng = random.Random((round_number * 31) + len(jury))
+        # cross-examination: each juror reads every finalist's verified record,
+        # picks the finalist it wants to question, and that finalist answers live
         for juror in jury:
-            finalist = rng.choice(finalists)
-            q = _real_jury_question(conn, round_number, juror, finalist)
-            if not q:
+            asked = _real_jury_question(conn, round_number, juror, finalists)
+            if not asked:
                 continue
+            finalist, q = asked
             a = _real_finalist_answer(conn, round_number, finalist, juror, q)
             lines.append({"agent_id": juror["agent_id"], "text": q, "question_to": finalist["agent_id"]})
             if a:
@@ -3093,8 +3090,87 @@ def _jury_questions_event(conn, round_number: int, turn_id: int) -> dict[str, An
     )
 
 
-def _real_jury_question(conn, round_number: int, juror: dict[str, Any], finalist: dict[str, Any]) -> str | None:
-    """Live adversarial question from a juror to a finalist."""
+JURY_STANDARD = (
+    "Vote for the finalist who played the best game over the whole season, judged on the verified record "
+    "in front of you: their votes, the promises they kept and broke, their challenge results and the "
+    "alliances they built and betrayed. Do not vote on the final pitch alone, and do not vote against "
+    "someone only because they voted you out."
+)
+
+
+def _finalist_dossier(conn, finalist_id: str) -> dict[str, Any]:
+    """A finalist's season, read only from the game's tables, never from model text."""
+    names = {row["agent_id"]: row["pseudonym"] for row in conn.execute("SELECT agent_id, pseudonym FROM Agents")}
+    votes_cast = [
+        {"round": row["round"], "voted_for": names.get(row["target_id"], row["target_id"])}
+        for row in conn.execute(
+            "SELECT round, target_id FROM Votes WHERE voter_id = ? AND revealed = 1 ORDER BY round", (finalist_id,)
+        )
+    ]
+    votes_received = [
+        {"round": row["round"], "votes": row["n"]}
+        for row in conn.execute(
+            """
+            SELECT round, COUNT(*) AS n FROM Votes
+            WHERE target_id = ? AND revealed = 1 AND voter_id != 'host'
+            GROUP BY round ORDER BY round
+            """,
+            (finalist_id,),
+        )
+    ]
+    challenges = []
+    for row in conn.execute("SELECT round, winning_agent_id, result_payload FROM ChallengeResults ORDER BY round"):
+        scores = (json.loads(row["result_payload"] or "{}").get("scores") or {})
+        if finalist_id in scores:
+            challenges.append(
+                {"round": row["round"], "correct_of_5": scores[finalist_id]["correct"], "won": row["winning_agent_id"] == finalist_id}
+            )
+    idol_gifts = []
+    for event in conn.execute("SELECT round, payload FROM StoryEvents WHERE kind = 'idol_handoff' ORDER BY round"):
+        payload = json.loads(event["payload"] or "{}")
+        participants = payload.get("participant_ids") or []
+        if participants and participants[0] == finalist_id:
+            idol_gifts.append({"round": event["round"], "gave_idol_to": names.get(payload.get("idol_recipient_id"))})
+    promises = promise_record(conn, finalist_id)
+    alliances = [
+        {
+            "joined_round": row["joined_round"],
+            "status": row["status"],
+            "betrayed_round": row["betrayed_round"],
+            "members": [names.get(member, member) for member in str(row["members"] or "").split(",") if member],
+        }
+        for row in conn.execute(
+            """
+            SELECT m.joined_round, m.status, m.betrayed_round,
+                   (SELECT group_concat(o.agent_id) FROM AllianceMemberships o WHERE o.alliance_id = m.alliance_id) AS members
+            FROM AllianceMemberships m WHERE m.agent_id = ? ORDER BY m.joined_round
+            """,
+            (finalist_id,),
+        )
+    ]
+    return {
+        "finalist": names.get(finalist_id, finalist_id),
+        "agent_id": finalist_id,
+        "votes_cast": votes_cast,
+        "votes_received_by_round": votes_received,
+        "challenges": challenges,
+        "challenge_wins": sum(1 for entry in challenges if entry["won"]),
+        "idol_gifts": idol_gifts,
+        "promises_made": len(promises),
+        "promises_kept": sum(1 for entry in promises if entry["status"] == "kept"),
+        "promises_broken": [entry for entry in promises if entry["status"] == "broken"],
+        "alliances": alliances,
+    }
+
+
+def _dossiers_text(conn, finalists: list[dict[str, Any]]) -> str:
+    return json.dumps([_finalist_dossier(conn, agent["agent_id"]) for agent in finalists], separators=(",", ":"))
+
+
+def _real_jury_question(
+    conn, round_number: int, juror: dict[str, Any], finalists: list[dict[str, Any]]
+) -> tuple[dict[str, Any], str] | None:
+    """The juror picks which finalist to question (target_id) and asks one question."""
     episode_context = build_agent_episode_context(
         conn,
         actor_id=juror["agent_id"],
@@ -3106,14 +3182,22 @@ def _real_jury_question(conn, round_number: int, juror: dict[str, Any], finalist
         actor_id=juror["agent_id"],
         step="jury_questions",
         scene_context=(
-            f"You were eliminated and now sit on the jury. {finalist['pseudonym']} is a finalist. "
-            "Ask ONE pointed, adversarial question that tests whether they actually controlled "
-            "their game or rode luck and other players. Reference a specific vote or move if you can."
+            "You were eliminated and now sit on the jury. Below is each finalist's verified record. "
+            "Pick the one finalist you most want to question (target_id) and ask ONE pointed question that "
+            "tests whether they controlled their game. Name a specific vote, promise or move from the record. "
+            f"{JURY_STANDARD} Finalist records: {_dossiers_text(conn, finalists)}"
         ),
         response_kind="dialogue",
         episode_context=episode_context,
+        allowed_targets=finalists,
     )
-    return (action.dialogue if action else None) or None
+    if not action or not action.dialogue:
+        return None
+    by_id = {agent["agent_id"]: agent for agent in finalists}
+    finalist = by_id.get(action.target_id or "")
+    if finalist is None:
+        return None  # the juror did not name a finalist; it asks nothing
+    return finalist, action.dialogue
 
 
 def _real_finalist_answer(
@@ -3160,7 +3244,10 @@ def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
     action = None
     last_error = None
     for attempt in range(3):
-        scene = "You are on the jury for the final vote of the entire competition. This vote decides the winner of the whole season. Listen to the finalists' pitches and vote for the one contestant you believe is most deserving of winning the game, based on how they actually played."
+        scene = (
+            "You are on the jury for the final vote of the entire competition. This vote decides the winner. "
+            f"{JURY_STANDARD} Finalist records: {_dossiers_text(conn, finalist_rows)}"
+        )
         if attempt > 0:
             scene = (
                 f"Your previous jury vote response was invalid (missing, illegal target, or "
