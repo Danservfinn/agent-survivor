@@ -703,7 +703,7 @@ Scene:
 {scene_context}
 
 Relevant prior context:
-{_context_for_prompt(episode_context or {})[:5000]}
+{_compact_context_for_prompt(episode_context or {}, 5000)}
 
 Allowed targets:
 {target_lines or '- none'}
@@ -841,7 +841,7 @@ Say what I say aloud now.
 
 Current step: {step}
 Scene facts: {scene_context}
-Visible prior context: {_context_for_prompt(episode_context or {})[:2500]}
+Visible prior context: {_compact_context_for_prompt(episode_context or {}, 2500)}
 
 Return only the spoken line. No JSON. No markdown. No quotes. No narrator voice.
 
@@ -1302,6 +1302,17 @@ def _host_model_id(settings) -> str:
 
 def _context_for_prompt(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+# Repair prompts get a short context. Keep the verified record first (who voted
+# for whom, eliminations, the rules) rather than cutting the full context mid-way.
+_COMPACT_CONTEXT_KEYS = ("vote_history", "eliminations", "challenge_history", "visible_game_state", "game_rules")
+
+
+def _compact_context_for_prompt(value: dict[str, Any], limit: int) -> str:
+    compact = {key: value[key] for key in _COMPACT_CONTEXT_KEYS if key in value}
+    text = json.dumps(compact, ensure_ascii=True, separators=(",", ":"))
+    return text if len(text) <= limit else text[:limit]
 
 
 def _ssl_context() -> ssl.SSLContext:

@@ -115,15 +115,17 @@ def estimate_call_cost_usd(
     )
 
 
-# Token budgets per response kind, tuned from the prompt builder sizes.
+# Token budgets per response kind: (input, output). Contestant calls carry the
+# full game record (llm_context.MAX_CONTEXT_CHARS, up to about 10k tokens late
+# in a season) on top of a ~2.5k-token prompt; 8000 is a season average.
 TOKEN_BUDGETS = {
-    "conversation": (3500, 420),
-    "confessional": (3200, 380),
-    "vote": (3400, 420),
-    "jury_vote": (3200, 300),
-    "finale_pitch": (3200, 420),
+    "conversation": (8000, 420),
+    "confessional": (8000, 380),
+    "vote": (8000, 420),
+    "jury_vote": (8000, 300),
+    "finale_pitch": (8000, 420),
     "host": (3600, 300),
-    "challenge": (2200, 360),
+    "challenge": (6500, 360),
     "archetype": (1200, 120),
 }
 

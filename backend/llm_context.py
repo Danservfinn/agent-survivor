@@ -1,11 +1,27 @@
 from __future__ import annotations
 
-from collections import Counter
+import json
 from typing import Any
 
 from .database import row_to_dict
 
-MAX_CONTEXT_EVENTS = 28
+MAX_CONTEXT_EVENTS = 60
+# Upper bound on a serialized contestant context. When over it, the oldest
+# timeline and private events are dropped first; the ledgers and the rules,
+# which are the verified record of the game, are never trimmed.
+MAX_CONTEXT_CHARS = 40_000
+
+# One statement of the rules every player reads. Keep it in step with the engine
+# in turn_controller.py: players can only plan around rules they are told.
+GAME_RULES = [
+    "Each round has a challenge. Before the merge the winning tribe is immune; after the merge only the winner is. Immune players cannot be voted for that round.",
+    "Before the merge there are two tribes: only the tribe that lost the challenge votes, and it votes out one of its own. The tribes merge when six players remain.",
+    "Each voter casts one secret vote for an eligible player. After everyone votes, the votes are revealed one by one and stay public: every player sees who voted for whom (vote_history).",
+    "The player with the most votes leaves. On a tie there is a revote among the tied players only; tied players cannot vote for themselves.",
+    "If the revote is also tied, the tied player with the fewest challenge wins this season leaves; if still level, the one who has received the most votes this season leaves.",
+    "Hidden immunity idols exist. A holder may play one when voting; votes against them that round do not count.",
+    "When three players remain the finale starts. Every eliminated player sits on the jury, questions the finalists, and votes for the winner. Most jury votes wins.",
+]
 AGENT_PUBLIC_KINDS = {
     "merge",
     "challenge_intro",
@@ -36,16 +52,18 @@ def build_agent_episode_context(
     current_step: str,
 ) -> dict[str, Any]:
     prior_events = _prior_events(conn, round_number)
+    eliminated_rounds = _eliminated_rounds(prior_events)
     public_timeline = [
         _agent_public_event(event)
         for event in prior_events
-        if event["kind"] in AGENT_PUBLIC_KINDS and not _participants_only_event(event)
+        if _is_public_event(event)
     ]
     static_private_memory = _actor_static_memory(conn, actor_id)
     event_private_memory = [
-        _actor_private_event(event)
+        _actor_private_event(event, public=_is_public_event(event))
         for event in prior_events
         if actor_id in event["actor_ids"]
+        and not _participants_only_event(event)  # those arrive once, via private_group_memory
         and (event["kind"] in AGENT_PRIVATE_KINDS or event.get("inner_thought"))
     ]
     private_group_memory = [
@@ -60,10 +78,14 @@ def build_agent_episode_context(
 
     home_tribe = _tribe_of(conn, actor_id)
     phase = _tribe_phase(conn)
-    return {
+    context = {
         "visibility": "contestant_public_plus_own",
         "current_step": current_step,
-        "season_context": _season_context(prior_events, round_number),
+        "game_rules": GAME_RULES,
+        "season_context": _season_context(conn, round_number),
+        "vote_history": _vote_history(conn, prior_events, eliminated_rounds),
+        "challenge_history": _challenge_history(conn),
+        "eliminations": _eliminations(conn),
         "tribe": {
             "phase": phase,
             "your_tribe": home_tribe,
@@ -86,6 +108,7 @@ def build_agent_episode_context(
             "season_events_seen": len(prior_events),
         },
     }
+    return _fit_budget(context, protected_private=len(static_private_memory) + len(alliance_memory))
 
 
 def build_host_episode_context(
@@ -99,7 +122,7 @@ def build_host_episode_context(
     return {
         "visibility": "host_omniscient_nonspoiling",
         "current_step": current_step,
-        "season_context": _season_context(prior_events, round_number),
+        "season_context": _season_context(conn, round_number),
         "visible_game_state": _visible_game_state(conn, current_step),
         "host_timeline": host_timeline,
         "context_digest": {
@@ -153,7 +176,17 @@ def _agent_public_event(event: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
-def _actor_private_event(event: dict[str, Any]) -> dict[str, Any]:
+def _is_public_event(event: dict[str, Any]) -> bool:
+    return event["kind"] in AGENT_PUBLIC_KINDS and not _participants_only_event(event)
+
+
+def _actor_private_event(event: dict[str, Any], *, public: bool = False) -> dict[str, Any]:
+    if public:
+        # the event itself is already in public_timeline; add only what is private
+        summary = {"round": event["round"], "sequence": event["sequence"], "kind": event["kind"]}
+        if event.get("inner_thought"):
+            summary["your_private_thought"] = event["inner_thought"]
+        return summary
     summary = _base_event(event)
     if event.get("inner_thought"):
         summary["your_private_thought"] = event["inner_thought"]
@@ -267,25 +300,124 @@ def _tail(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return items[-MAX_CONTEXT_EVENTS:]
 
 
-def _season_context(prior_events: list[dict[str, Any]], round_number: int) -> dict[str, Any]:
-    older_rounds = [event for event in prior_events if event["round"] < round_number]
+def _season_context(conn, round_number: int) -> dict[str, Any]:
+    counts = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+            SUM(CASE WHEN status != 'active' THEN 1 ELSE 0 END) AS eliminated
+        FROM Agents
+        """
+    ).fetchone()
     return {
-        "scope": "full_season_compacted",
         "current_round": round_number,
-        "older_round_events": len(older_rounds),
-        "current_round_prior_events": len(prior_events) - len(older_rounds),
-        "summary": (
-            "No prior rounds are stored in this MVP."
-            if not older_rounds
-            else _round_summary(older_rounds)
-        ),
+        "players_left": int(counts["active"] or 0),
+        "players_eliminated": int(counts["eliminated"] or 0),
     }
 
 
-def _round_summary(events: list[dict[str, Any]]) -> str:
-    counts = Counter(event["kind"] for event in events)
-    parts = [f"{kind}: {count}" for kind, count in sorted(counts.items())]
-    return "Prior season archive contains " + ", ".join(parts) + "."
+def _names_by_id(conn) -> dict[str, str]:
+    return {row["agent_id"]: row["pseudonym"] for row in conn.execute("SELECT agent_id, pseudonym FROM Agents")}
+
+
+def _eliminated_rounds(prior_events: list[dict[str, Any]]) -> set[int]:
+    return {event["round"] for event in prior_events if event["kind"] == "elimination"}
+
+
+def _vote_history(conn, prior_events: list[dict[str, Any]], eliminated_rounds: set[int]) -> list[dict[str, Any]]:
+    """Who voted for whom, round by round: only votes already revealed to everyone.
+
+    First-ballot votes come from Votes (revealed = 1). Revote ballots exist only
+    as revote_booth events, which are written while the revote is still running,
+    so they are shown only for rounds whose elimination has happened.
+    """
+    names = _names_by_id(conn)
+    rounds: dict[int, dict[str, Any]] = {}
+
+    def entry(round_number: int) -> dict[str, Any]:
+        return rounds.setdefault(round_number, {"round": round_number, "votes": [], "revote": [], "eliminated": None})
+
+    for row in conn.execute(
+        "SELECT round, voter_id, target_id FROM Votes WHERE revealed = 1 ORDER BY round, id"
+    ).fetchall():
+        if row["voter_id"] == "host":
+            continue  # walkover: the last non-immune player left without a vote
+        entry(row["round"])["votes"].append(
+            {"voter": names.get(row["voter_id"], row["voter_id"]), "target": names.get(row["target_id"], row["target_id"])}
+        )
+    for event in prior_events:
+        if event["kind"] == "revote_booth" and event["round"] in eliminated_rounds:
+            target_id = (event.get("payload") or {}).get("vote_target_id")
+            voter_id = (event.get("actor_ids") or [None])[0]
+            if target_id and voter_id:
+                entry(event["round"])["revote"].append(
+                    {"voter": names.get(voter_id, voter_id), "target": names.get(target_id, target_id)}
+                )
+        elif event["kind"] == "elimination":
+            eliminated_ids = event.get("target_ids") or []
+            if eliminated_ids:
+                entry(event["round"])["eliminated"] = names.get(eliminated_ids[0], eliminated_ids[0])
+    return [rounds[key] for key in sorted(rounds)]
+
+
+def _challenge_history(conn) -> list[dict[str, Any]]:
+    names = _names_by_id(conn)
+    history = []
+    for row in conn.execute("SELECT * FROM ChallengeResults ORDER BY round").fetchall():
+        try:
+            immune_ids = json.loads(row["immunity_agent_ids"] or "[]")
+        except (TypeError, ValueError):
+            immune_ids = []
+        history.append(
+            {
+                "round": row["round"],
+                "type": row["challenge_type"],
+                "winner": names.get(row["winning_agent_id"], row["winning_agent_id"]),
+                "immune": [names.get(agent_id, agent_id) for agent_id in immune_ids],
+            }
+        )
+    return history
+
+
+def _eliminations(conn) -> list[dict[str, Any]]:
+    return [
+        {"round": row["elimination_round"], "name": row["pseudonym"]}
+        for row in conn.execute(
+            """
+            SELECT pseudonym, elimination_round FROM Agents
+            WHERE status != 'active' AND elimination_round IS NOT NULL
+            ORDER BY elimination_round
+            """
+        ).fetchall()
+    ]
+
+
+def _fit_budget(context: dict[str, Any], *, protected_private: int) -> dict[str, Any]:
+    """Drop the oldest timeline events, then the oldest private events, until the
+    context fits. The first `protected_private` private entries (the player's own
+    memory and alliances) and every ledger are kept."""
+    def encoded_len(value: Any) -> int:
+        return len(json.dumps(value, separators=(",", ":"), sort_keys=True, default=str))
+
+    timeline = context["public_timeline"]
+    private = context["actor_private_memory"]
+    # measure once, then subtract each dropped entry (plus its comma) instead of
+    # re-encoding the whole context after every drop
+    total = encoded_len(context)
+    trimmed = 0
+    def position(entry: dict[str, Any]) -> tuple[int, int]:
+        return (int(entry.get("round") or 0), int(entry.get("sequence") or 0))
+
+    while total > MAX_CONTEXT_CHARS and (timeline or len(private) > protected_private):
+        # drop whichever remaining event is oldest, public or private
+        take_private = len(private) > protected_private and (
+            not timeline or position(private[protected_private]) < position(timeline[0])
+        )
+        dropped = private.pop(protected_private) if take_private else timeline.pop(0)
+        total -= encoded_len(dropped) + 1
+        trimmed += 1
+    context["context_digest"]["trimmed_events"] = trimmed
+    return context
 
 
 def _visible_game_state(conn, current_step: str) -> dict[str, Any]:
@@ -302,21 +434,7 @@ def _visible_game_state(conn, current_step: str) -> dict[str, Any]:
     return {
         "current_step": current_step,
         "agents": agents,
-        "revealed_vote_tally": _revealed_vote_tally(conn),
     }
-
-
-def _revealed_vote_tally(conn) -> dict[str, int]:
-    rows = conn.execute(
-        """
-        SELECT target_id, COUNT(*) AS count
-        FROM Votes
-        WHERE revealed = 1
-        GROUP BY target_id
-        ORDER BY target_id
-        """
-    ).fetchall()
-    return {row["target_id"]: row["count"] for row in rows}
 
 
 def _revealed_vote_count(conn) -> int:

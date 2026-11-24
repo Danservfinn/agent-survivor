@@ -48,6 +48,96 @@ class LLMContextBoundaryTest(unittest.TestCase):
         self.assertNotIn("Grok 4.3 knows the room is tilted", full_text)
         self.assertNotIn("People are smiling too much", full_text)
 
+    def _context(self, actor_id: str, round_number: int = 7, step: str = "tribal_vote_call") -> dict:
+        conn = database.get_db_connection()
+        try:
+            return build_agent_episode_context(
+                conn, actor_id=actor_id, round_number=round_number, current_step=step
+            )
+        finally:
+            conn.close()
+
+    def _run_until_elimination(self) -> None:
+        for _ in range(120):
+            turn_controller.advance_turn()
+            conn = database.get_db_connection()
+            try:
+                done = conn.execute("SELECT COUNT(*) AS n FROM StoryEvents WHERE kind = 'elimination'").fetchone()["n"]
+            finally:
+                conn.close()
+            if done:
+                return
+        self.fail("no elimination within 120 turns")
+
+    def test_players_see_who_voted_for_whom_after_the_council(self) -> None:
+        self._run_until_elimination()
+        conn = database.get_db_connection()
+        try:
+            votes = conn.execute("SELECT voter_id, target_id FROM Votes WHERE round = 7 AND voter_id != 'host'").fetchall()
+            names = {row["agent_id"]: row["pseudonym"] for row in conn.execute("SELECT agent_id, pseudonym FROM Agents")}
+            active = conn.execute("SELECT agent_id FROM Agents WHERE status = 'active' ORDER BY agent_id").fetchone()["agent_id"]
+        finally:
+            conn.close()
+        context = self._context(active, round_number=7)
+        round_7 = next(entry for entry in context["vote_history"] if entry["round"] == 7)
+        expected = sorted((names[row["voter_id"]], names[row["target_id"]]) for row in votes)
+        self.assertEqual(sorted((v["voter"], v["target"]) for v in round_7["votes"]), expected)
+        self.assertIsNotNone(round_7["eliminated"])
+        self.assertEqual(context["eliminations"][0]["name"], round_7["eliminated"])
+
+    def test_rules_and_challenge_record_are_always_present(self) -> None:
+        self._run_until_elimination()
+        context = self._context("agent-alpha")
+        self.assertTrue(any("revote" in rule for rule in context["game_rules"]))
+        self.assertTrue(any("jury" in rule for rule in context["game_rules"]))
+        self.assertEqual(context["challenge_history"][0]["round"], 7)
+        self.assertTrue(context["challenge_history"][0]["winner"])
+
+    def test_revote_ballots_stay_hidden_until_the_elimination(self) -> None:
+        conn = database.get_db_connection()
+        try:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute(
+                """
+                INSERT INTO StoryEvents (turn_id, round, sequence, phase, kind, scene, shot, actor_ids, target_ids,
+                                         visibility, title, dialogue, payload)
+                VALUES (1, 7, 1, 'tribal', 'revote_booth', 'tribal', 'vote_booth', '["agent-alpha"]', '["agent-bravo"]',
+                        'audience', 'Revote', 'Revote', '{"revote": true, "vote_target_id": "agent-bravo"}')
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        # mid-revote: other voters must not see this ballot yet
+        self.assertEqual(self._context("agent-cipher")["vote_history"], [])
+
+        conn = database.get_db_connection()
+        try:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute(
+                """
+                INSERT INTO StoryEvents (turn_id, round, sequence, phase, kind, scene, shot, actor_ids, target_ids,
+                                         visibility, title, dialogue, payload)
+                VALUES (1, 7, 2, 'tribal', 'elimination', 'tribal', 'wide', '["host"]', '["agent-bravo"]',
+                        'audience', 'Out', 'Out', '{}')
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        revote = self._context("agent-cipher")["vote_history"][0]["revote"]
+        self.assertEqual(len(revote), 1)
+
+    def test_trimming_drops_old_events_but_keeps_ledgers_and_memory(self) -> None:
+        self._run_until_elimination()
+        with patch("backend.llm_context.MAX_CONTEXT_CHARS", 3000):
+            context = self._context("agent-alpha")
+        self.assertGreater(context["context_digest"]["trimmed_events"], 0)
+        self.assertTrue(context["game_rules"])
+        self.assertTrue(context["vote_history"])
+        self.assertTrue(context["challenge_history"])
+        self.assertEqual(context["actor_private_memory"][0]["kind"], "confessional_memory")
+
     def test_agent_vote_context_excludes_hidden_prior_vote_targets(self) -> None:
         turn_controller.auto_run(22)
         conn = database.get_db_connection()
@@ -70,7 +160,8 @@ class LLMContextBoundaryTest(unittest.TestCase):
 
         self.assertNotIn("vote_booth", public_kinds)
         self.assertEqual(private_vote_entries, [])
-        self.assertEqual(context["visible_game_state"]["revealed_vote_tally"], {})
+        # nothing is revealed before the reveal step, so no vote can leak
+        self.assertEqual(context["vote_history"], [])
 
     def test_private_group_context_is_participant_only(self) -> None:
         turn_controller.advance_turn()
