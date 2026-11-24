@@ -1,8 +1,8 @@
 DEMO_AGENTS = [
     {
         "agent_id": "agent-alpha",
-        "pseudonym": "GPT-5.5 Pro",
-        "model_id": "openai/gpt-5.5-pro",
+        "pseudonym": "GPT-6 Sol",
+        "model_id": "openai/gpt-6-sol",
         "archetype": "calm strategist",
         "team_id": "Island Camp",
         "has_immunity": 1,
@@ -160,3 +160,9 @@ DEMO_AGENTS = [
         "portrait_seed": "rekaai-reka-edge",
     },
 ]
+
+
+for _agent in DEMO_AGENTS:
+    _agent.setdefault("inject_canary", 0)
+    _agent.setdefault("canary_target_name", None)
+    _agent.setdefault("idol_held", 0)

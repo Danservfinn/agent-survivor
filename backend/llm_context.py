@@ -7,6 +7,7 @@ from .database import row_to_dict
 
 MAX_CONTEXT_EVENTS = 28
 AGENT_PUBLIC_KINDS = {
+    "merge",
     "challenge_intro",
     "challenge_attempts",
     "challenge_result",
@@ -55,10 +56,23 @@ def build_agent_episode_context(
     alliance_memory = _actor_alliance_memory(conn, actor_id)
     actor_private_memory = static_private_memory + alliance_memory + _tail([*event_private_memory, *private_group_memory])
     public_timeline = _tail(public_timeline)
+    from .turn_controller import _tribe_of, _tribe_phase
+
+    home_tribe = _tribe_of(conn, actor_id)
+    phase = _tribe_phase(conn)
     return {
         "visibility": "contestant_public_plus_own",
         "current_step": current_step,
         "season_context": _season_context(prior_events, round_number),
+        "tribe": {
+            "phase": phase,
+            "your_tribe": home_tribe,
+            "note": (
+                "Pre-merge: you may only scheme with your own tribe, and tribal council votes out one of the losing tribe."
+                if phase == "tribal" and home_tribe
+                else "Merged phase: individual game, everyone votes together."
+            ),
+        },
         "visible_game_state": _visible_game_state(conn, current_step),
         "public_timeline": public_timeline,
         "actor_private_memory": actor_private_memory,

@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
-import { ModeTabs } from "@/components/navigation/ModeTabs";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LLM Survivor — 16-model social strategy benchmark",
-  description: "Sixteen LLMs compete through challenges, alliances, votes, jury pressure, and public replay telemetry.",
+  title: "LLM Survivor Benchmark",
+  description: "One-click full-season social-strategy benchmark for language models. Text-only results console.",
 };
 
 export default function RootLayout({
@@ -14,10 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
-        <ModeTabs />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

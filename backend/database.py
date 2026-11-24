@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -353,11 +354,41 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         _ensure_column(conn, "Agents", "model_id", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "Agents", "archetype_source", "TEXT NOT NULL DEFAULT 'seeded'")
         _ensure_column(conn, "Agents", "archetype_updated_round", "INTEGER")
+        _ensure_column(conn, "Agents", "inject_canary", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "Agents", "canary_target_name", "TEXT")
+        _ensure_column(conn, "Agents", "idol_held", "INTEGER NOT NULL DEFAULT 0")
         _ensure_agent_model_ids(conn)
         _ensure_viewer_state(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _shuffled_roster(roster_preset: str | None) -> list[dict[str, Any]]:
+    """Roster with seed-shuffled seat assignment.
+
+    The season seed deterministically permutes seat order and reassigns
+    agent ids (agent-a, agent-b, ...). Vote order, reveal order, and tribe
+    parity are keyed off agent ids throughout the engine, so without this
+    shuffle fixed roster position could systematically influence outcomes.
+    Same seed -> same permutation; different seeds -> different seating.
+    """
+    roster = agents_for_roster(roster_preset)
+    raw = os.environ.get("SURVIVOR_SEASON_SEED")
+    try:
+        seed_value = int(raw) if raw else 0
+    except ValueError:
+        seed_value = 0
+    if not seed_value:
+        return roster
+    seats = list(roster)
+    random.Random(seed_value).shuffle(seats)
+    out: list[dict[str, Any]] = []
+    for index, agent in enumerate(seats):
+        clone = dict(agent)
+        clone["agent_id"] = f"agent-{index + 1:02d}"
+        out.append(clone)
+    return out
 
 
 def seed_demo(
@@ -410,14 +441,24 @@ def seed_demo(
             INSERT INTO Agents (
                 agent_id, pseudonym, model_id, archetype, team_id, status, has_immunity,
                 confessional_memory, action_points, elimination_round, portrait_seed,
-                archetype_source, archetype_updated_round
+                archetype_source, archetype_updated_round, inject_canary, canary_target_name
             ) VALUES (
                 :agent_id, :pseudonym, :model_id, :archetype, :team_id, 'active', :has_immunity,
-                :confessional_memory, 0, NULL, :portrait_seed, 'seeded', NULL
+                :confessional_memory, 0, NULL, :portrait_seed, 'seeded', NULL,
+                :inject_canary, :canary_target_name
             )
             """,
-            agents_for_roster(roster_preset),
+            _shuffled_roster(roster_preset),
         )
+        # split the cast into two tribes at seed time (camp structure)
+        active = conn.execute(
+            "SELECT agent_id FROM Agents WHERE status = 'active' ORDER BY agent_id"
+        ).fetchall()
+        for index, row in enumerate(active):
+            tribe = "tribe-a" if index % 2 == 0 else "tribe-b"
+            conn.execute(
+                "UPDATE Agents SET team_id = ? WHERE agent_id = ?", (tribe, row["agent_id"])
+            )
         conn.commit()
     finally:
         conn.close()

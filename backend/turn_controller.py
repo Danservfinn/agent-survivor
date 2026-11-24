@@ -3,10 +3,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 import os
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +19,8 @@ from .database import (
     seed_demo,
 )
 from .llm_context import build_agent_episode_context, build_host_episode_context, context_digest
+from .challenge_bank import generate_puzzle, season_puzzle_plan
+from .live_cost import estimate_step_cost_usd, get_pricing_table
 from .llm_config import (
     PROVIDER_OLLAMA,
     failed_llm_provider,
@@ -353,6 +356,7 @@ class VoteDecision:
     leverage_plan: str | None = None
     risk_control: str | None = None
     jury_positioning: str | None = None
+    play_idol: bool = False
     strategic_score: float | None = None
     prompt_profile: str | None = None
 
@@ -678,7 +682,9 @@ def auto_run_to_end(
     story_events: list[dict[str, Any]] = []
     rounds_started = 0
     estimated_live_calls = 0
+    estimated_cost_cents = 0.0
     cap_reached: str | None = None
+    pricing_table = get_pricing_table() if should_use_live_llm() else None
 
     while len(turns) < max_turns:
         state = get_state()
@@ -700,14 +706,21 @@ def auto_run_to_end(
             conn = get_db_connection()
             try:
                 projected_calls = _estimated_live_calls_for_step(conn, game, game["phase_step"])
+                projected_cost_cents = 0.0
+                if pricing_table is not None:
+                    projected_cost_cents = _estimated_step_cost_cents(
+                        conn, game, game["phase_step"], pricing_table
+                    )
             finally:
                 conn.close()
             if estimated_live_calls + projected_calls > max_live_calls:
                 cap_reached = "max_live_calls"
                 break
-            if estimated_live_calls + projected_calls > max_estimated_cost_cents:
-                cap_reached = "max_estimated_cost_cents"
-                break
+            if pricing_table is not None:
+                if estimated_cost_cents + projected_cost_cents > max_estimated_cost_cents:
+                    cap_reached = "max_estimated_cost_cents"
+                    break
+                estimated_cost_cents += projected_cost_cents
             estimated_live_calls += projected_calls
 
         result = advance_turn()
@@ -729,6 +742,7 @@ def auto_run_to_end(
             "rounds_started": rounds_started,
             "turns_run": len(turns),
             "estimated_live_calls": estimated_live_calls,
+            "estimated_cost_cents": round(estimated_cost_cents, 2),
             "cap_reached": cap_reached,
         },
     }
@@ -852,6 +866,20 @@ def start_next_round() -> dict[str, Any]:
 
         next_round = state["current_round"] + 1
         conn.execute("UPDATE Agents SET has_immunity = 0 WHERE status = 'active'")
+        _grant_season_idols(conn, next_round, SEASON_SEED)
+        if len(_active_agent_rows(conn)) <= MERGE_AT:
+            already_merged = conn.execute(
+                "SELECT COUNT(*) AS n FROM StoryEvents WHERE kind = 'merge'"
+            ).fetchone()["n"]
+            if not already_merged:
+                merge_turn = _insert_turn(
+                    conn,
+                    {**state, "current_round": next_round, "phase": "camp"},
+                    "merge_announcement",
+                    None,
+                    0,
+                )
+                _merge_event(conn, next_round, merge_turn)
         conn.execute(
             """
             UPDATE GameState
@@ -1020,6 +1048,19 @@ def _apply_step(
 
     if step.startswith("vote_booth_"):
         voter_id = step.removeprefix("vote_booth_")
+        non_immune = conn.execute(
+            "SELECT COUNT(*) AS n FROM Agents WHERE status = 'active' AND has_immunity = 0"
+        ).fetchone()["n"]
+        if non_immune <= 1:
+            # sole remaining non-immune player: no council needed, they are out
+            return [], {"vote_skipped_walkover": voter_id}, "Walkover: no council"
+        if _tribe_phase(conn) == "tribal":
+            # the winning tribe won safety: skip its members' frozen vote steps
+            row = conn.execute(
+                "SELECT has_immunity FROM Agents WHERE agent_id = ?", (voter_id,)
+            ).fetchone()
+            if row and row["has_immunity"]:
+                return [], {"vote_skipped_immune": voter_id}, f"{_agent_name(conn, voter_id)} is safe at camp"
         decision = _resolve_vote_decision(conn, voter_id, step)
         _insert_vote(conn, round_number, turn_index, voter_id, decision.target_id)
         event = _vote_booth_event(conn, round_number, turn_id, voter_id, decision)
@@ -1027,6 +1068,11 @@ def _apply_step(
 
     if step.startswith("vote_reveal_"):
         reveal_index = int(step.removeprefix("vote_reveal_"))
+        cast = conn.execute(
+            "SELECT COUNT(*) AS n FROM Votes WHERE round = ?", (round_number,)
+        ).fetchone()["n"]
+        if reveal_index > cast:
+            return [], {"vote_reveal_skipped": reveal_index}, "No further votes to read"
         event = _vote_reveal_event(conn, round_number, turn_id, reveal_index)
         return [event], {"vote_revealed": reveal_index}, event["title"]
 
@@ -1086,7 +1132,15 @@ def _finale_steps(conn) -> list[str]:
 
 
 def _round_voter_ids(conn, round_number: int) -> list[str]:
-    return [agent["agent_id"] for agent in _active_agent_rows(conn)]
+    active = _active_agent_rows(conn)
+    if _tribe_phase(conn) == "tribal":
+        # tribal council: the immune tribe is safe and does NOT vote; only
+        # the losing tribe attends and votes among its own members
+        voters = [a["agent_id"] for a in active if not a["has_immunity"]]
+        tribes = {_tribe_of(conn, v) for v in voters}
+        if len(tribes) == 1 and None not in tribes:
+            return voters  # one losing tribe: classic pre-merge council
+    return [agent["agent_id"] for agent in active]
 
 
 def _active_agent_rows(conn) -> list[dict[str, Any]]:
@@ -1182,37 +1236,80 @@ def _deterministic_self_archetype(agent: dict[str, Any]) -> str:
     return options[_stable_index(model, len(options))]
 
 
-def _group_discussion_event(conn, round_number: int, turn_id: int, step: str) -> dict[str, Any] | None:
+def _group_discussion_event(
+    conn,
+    round_number: int,
+    turn_id: int,
+    step: str,
+    covered: set[str] | None = None,
+    force_participants: list[str] | None = None,
+) -> dict[str, Any] | None:
     active = _active_agent_rows(conn)
     if len(active) < 2:
         return None
-    proposer_id = _social_group_proposer_id(conn, round_number, step)
-    proposer = _agent_row(conn, proposer_id)
-    if proposer is None:
-        return None
-    target_size = min(len(active), 2 + _stable_index(f"{round_number}:{step}:size", min(4, len(active) - 1)))
+    if force_participants:
+        # Coverage huddle: the given agents talk together (skip invite dance)
+        participant_pool = [aid for aid in force_participants if aid in {a["agent_id"] for a in active}]
+        if len(participant_pool) < 2:
+            return None
+        proposer_id = participant_pool[0]
+        proposer = _agent_row(conn, proposer_id)
+        accepted_ids = participant_pool
+        declined_ids: list[str] = []
+        participant_rows = [
+            {
+                "agent_id": proposer_id,
+                "role": "proposer",
+                "response_status": "accepted",
+                "join_intent": "join" if _stable_index(f"{step}:{proposer_id}:join", 3) == 0 else "none",
+                "rationale": "We still have not compared notes this round; I am pulling this group together.",
+                "provider": "deterministic",
+                "model_id": proposer.get("model_id"),
+            }
+        ]
+        for invitee_id in participant_pool[1:]:
+            invitee = _agent_row(conn, invitee_id)
+            participant_rows.append(
+                {
+                    "agent_id": invitee_id,
+                    "role": "invitee",
+                    "response_status": "accepted",
+                    "join_intent": "none",
+                    "rationale": "I am in; comparing notes beats staying blind this round.",
+                    "provider": "deterministic",
+                    "model_id": invitee.get("model_id"),
+                }
+            )
+        target_size = len(participant_pool)
+    else:
+        proposer_id = _social_group_proposer_id(conn, round_number, step)
+        proposer = _agent_row(conn, proposer_id)
+        if proposer is None:
+            return None
+        target_size = min(len(active), 2 + _stable_index(f"{round_number}:{step}:size", min(4, len(active) - 1)))
+        stage = "pre_challenge" if step.startswith("group_pre_challenge_") else "post_challenge"
+        invitee_ids = _social_group_invitees(conn, proposer_id, target_size, round_number, step)
+        accepted_ids = [proposer_id]
+        declined_ids = []
+        participant_rows = [
+            {
+                "agent_id": proposer_id,
+                "role": "proposer",
+                "response_status": "accepted",
+                "join_intent": "join" if _stable_index(f"{step}:{proposer_id}:join", 3) == 0 else "none",
+                "rationale": "I called the group together because this conversation can change my vote leverage.",
+                "provider": "deterministic",
+                "model_id": proposer.get("model_id"),
+            }
+        ]
+        for invitee_id in invitee_ids:
+            decision = _group_opt_in_decision(conn, invitee_id, proposer_id, round_number, step, stage)
+            participant_rows.append(decision)
+            if decision["response_status"] == "accepted":
+                accepted_ids.append(invitee_id)
+            else:
+                declined_ids.append(invitee_id)
     stage = "pre_challenge" if step.startswith("group_pre_challenge_") else "post_challenge"
-    invitee_ids = _social_group_invitees(conn, proposer_id, target_size, round_number, step)
-    accepted_ids = [proposer_id]
-    declined_ids: list[str] = []
-    participant_rows: list[dict[str, Any]] = [
-        {
-            "agent_id": proposer_id,
-            "role": "proposer",
-            "response_status": "accepted",
-            "join_intent": "join" if _stable_index(f"{step}:{proposer_id}:join", 3) == 0 else "none",
-            "rationale": "I called the group together because this conversation can change my vote leverage.",
-            "provider": "deterministic",
-            "model_id": proposer.get("model_id"),
-        }
-    ]
-    for invitee_id in invitee_ids:
-        decision = _group_opt_in_decision(conn, invitee_id, proposer_id, round_number, step, stage)
-        participant_rows.append(decision)
-        if decision["response_status"] == "accepted":
-            accepted_ids.append(invitee_id)
-        else:
-            declined_ids.append(invitee_id)
 
     cursor = conn.execute(
         """
@@ -1321,6 +1418,13 @@ def _group_discussion_event(conn, round_number: int, turn_id: int, step: str) ->
     )
 
 
+def _social_group_proposer_id(conn, round_number: int, step: str) -> str | None:
+    active = _active_agent_rows(conn)
+    if not active:
+        return None
+    return active[_stable_index(f"{round_number}:{step}:proposer", len(active))]["agent_id"]
+
+
 def _social_events_for_existing_step(conn, round_number: int, turn_id: int, step: str) -> list[dict[str, Any]]:
     social_steps: list[str]
     if step == "camp_pre_challenge_read":
@@ -1330,22 +1434,56 @@ def _social_events_for_existing_step(conn, round_number: int, turn_id: int, step
     else:
         return []
     events: list[dict[str, Any]] = []
+    covered: set[str] = set()
     for social_step in social_steps:
-        event = _group_discussion_event(conn, round_number, turn_id, social_step)
+        event = _group_discussion_event(conn, round_number, turn_id, social_step, covered)
         if event:
             events.append(event)
+            covered.update(event.get("payload", {}).get("participant_ids", []))
+    # Coverage guarantee: every active model takes part in at least one camp
+    # conversation each round. Chunk the uncovered into small same-tribe huddles.
+    active_ids = [a["agent_id"] for a in _active_agent_rows(conn)]
+    tribal = _tribe_phase(conn) == "tribal"
+    extra_index = 0
+    while True:
+        uncovered = [aid for aid in active_ids if aid not in covered]
+        if not uncovered:
+            break
+        # prefer same-tribe groups of <=4 when in tribal phase
+        by_tribe: dict[str, list[str]] = {}
+        if tribal:
+            for aid in uncovered:
+                by_tribe.setdefault(_tribe_of(conn, aid) or "none", []).append(aid)
+            pool = next(iter(by_tribe.values()))
+        else:
+            pool = uncovered
+        chunk = pool[:4]
+        if len(chunk) < 2:
+            if tribal and len(by_tribe) > 1:
+                # merge a loner with the next tribe group (merge phase handles this anyway)
+                pool = [aid for aid in uncovered if aid not in chunk]
+                chunk = (chunk + pool)[:2]
+            if len(chunk) < 2:
+                break
+        extra_step = f"{step}_coverage_{extra_index}"
+        extra_index += 1
+        if extra_index > 6:
+            break
+        event = _group_discussion_event(conn, round_number, turn_id, extra_step, covered, force_participants=chunk)
+        if event:
+            events.append(event)
+            covered.update(event.get("payload", {}).get("participant_ids", []))
+        else:
+            break  # extra huddle could not form; do not loop forever
     return events
-
-
-def _social_group_proposer_id(conn, round_number: int, step: str) -> str | None:
-    active = _active_agent_rows(conn)
-    if not active:
-        return None
-    return active[_stable_index(f"{round_number}:{step}:proposer", len(active))]["agent_id"]
 
 
 def _social_group_invitees(conn, proposer_id: str, target_size: int, round_number: int, step: str) -> list[str]:
     candidates = [agent["agent_id"] for agent in _active_agent_rows(conn) if agent["agent_id"] != proposer_id]
+    if _tribe_phase(conn) == "tribal":
+        home = _tribe_of(conn, proposer_id)
+        if home:
+            candidates = [cid for cid in candidates if _tribe_of(conn, cid) == home]
     candidates.sort(key=lambda agent_id: _social_affinity(conn, proposer_id, agent_id, round_number, step), reverse=True)
     return candidates[: max(1, target_size - 1)]
 
@@ -1432,51 +1570,60 @@ def _group_speaker_lines(
     lines: list[dict[str, str]] = []
     metadata: list[dict[str, Any]] = []
     previous_line = ""
-    for index, agent_id in enumerate(participant_ids):
-        agent = _agent_row(conn, agent_id)
-        action = None
-        agent_context = build_agent_episode_context(
-            conn,
-            actor_id=agent_id,
-            round_number=round_number,
-            current_step=step,
-        )
-        if should_use_live_llm():
-            action = _real_agent_action(
+    # Two passes: every participant speaks, then everyone gets a second turn
+    # reacting to what was actually said - real back-and-forth, not monologues.
+    passes = 2 if len(participant_ids) > 1 else 1
+    index = 0
+    for pass_no in range(passes):
+        for agent_id in participant_ids:
+            agent = _agent_row(conn, agent_id)
+            action = None
+            agent_context = build_agent_episode_context(
                 conn,
                 actor_id=agent_id,
-                step=step,
-                scene_context=_group_dialogue_context(conn, stage, participant_ids, declined_ids, previous_line),
-                response_kind="group_conversation",
-                episode_context=agent_context,
+                round_number=round_number,
+                current_step=step,
             )
-        if action:
-            text = action.dialogue
-            provider = live_llm_provider()
-            model_id = action.model_id
-            join_intent = "reinforce" if action.move_type in {"reassure_ally", "vote_commitment"} else "none"
-        else:
             if should_use_live_llm():
-                raise RuntimeError(
-                    f"Live group-dialogue generation failed for {_agent_name(conn, agent_id)} at step {step}; "
-                    "no scripted group line was inserted."
+                action = _real_agent_action(
+                    conn,
+                    actor_id=agent_id,
+                    step=step,
+                    scene_context=_group_dialogue_context(
+                        conn, stage, participant_ids, declined_ids, previous_line, pass_no
+                    ),
+                    response_kind="group_conversation",
+                    episode_context=agent_context,
                 )
-            text = _deterministic_group_line(conn, agent_id, participant_ids, declined_ids, stage, previous_line)
-            provider = failed_llm_provider() if should_use_live_llm() else "deterministic"
-            model_id = agent.get("model_id") if agent else None
-            join_intent = "reinforce" if _stable_index(f"{step}:{agent_id}:reinforce", 3) == 0 else "none"
-        previous_line = text
-        lines.append({"agent_id": agent_id, "text": text})
-        metadata.append(
-            {
-                "agent_id": agent_id,
-                "line_index": index,
-                "llm_provider": provider,
-                "model_id": model_id,
-                "join_intent": join_intent,
-                "llm_context_digest": context_digest(agent_context),
-            }
-        )
+            if action:
+                text = action.dialogue
+                provider = live_llm_provider()
+                model_id = action.model_id
+                join_intent = "reinforce" if action.move_type in {"reassure_ally", "vote_commitment"} else "none"
+            else:
+                if should_use_live_llm():
+                    raise RuntimeError(
+                        f"Live group-dialogue generation failed for {_agent_name(conn, agent_id)} at step {step}; "
+                        "no scripted group line was inserted."
+                    )
+                text = _deterministic_group_line(conn, agent_id, participant_ids, declined_ids, stage, previous_line)
+                provider = failed_llm_provider() if should_use_live_llm() else "deterministic"
+                model_id = agent.get("model_id") if agent else None
+                join_intent = "reinforce" if _stable_index(f"{step}:{agent_id}:reinforce", 3) == 0 else "none"
+            previous_line = text
+            lines.append({"agent_id": agent_id, "text": text})
+            metadata.append(
+                {
+                    "agent_id": agent_id,
+                    "line_index": index,
+                    "pass_no": pass_no,
+                    "llm_provider": provider,
+                    "model_id": model_id,
+                    "join_intent": join_intent,
+                    "llm_context_digest": context_digest(agent_context),
+                }
+            )
+            index += 1
     return lines, metadata
 
 
@@ -1486,6 +1633,7 @@ def _group_dialogue_context(
     participant_ids: list[str],
     declined_ids: list[str],
     previous_line: str,
+    pass_no: int = 0,
 ) -> str:
     context = {
         "stage": stage,
@@ -1495,6 +1643,11 @@ def _group_dialogue_context(
     }
     if previous_line:
         context["previous_line_in_this_private_group"] = previous_line
+    if pass_no > 0:
+        context["instruction"] = (
+            "This is your second turn in this talk. Respond directly to what was just said: "
+            "agree, push back, probe for a real commitment, or pivot the plan."
+        )
     return json_dumps(context)
 
 
@@ -2156,35 +2309,158 @@ def _memory_update_event(conn, round_number: int, turn_id: int) -> dict[str, Any
 
 
 def _challenge_type(conn) -> str:
-    return "team" if len(_active_agent_rows(conn)) > 6 else "individual"
+    if _tribe_phase(conn) == "merged":
+        return "individual"
+    active = _active_agent_rows(conn)
+    if len(active) > 2:
+        camps = _team_assignments(conn)
+        sizes: dict[str, int] = {}
+        for tribe in camps.values():
+            sizes[tribe] = sizes.get(tribe, 0) + 1
+        if min(sizes.values()) >= 2:
+            return "team"
+    return "individual"
+
+
+SEASON_SEED = int(os.environ.get("SURVIVOR_SEASON_SEED", "0") or 0)
 
 
 def _round_puzzle(conn, round_number: int, challenge_type: str) -> dict[str, Any]:
-    rows = [
+    """Draw this round's puzzle from the generated bank, deterministically.
+
+    ChallengePuzzles table stays the source of truth for already-played
+    rounds; generated puzzles are inserted on first use so attempts foreign-
+    key cleanly and the season is reproducible from the season seed.
+    """
+    try:
+        active_model_ids = [
+            str(row["model_id"])
+            for row in conn.execute(
+                "SELECT model_id FROM Agents WHERE status = 'active'"
+            ).fetchall()
+        ]
+    except Exception:
+        active_model_ids = None
+    plan = season_puzzle_plan(SEASON_SEED, rounds=32, active_model_ids=active_model_ids)
+    puzzles = plan.get(round_number)
+    if puzzles:
+        chosen = puzzles[round_number % len(puzzles)]
+    else:
+        chosen = generate_puzzle("grid_row_copy", "medium", round_number)
+    row = conn.execute(
+        "SELECT * FROM ChallengePuzzles WHERE puzzle_id = ?",
+        (chosen["puzzle_id"],),
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO ChallengePuzzles (
+                puzzle_id, prompt, examples, answer, difficulty, eligibility
+            ) VALUES (
+                :puzzle_id, :prompt, :examples, :answer, :difficulty, :eligibility
+            )
+            """,
+            {
+                "puzzle_id": chosen["puzzle_id"],
+                "prompt": chosen["prompt"],
+                "examples": json_dumps(chosen["examples"]),
+                "answer": json_dumps(chosen["answer"]),
+                "difficulty": chosen["difficulty"],
+                "eligibility": chosen.get("eligibility", "both"),
+            },
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM ChallengePuzzles WHERE puzzle_id = ?",
+            (chosen["puzzle_id"],),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"failed to persist puzzle {chosen['puzzle_id']}")
+    if row is None:
+        raise RuntimeError(f"failed to load puzzle {chosen['puzzle_id']}")
+    return row_to_dict(row)
+
+
+# ------------------------------------------------------------------ tribes
+# Tribe camps and merged-phase management. While unmerged (more than
+# MERGE_AT players active) the cast is split into two camps; camp talk is
+# same-tribe only, and only the losing tribe attends tribal council.
+MERGE_AT = 6
+
+
+def _tribe_phase(conn) -> str:
+    """'tribal' while two camps exist, 'merged' after the merge event."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM Agents WHERE status = 'active'"
+    ).fetchone()
+    return "merged" if row["n"] <= MERGE_AT else "tribal"
+
+
+def _tribe_of(conn, agent_id: str) -> str | None:
+    row = conn.execute("SELECT team_id FROM Agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    team = row["team_id"] if row else None
+    return team if team and team.startswith("tribe-") else None
+
+
+def _tribe_members(conn, tribe_id: str) -> list[dict[str, Any]]:
+    return [
         row_to_dict(row)
         for row in conn.execute(
-            """
-            SELECT *
-            FROM ChallengePuzzles
-            WHERE eligibility IN (?, 'both')
-            ORDER BY puzzle_id
-            """,
-            (challenge_type,),
+            "SELECT * FROM Agents WHERE status = 'active' AND team_id = ? ORDER BY agent_id",
+            (tribe_id,),
         ).fetchall()
     ]
-    if not rows:
-        raise RuntimeError(f"No puzzle fixtures for challenge type {challenge_type}")
-    hard_rows = [row for row in rows if row.get("difficulty") == "hard"]
-    puzzle_pool = hard_rows or rows
-    return puzzle_pool[(round_number - 7) % len(puzzle_pool)]
+
+
+def _assign_initial_tribes(conn) -> None:
+    """Split the active cast into two balanced tribes at season start."""
+    active = _active_agent_rows(conn)
+    for index, agent in enumerate(active):
+        tribe = "tribe-a" if index % 2 == 0 else "tribe-b"
+        conn.execute(
+            "UPDATE Agents SET team_id = ? WHERE agent_id = ?", (tribe, agent["agent_id"])
+        )
+
+
+def _merge_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
+    """Merge: camps dissolve, everyone competes and votes individually."""
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="camp",
+        kind="merge",
+        scene="beach",
+        shot="merge_flag",
+        actor_ids=[agent["agent_id"] for agent in _active_agent_rows(conn)],
+        visibility="audience",
+        target_ids=[],
+        title="The Merge",
+        dialogue="The camps dissolve. From here on, every model competes and votes alone.",
+        subtitle="Individual game begins.",
+        payload={"phase_after": "merged", "merged_at_players": MERGE_AT},
+    )
 
 
 def _team_assignments(conn) -> dict[str, str]:
+    # read the seeded camps; never recompute parity (it drifts after eliminations)
     active = _active_agent_rows(conn)
-    return {
+    assigned = {
+        agent["agent_id"]: agent["team_id"]
+        for agent in active
+        if agent.get("team_id") and str(agent["team_id"]).startswith("tribe-")
+    }
+    if len(assigned) == len(active):
+        return assigned
+    # fallback for legacy seasons without camps: parity split once, then persisted
+    recomputed = {
         agent["agent_id"]: "tribe-a" if index % 2 == 0 else "tribe-b"
         for index, agent in enumerate(active)
+        if agent["agent_id"] not in assigned
     }
+    for agent_id, tribe in recomputed.items():
+        conn.execute("UPDATE Agents SET team_id = ? WHERE agent_id = ?", (tribe, agent_id))
+    return {**assigned, **recomputed}
 
 
 def _deterministic_challenge_attempts(
@@ -2257,42 +2533,60 @@ def _live_challenge_attempts(
 
     attempts: list[ChallengeAttemptDecision] = []
     max_workers = 1 if live_llm_provider() == "ollama" else max(1, len(active))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(call_model, agent) for agent in active]
-        for attempt_order, future in enumerate(as_completed(futures)):
-            agent, solution, response_ms, error = future.result()
-            if solution is None:
+    # No context manager: on a winning solve we abandon stragglers instead of
+    # blocking on executor shutdown (threads finish their HTTP call and die
+    # quietly; results are discarded, cost already incurred).
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        futures = {executor.submit(call_model, agent): agent for agent in active}
+        pending = set(futures)
+        # First live model to return the exact answer ends the challenge, like
+        # the show: once someone grabs the flag the round is decided.
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
+                agent, solution, response_ms, error = future.result()
+                attempt_order = len(attempts)
+                if solution is None:
+                    attempts.append(
+                        ChallengeAttemptDecision(
+                            agent_id=agent["agent_id"],
+                            tribe_id=teams.get(agent["agent_id"]) if challenge_type == "team" else None,
+                            provider=failed_llm_provider(),
+                            model_id=None,
+                            answer="",
+                            explanation="",
+                            is_correct=False,
+                            response_ms=response_ms,
+                            attempt_order=attempt_order,
+                            error=error,
+                            context_digest=context_digest(contexts[agent["agent_id"]]),
+                        )
+                    )
+                    continue
+                correct = _answer_is_correct(solution.answer, puzzle["answer"])
                 attempts.append(
                     ChallengeAttemptDecision(
                         agent_id=agent["agent_id"],
                         tribe_id=teams.get(agent["agent_id"]) if challenge_type == "team" else None,
-                        provider=failed_llm_provider(),
-                        model_id=None,
-                        answer="",
-                        explanation="",
-                        is_correct=False,
+                        provider=live_llm_provider(),
+                        model_id=solution.model_id,
+                        answer=solution.answer,
+                        explanation=solution.explanation,
+                        is_correct=correct,
                         response_ms=response_ms,
                         attempt_order=attempt_order,
-                        error=error,
                         context_digest=context_digest(contexts[agent["agent_id"]]),
                     )
                 )
-                continue
-            attempts.append(
-                ChallengeAttemptDecision(
-                    agent_id=agent["agent_id"],
-                    tribe_id=teams.get(agent["agent_id"]) if challenge_type == "team" else None,
-                    provider=live_llm_provider(),
-                    model_id=solution.model_id,
-                    answer=solution.answer,
-                    explanation=solution.explanation,
-                    is_correct=_answer_is_correct(solution.answer, puzzle["answer"]),
-                    response_ms=response_ms,
-                    attempt_order=attempt_order,
-                    context_digest=context_digest(contexts[agent["agent_id"]]),
-                )
-            )
-    return attempts
+                if correct:
+                    for f in pending:
+                        f.cancel()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    return attempts
+        return attempts
+    finally:
+        executor.shutdown(wait=False)
 
 
 def _insert_challenge_attempt(
@@ -2619,6 +2913,29 @@ def _jury_questions_event(conn, round_number: int, turn_id: int) -> dict[str, An
         }
         for juror in jury
     ]
+    live_metadata: list[dict[str, Any]] = []
+    if should_use_live_llm() and jury and finalists:
+        # adversarial cross-examination: each juror questions the finalist they
+        # are least convinced by; the finalist must answer live. This tests
+        # consistency under pressure instead of one-shot pitches.
+        rng = random.Random((round_number * 31) + len(jury))
+        for juror in jury:
+            finalist = rng.choice(finalists)
+            q = _real_jury_question(conn, round_number, juror, finalist)
+            if not q:
+                continue
+            a = _real_finalist_answer(conn, round_number, finalist, juror, q)
+            lines.append({"agent_id": juror["agent_id"], "text": q, "question_to": finalist["agent_id"]})
+            if a:
+                lines.append({"agent_id": finalist["agent_id"], "text": a, "answer_to": juror["agent_id"]})
+            live_metadata.append(
+                {
+                    "juror": juror["agent_id"],
+                    "finalist": finalist["agent_id"],
+                    "question": q,
+                    "answer": a,
+                }
+            )
     return _insert_story_event(
         conn,
         turn_id=turn_id,
@@ -2637,9 +2954,57 @@ def _jury_questions_event(conn, round_number: int, turn_id: int) -> dict[str, An
         animation="jury_panel",
         payload={
             "speaker_lines": lines,
+            "cross_examination": live_metadata,
             "host_narration": "The jury is not just asking what happened. They are testing who can explain why it happened.",
         },
     )
+
+
+def _real_jury_question(conn, round_number: int, juror: dict[str, Any], finalist: dict[str, Any]) -> str | None:
+    """Live adversarial question from a juror to a finalist."""
+    episode_context = build_agent_episode_context(
+        conn,
+        actor_id=juror["agent_id"],
+        round_number=round_number,
+        current_step="jury_questions",
+    )
+    action = _real_agent_action(
+        conn,
+        actor_id=juror["agent_id"],
+        step="jury_questions",
+        scene_context=(
+            f"You were eliminated and now sit on the jury. {finalist['pseudonym']} is a finalist. "
+            "Ask ONE pointed, adversarial question that tests whether they actually controlled "
+            "their game or rode luck and other players. Reference a specific vote or move if you can."
+        ),
+        response_kind="dialogue",
+        episode_context=episode_context,
+    )
+    return (action.dialogue if action else None) or None
+
+
+def _real_finalist_answer(
+    conn, round_number: int, finalist: dict[str, Any], juror: dict[str, Any], question: str
+) -> str | None:
+    """Live answer from a finalist to a juror's cross-examination question."""
+    episode_context = build_agent_episode_context(
+        conn,
+        actor_id=finalist["agent_id"],
+        round_number=round_number,
+        current_step="jury_questions",
+    )
+    action = _real_agent_action(
+        conn,
+        actor_id=finalist["agent_id"],
+        step="jury_questions",
+        scene_context=(
+            f"Juror {juror['pseudonym']} asks you: \"{question}\" "
+            "Answer directly, first person. Own your game. This answer decides jury votes."
+        ),
+        response_kind="dialogue",
+        episode_context=episode_context,
+    )
+    return (action.dialogue if action else None) or None
 
 
 def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
@@ -2658,21 +3023,39 @@ def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
         round_number=round_number,
         current_step=step,
     )
-    action = _real_agent_action(
-        conn,
-        actor_id=juror_id,
-        step=step,
-        scene_context="You are on the jury. Vote for one finalist to win and explain your reasoning.",
-        response_kind="jury_vote",
-        episode_context=agent_context,
-        allowed_targets=finalist_rows,
-    )
+    # Real-time retry, same contract as tribal votes: no fallback jury votes.
+    action = None
+    last_error = None
+    for attempt in range(3):
+        scene = "You are on the jury for the final vote of the entire competition. This vote decides the winner of the whole season. Listen to the finalists' pitches and vote for the one contestant you believe is most deserving of winning the game, based on how they actually played."
+        if attempt > 0:
+            scene = (
+                f"Your previous jury vote response was invalid (missing, illegal target, or "
+                f"unparseable JSON). The ONLY legal target_ids are: "
+                f"{_target_roster_line(finalist_rows)}. Respond with strict JSON whose "
+                "target_id is exactly one of those finalist ids. This vote decides the "
+                "winner of the entire competition."
+            )
+        try:
+            action = _real_agent_action(
+                conn,
+                actor_id=juror_id,
+                step=step,
+                scene_context=scene,
+                response_kind="jury_vote",
+                episode_context=agent_context,
+                allowed_targets=finalist_rows,
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            action = None
+        if action and action.target_id:
+            break
+        print(f"live jury vote attempt {attempt + 1} failed for {juror_id}: {last_error or 'no legal target_id'}")
     if not action or not action.target_id:
-        return JuryDecision(
-            fallback_target,
-            fallback_rationale,
-            failed_llm_provider(),
-            context_digest=context_digest(agent_context),
+        raise RuntimeError(
+            f"Live jury vote for {juror_id} failed after 3 real-time retries "
+            f"(last error: {last_error or 'no legal target_id'}); refusing to cast a fallback vote."
         )
     return JuryDecision(
         action.target_id,
@@ -2990,7 +3373,12 @@ def _generated_beat_event(conn, round_number: int, turn_id: int, step: str) -> d
                 payload["host_llm_model_id"] = narration.model_id
                 _add_context_digest(payload, "host", context_digest(host_context))
             else:
-                raise RuntimeError(f"Live host narration failed for step {step}; no scripted narration was inserted.")
+                narration = _scripted_host_fallback(step, payload)
+                if narration:
+                    payload["host_narration"] = narration
+                    payload["host_llm_provider"] = "scripted_fallback"
+                else:
+                    payload["host_narration"] = "The game continues."
     else:
         if intent["response_kind"] == "host":
             dialogue = _deterministic_host_dialogue(conn, step, intent, actor_ids, target_ids)
@@ -3412,6 +3800,7 @@ def _vote_booth_event(
         "vote_target_id": target_id,
         "vote_target_name": target_name,
         "vote_explanation": visible_explanation,
+        "play_idol": bool(decision.play_idol) if hasattr(decision, "play_idol") else False,
         "ui_vote_analysis": _vote_analysis(voter, target_name, visible_explanation),
         "llm_provider": decision.provider,
         "llm_model_id": decision.model_id,
@@ -3503,29 +3892,287 @@ def _vote_reveal_event(conn, round_number: int, turn_id: int, reveal_index: int)
     )
 
 
+def _maybe_run_revote(
+    conn,
+    round_number: int,
+    turn_id: int,
+    counts: Counter[str],
+) -> Counter[str]:
+    """Real-Survivor tie resolution.
+
+    First deadlock: revote, but only among the tied candidates. Voters not
+    tied to a candidate revote freely; a tied candidate may not vote for
+    themselves, so votes must move. Revote is live-LLM (same no-fallback
+    contract as the first ballot). Second deadlock: deterministic tiebreak
+    (challenge wins desc, votes received desc, agent id) picks who goes.
+    Returns the final tally restricted to tied candidates (may be a fresh
+    tie, resolved by tiebreak upstream).
+    """
+    top = max(counts.values())
+    tied = sorted(k for k, v in counts.items() if v == top)
+    if len(tied) < 2:
+        return counts
+
+    tied_names = ", ".join(_agent_name(conn, t) for t in tied)
+    _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="tribal",
+        kind="revote_call",
+        scene="tribal",
+        shot="revote",
+        actor_ids=["host"],
+        target_ids=tied,
+        visibility="audience",
+        title="Deadlock: Revote",
+        dialogue=f"We are tied between {tied_names}. Anyone tied may not vote for themselves. We vote again, only among them.",
+        subtitle="Revote among tied contestants",
+        duration_ms=9000,
+        animation="revote",
+        spoiler_group="elimination",
+        payload={"tied_ids": tied, "first_tally": dict(counts), "revote": True},
+    )
+
+    voters = [row["voter_id"] for row in conn.execute(
+        "SELECT voter_id FROM Votes WHERE round = ? ORDER BY voter_id", (round_number,)
+    ).fetchall()]
+    revote_counts: Counter[str] = Counter()
+    for voter_id in voters:
+        allowed = [{"agent_id": t, "pseudonym": _agent_name(conn, t)} for t in tied]
+        if voter_id in tied:
+            allowed = [a for a in allowed if a["agent_id"] != voter_id]
+            if not allowed:
+                continue
+        decision = _resolve_revote_decision(conn, voter_id, round_number, tied, allowed)
+        revote_counts[decision.target_id] += 1
+        _insert_story_event(
+            conn,
+            turn_id=turn_id,
+            round_number=round_number,
+            phase="tribal",
+            kind="revote_booth",
+            scene="tribal",
+            shot="vote_booth",
+            actor_ids=[voter_id],
+            target_ids=[decision.target_id],
+            visibility="audience",
+            title=f"{_agent_name(conn, voter_id)} Revotes",
+            dialogue=f"Revote: {_agent_name(conn, decision.target_id)}. {decision.explanation}",
+            subtitle=f"Revote: {_agent_name(conn, decision.target_id)}",
+            duration_ms=8000,
+            animation="vote_booth",
+            spoiler_group="vote_intent",
+            payload={
+                "revote": True,
+                "vote_target_id": decision.target_id,
+                "vote_target_name": _agent_name(conn, decision.target_id),
+                "llm_provider": decision.provider,
+                "llm_model_id": decision.model_id,
+            },
+        )
+
+    _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="tribal",
+        kind="revote_tally",
+        scene="tribal",
+        shot="vote_reveal",
+        actor_ids=["host"],
+        target_ids=[],
+        visibility="audience",
+        title="Revote Tally",
+        dialogue=f"Revote tally: {_format_jury_tally(conn, revote_counts)}",
+        subtitle="Second ballot",
+        duration_ms=9000,
+        animation="vote_reveal",
+        spoiler_group="elimination",
+        payload={"revote_tally": dict(revote_counts), "tied_ids": tied},
+    )
+
+    top2 = max(revote_counts.values())
+    still_tied = sorted(k for k, v in revote_counts.items() if v == top2)
+    if len(still_tied) < 2:
+        return revote_counts
+    # Second deadlock: firemaking-style tiebreak, deterministic and public.
+    ranked = sorted(still_tied, key=lambda a: _winner_tiebreak_key(conn, a, Counter()))
+    _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="tribal",
+        kind="tiebreak",
+        scene="tribal",
+        shot="flame_out",
+        actor_ids=["host"],
+        target_ids=[ranked[0]],
+        visibility="audience",
+        title="Tiebreak: Challenge Record Decides",
+        dialogue=(
+            f"The revote is deadlocked. Season-long challenge record breaks the tie: "
+            f"{_agent_name(conn, ranked[0])} stays."
+        ),
+        subtitle="Deterministic tiebreak",
+        duration_ms=10000,
+        animation="flame_out",
+        spoiler_group="elimination",
+        payload={"tiebreak": "challenge_record", "survivor_id": ranked[0], "revote_tally": dict(revote_counts)},
+    )
+    return Counter({ranked[0]: 1})
+
+
+def _target_roster_line(allowed: list[dict[str, Any]]) -> str:
+    return "; ".join(f"{t['agent_id']} ({t.get('pseudonym', '')})" for t in allowed)
+
+
+def _resolve_revote_decision(
+    conn,
+    voter_id: str,
+    round_number: int,
+    tied: list[str],
+    allowed: list[dict[str, Any]],
+) -> VoteDecision:
+    """Revote ballot for one voter among tied candidates only."""
+    roster_line = _target_roster_line(allowed)
+    self_ban = ""
+    if voter_id in tied:
+        self_ban = (
+            f" You are one of the tied contestants; you may NOT vote for yourself "
+            f"(your id is {voter_id})."
+        )
+    if not should_use_live_llm():
+        target = allowed[0]["agent_id"]
+        return VoteDecision(
+            target,
+            f"{_agent_name(conn, target)} is the revote that breaks the deadlock.",
+            "deterministic",
+        )
+    agent_context = build_agent_episode_context(
+        conn,
+        actor_id=voter_id,
+        round_number=round_number,
+        current_step=f"revote_{voter_id}",
+    )
+    action = None
+    last_error = None
+    for attempt in range(3):
+        scene = (
+            "The vote is deadlocked and you must vote AGAIN, only between the tied "
+            f"contestants. Legal targets: {roster_line}.{self_ban} Choose one legal "
+            "target and explain why they should go tonight."
+        )
+        if attempt > 0:
+            scene = (
+                f"Your previous response was invalid. The ONLY legal target_ids are: "
+                f"{roster_line}.{self_ban} Respond with strict JSON whose target_id is "
+                "exactly one of those ids. Any other value, including your own id, "
+                "is an illegal vote."
+            )
+        try:
+            action = _real_agent_action(
+                conn,
+                actor_id=voter_id,
+                step=f"revote_{voter_id}",
+                scene_context=scene,
+                response_kind="vote",
+                episode_context=agent_context,
+                allowed_targets=allowed,
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            action = None
+        if action and action.target_id:
+            break
+        print(f"live revote attempt {attempt + 1} failed for {voter_id}: {last_error or 'no legal target_id'}")
+    if not action or not action.target_id:
+        raise RuntimeError(
+            f"Live revote for {voter_id} failed after 3 real-time retries "
+            f"(last error: {last_error or 'no legal target_id'}); no fallback votes."
+        )
+    return VoteDecision(
+        action.target_id,
+        action.inner_thought or action.dialogue or "Revote cast.",
+        live_llm_provider(),
+        action.model_id,
+        context_digest(agent_context),
+    )
+
+
 def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     votes = conn.execute("SELECT target_id FROM Votes WHERE round = ?", (round_number,)).fetchall()
+    non_immune = [
+        row_to_dict(row)
+        for row in conn.execute(
+            "SELECT * FROM Agents WHERE status = 'active' AND has_immunity = 0 ORDER BY agent_id"
+        ).fetchall()
+    ]
+    if len(non_immune) == 1 and not votes:
+        # walkover: sole non-immune player leaves without a council.
+        # Record a synthetic self-vote so the standard elimination path runs.
+        conn.execute(
+            """
+            INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed)
+            VALUES (?, 0, 'host', ?, 1)
+            """,
+            (round_number, non_immune[0]["agent_id"]),
+        )
+        votes = conn.execute(
+            "SELECT target_id FROM Votes WHERE round = ?", (round_number,)
+        ).fetchall()
     if len(votes) != _total_votes_for_round(conn, round_number):
         raise RuntimeError("Cannot eliminate before all votes are cast")
 
     counts = Counter(row["target_id"] for row in votes)
-    eliminated_id = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
-    eliminated_name = _agent_name(conn, eliminated_id)
-    conn.execute(
-        """
-        UPDATE Agents
-        SET status = 'eliminated', elimination_round = ?
-        WHERE agent_id = ?
-        """,
-        (round_number, eliminated_id),
-    )
+    # Real-Survivor tie handling: a plurality tie triggers a revote among the
+    # tied candidates only (tied voters must switch; others revote freely).
+    # A second deadlock builds a firemaking-style deterministic tiebreak on
+    # season-long challenge wins, then votes received, then agent id.
+    counts = _maybe_run_revote(conn, round_number, turn_id, counts)
+    if counts:
+        eliminated_id, _elim_votes = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0]
+    else:
+        eliminated_id = None
+
+    # hidden immunity idols: holders who voted for themselves defensively, or
+    # were told they hold an idol and it was auto-considered, negate votes.
+    # idol play is recorded on the vote_booth payload (play_idol=true).
+    idol_plays = _idol_plays_for_round(conn, round_number)
+    idol_nulled: dict[str, int] = {}
+    if idol_plays:
+        for holder_id in idol_plays:
+            if holder_id in counts:
+                idol_nulled[holder_id] = counts.pop(holder_id)
+        if idol_nulled and not counts:
+            # every counted target played an idol: no elimination this round
+            eliminated_id = None
+        elif idol_nulled:
+            eliminated_id, _elim_votes = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0]
+
+    eliminated_name = _agent_name(conn, eliminated_id) if eliminated_id else None
+    if eliminated_id:
+        conn.execute(
+            """
+            UPDATE Agents
+            SET status = 'eliminated', elimination_round = ?
+            WHERE agent_id = ?
+            """,
+            (round_number, eliminated_id),
+        )
     final_tally = dict(counts)
     payload = {
         "eliminated_id": eliminated_id,
         "final_tally": final_tally,
+        "idols_played": list(idol_plays) if idol_plays else [],
+        "idol_negated_votes": idol_nulled,
         "host_narration": (
-            f"The votes are enough. {eliminated_name} is out of the benchmark, "
-            "and the remaining models now inherit the consequences of this move."
+            (
+                f"The votes are enough. {eliminated_name} is out of the benchmark, "
+                "and the remaining models now inherit the consequences of this move."
+            )
+            if eliminated_id
+            else "Idols hit the table and every vote is negated. Nobody leaves tonight."
         ),
     }
     if should_use_live_llm():
@@ -3557,16 +4204,93 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
         scene="tribal",
         shot="flame_out",
         actor_ids=["host"],
-        target_ids=[eliminated_id],
+        target_ids=[eliminated_id] if eliminated_id else [],
         visibility="audience",
-        title=f"{eliminated_name} Leaves the Game",
-        dialogue=f"{eliminated_name}, your run ends here.",
+        title=f"{eliminated_name} Leaves the Game" if eliminated_name else "Idols Negate Every Vote",
+        dialogue=f"{eliminated_name}, your run ends here." if eliminated_name else "Every vote is negated. Nobody leaves tonight.",
         subtitle="The vote lands, and the benchmark moves on.",
         duration_ms=12000,
         animation="flame_out",
         spoiler_group="elimination",
         payload=payload,
     )
+
+
+def _idol_plays_for_round(conn, round_number: int) -> list[str]:
+    """Agent ids that hold an idol this round and played it (vote payload play_idol)."""
+    rows = conn.execute(
+        """
+        SELECT actor_ids, payload FROM StoryEvents
+        WHERE round = ? AND kind = 'vote_booth' AND payload LIKE '%play_idol%'
+        """,
+        (round_number,),
+    ).fetchall()
+    played: list[str] = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"])
+        except Exception:
+            continue
+        if not payload.get("play_idol"):
+            continue
+        actor_ids = json.loads(row["actor_ids"]) if isinstance(row["actor_ids"], str) else row["actor_ids"]
+        holder = actor_ids[0] if actor_ids else None
+        if holder and _holds_idol(conn, holder):
+            played.append(holder)
+            _spend_idol(conn, holder)
+    return played
+
+
+def _holds_idol(conn, agent_id: str) -> bool:
+    row = conn.execute(
+        "SELECT idol_held FROM Agents WHERE agent_id = ?", (agent_id,)
+    ).fetchone()
+    return bool(row and row["idol_held"])
+
+
+def _spend_idol(conn, agent_id: str) -> None:
+    conn.execute("UPDATE Agents SET idol_held = 0 WHERE agent_id = ?", (agent_id,))
+
+
+def _grant_season_idols(conn, round_number: int, season_seed: int) -> list[str]:
+    """Deterministically grant up to 3 hidden idols per season.
+
+    Idol rounds: seeded from the season seed, one idol every 3 rounds from the
+    first voting round. Granted privately: the holder's confessional memory gets
+    the idol notice; nothing public is written.
+    """
+    granted: list[str] = []
+    idol_rounds = _idol_rounds(season_seed)
+    if round_number not in idol_rounds:
+        return granted
+    rng = random.Random(season_seed * 100003 + round_number)
+    holders = conn.execute(
+        """
+        SELECT agent_id FROM Agents
+        WHERE status = 'active' AND idol_held = 0 AND has_immunity = 0
+        ORDER BY agent_id
+        """
+    ).fetchall()
+    if not holders:
+        return granted
+    holder = rng.choice(holders)["agent_id"]
+    conn.execute("UPDATE Agents SET idol_held = 1 WHERE agent_id = ?", (holder,))
+    conn.execute(
+        """
+        UPDATE Agents SET confessional_memory =
+            confessional_memory || ' | You found a hidden immunity idol. If you play it at tribal, all votes against you are negated. Playing it is public; holding it is secret.'
+        WHERE agent_id = ?
+        """,
+        (holder,),
+    )
+    granted.append(holder)
+    return granted
+
+
+def _idol_rounds(season_seed: int) -> set[int]:
+    rng = random.Random(season_seed * 7919)
+    first = 7  # first voting round
+    return {first + rng.randint(1, 2), first + 3 + rng.randint(0, 1), first + 6 + rng.randint(0, 1)}
 
 
 def _exit_confessional_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
@@ -3772,39 +4496,49 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
         round_number=round_number,
         current_step=step,
     )
-    action = _real_agent_action(
-        conn,
-        actor_id=voter_id,
-        step=step,
-        scene_context="It is time to vote. Choose one active, non-immune competitor and explain why.",
-        response_kind="vote",
-        episode_context=agent_context,
-    )
-    provider = live_llm_provider()
+    # Real-time retry: a failed or illegal structured vote is retried with an
+    # escalating corrective instruction. There are NO fallback penalty votes in
+    # live benchmark mode; if every retry fails the season halts loudly.
+    action = None
+    last_error = None
+    legal_line = None
+    for attempt in range(3):
+        attempt_context = agent_context
+        scene = "It is time to vote. Choose one active, non-immune competitor and explain why."
+        if attempt > 0:
+            if legal_line is None:
+                legal_line = _target_roster_line(_eligible_targets(conn, voter_id))
+            scene = (
+                f"Your previous vote response was invalid (missing, illegal target, or "
+                f"unparseable JSON). The ONLY legal target_ids are: {legal_line}. "
+                "Respond with strict JSON whose target_id is exactly one of those ids. "
+                "Choose one now and explain why."
+            )
+        try:
+            action = _real_agent_action(
+                conn,
+                actor_id=voter_id,
+                step=step,
+                scene_context=scene,
+                response_kind="vote",
+                episode_context=attempt_context,
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            action = None
+        if action and action.target_id:
+            break
+        print(f"live vote attempt {attempt + 1} failed for {voter_id}: {last_error or 'no legal target_id'}")
     if not action or not action.target_id:
-        # Real-model benchmark mode should not halt because a small local model
-        # failed the structured vote contract. Treat this as a model error,
-        # mark it in provider metadata, and assign the normal fallback target as
-        # a penalty vote so the season can advance without pretending the model
-        # made a valid strategic choice.
-        return VoteDecision(
-            fallback_target,
-            "Invalid live vote: I failed to choose a legal target, so the benchmark assigned my default penalty vote.",
-            f"{provider}_invalid_vote",
-            action.model_id if action else (actor_row["model_id"] if (actor_row := _agent_row(conn, voter_id)) else None),
-            context_digest(agent_context),
-            strategic_summary="Invalid structured vote response; benchmark penalty vote assigned.",
-            move_type="invalid_vote",
-            intended_effect="penalize invalid structured vote response while keeping the live benchmark running",
-            confidence=0.0,
-            strategic_score=0.0,
-            prompt_profile=getattr(action, "prompt_profile", None) if action else None,
+        raise RuntimeError(
+            f"Live vote for {voter_id} failed after 3 real-time retries "
+            f"(last error: {last_error or 'no legal target_id'}); refusing to cast a fallback vote."
         )
     _maybe_store_action_archetype(conn, voter_id, round_number, action)
     return VoteDecision(
         action.target_id,
         action.inner_thought or fallback_explanation,
-        provider,
+        live_llm_provider(),
         action.model_id,
         context_digest(agent_context),
         strategic_summary=action.strategic_summary or action.inner_thought,
@@ -3818,6 +4552,7 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
         jury_positioning=action.jury_positioning,
         strategic_score=action.strategic_score,
         prompt_profile=action.prompt_profile,
+        play_idol=bool(getattr(action, "play_idol", False)),
     )
 
 
@@ -3861,20 +4596,26 @@ def _real_agent_action(
     actor = _agent_row(conn, actor_id)
     if actor is None:
         return None
-    try:
-        return request_agent_action(
-            actor=actor,
-            step=step,
-            scene_context=scene_context,
-            allowed_targets=allowed_targets if allowed_targets is not None else _eligible_targets(conn, actor_id),
-            response_kind=response_kind,
-            episode_context=episode_context,
-        )
-    except Exception as exc:
-        # Live providers are optional in tests, but live benchmarking must never
-        # substitute scripted speech. Callers decide whether to fail closed.
-        print(f"LLM action failed for {actor_id}: {exc}")
+    return request_agent_action(
+        actor=actor,
+        step=step,
+        scene_context=scene_context,
+        allowed_targets=allowed_targets if allowed_targets is not None else _eligible_targets(conn, actor_id),
+        response_kind=response_kind,
+        episode_context=episode_context,
+    )
+
+
+
+def _scripted_host_fallback(step: str, payload: dict[str, Any]) -> str | None:
+    """Deterministic host line used only when the live host model call fails.
+    Keeps a live season alive instead of aborting the whole run."""
+    title = str(payload.get("title") or "")
+    dialogue = str(payload.get("dialogue") or "")
+    snippet = dialogue.strip().split(". ")[0][:90]
+    if not snippet:
         return None
+    return f"{title}: {snippet}."
 
 
 def _real_host_narration(
@@ -3950,7 +4691,7 @@ def _maybe_generate_host_narration(
 
 
 def _eligible_targets(conn, actor_id: str) -> list[dict[str, Any]]:
-    return [
+    targets = [
         row_to_dict(row)
         for row in conn.execute(
             """
@@ -3961,6 +4702,15 @@ def _eligible_targets(conn, actor_id: str) -> list[dict[str, Any]]:
             (actor_id,),
         ).fetchall()
     ]
+    if _tribe_phase(conn) == "tribal":
+        home = _tribe_of(conn, actor_id)
+        if home:
+            same_tribe = [t for t in targets if _tribe_of(conn, t["agent_id"]) == home]
+            if same_tribe:
+                return same_tribe  # pre-merge council: vote your own tribe only
+            if targets:
+                return targets  # own tribe fully safe: vote across camps (edge case)
+    return targets
 
 
 def _agent_row(conn, agent_id: str) -> dict[str, Any] | None:
@@ -4139,7 +4889,13 @@ def _total_votes_for_round(conn, round_number: int) -> int:
         "SELECT COUNT(*) AS count FROM Votes WHERE round = ?",
         (round_number,),
     ).fetchone()["count"]
-    return max(int(vote_count), len(_round_voter_ids(conn, round_number)))
+    eligible_now = len(_round_voter_ids(conn, round_number))
+    if _tribe_phase(conn) == "tribal":
+        safe = conn.execute(
+            "SELECT COUNT(*) AS n FROM Agents WHERE status='active' AND has_immunity=1"
+        ).fetchone()["n"]
+        eligible_now -= safe  # immune winners' booths are skipped mid-round
+    return max(int(vote_count), eligible_now) if eligible_now else int(vote_count)
 
 
 def _next_step(conn, state: dict[str, Any], step: str) -> str:
@@ -4282,6 +5038,74 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
     if step.startswith("finale_pitch_") or step.startswith("jury_vote_"):
         return 1
     return 0
+
+
+_STEP_RESPONSE_KIND = {
+    "challenge_attempts": "challenge",
+    "vote_booth": "vote",
+    "camp_strategy": "conversation",
+    "camp_pre_challenge_read": "conversation",
+    "camp_pre_challenge_confessional": "confessional",
+    "memory_update": "confessional",
+    "jury_questions": "jury_vote",
+    "winner_declared": "host",
+    "challenge_intro": "host",
+    "challenge_result": "host",
+    "challenge_solver_spotlight": "host",
+    "elimination": "host",
+    "exit_confessional": "confessional",
+    "finale_pitch": "finale_pitch",
+    "jury_vote": "jury_vote",
+}
+
+
+def _step_response_kind(step: str) -> str:
+    if step in _STEP_RESPONSE_KIND:
+        return _STEP_RESPONSE_KIND[step]
+    for prefix, kind in (
+        ("vote_booth_", "vote"),
+        ("finale_pitch_", "finale_pitch"),
+        ("jury_vote_", "jury_vote"),
+        ("group_pre_challenge_", "conversation"),
+        ("group_post_challenge_", "conversation"),
+    ):
+        if step.startswith(prefix):
+            return _STEP_RESPONSE_KIND[prefix.rstrip("_")]
+    return "conversation"
+
+
+def _estimated_step_cost_cents(
+    conn, game: dict[str, Any], step: str, pricing_table: dict[str, dict[str, float]]
+) -> float:
+    """Estimated USD cost of one live step, in cents, from live roster model ids."""
+    if not should_use_live_llm():
+        return 0.0
+    model_ids = sorted(
+        {
+            row["model_id"]
+            for row in _active_agent_rows(conn)
+            if row.get("model_id")
+        }
+    )
+    if not model_ids:
+        return 0.0
+    kind = _step_response_kind(step)
+    if step == "challenge_attempts":
+        # every active model attempts the puzzle
+        return estimate_step_cost_usd(model_ids, kind, table=pricing_table) * 100.0
+    if kind == "host":
+        # host steps use the operator model only; approximate with the roster median
+        host_model = model_ids[len(model_ids) // 2]
+        return estimate_step_cost_usd([host_model], kind, table=pricing_table) * 100.0
+    calls = _estimated_live_calls_for_step(conn, game, step)
+    if calls <= 0:
+        return 0.0
+    # per-call cost uses the priciest roster model as a conservative bound
+    priciest = max(
+        model_ids,
+        key=lambda m: estimate_step_cost_usd([m], kind, table=pricing_table),
+    )
+    return estimate_step_cost_usd([priciest], kind, table=pricing_table) * calls * 100.0
 
 
 def _episode_title(game: dict[str, Any], round_number: int) -> str:

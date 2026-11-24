@@ -92,14 +92,20 @@ class LLMContextBoundaryTest(unittest.TestCase):
             conn.close()
 
         participant_private = json.dumps(participant_context["actor_private_memory"])
-        outsider_full = json.dumps(outsider_context)
 
         self.assertIn("private group talk", participant_private)
         self.assertIn("speaker_lines", participant_private)
         self.assertIn("I want this group to compare real options", participant_private)
-        self.assertNotIn("I want this group to compare real options", outsider_full)
         self.assertGreaterEqual(participant_context["context_digest"]["private_group_events"], 1)
-        self.assertEqual(outsider_context["context_digest"]["private_group_events"], 0)
+
+        # Privacy invariant that survives the coverage-huddle change: a model
+        # never sees private-group events for huddles it did not participate
+        # in. The outsider may join OTHER coverage huddles, so assert event
+        # membership instead of raw string absence.
+        for ctx, actor in ((outsider_context, "agent-echo"), (participant_context, "agent-cipher")):
+            for event in ctx["actor_private_memory"]:
+                if event.get("privacy") == "participants_only":
+                    self.assertIn(actor, event.get("participant_ids", []))
 
     def test_host_context_includes_private_material_but_redacts_unrevealed_votes(self) -> None:
         turn_controller.auto_run(25)

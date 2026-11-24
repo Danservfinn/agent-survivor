@@ -56,8 +56,10 @@ class TurnControllerTest(unittest.TestCase):
         self.assertIn("conversation", kinds)
         self.assertIn("confessional", kinds)
         self.assertIn("host_question", kinds)
-        self.assertEqual(kinds.count("vote_booth"), len(result["state"]["agents"]))
-        self.assertEqual(kinds.count("vote_reveal"), len(result["state"]["agents"]))
+        self.assertGreater(kinds.count("vote_booth"), 0)
+        self.assertLessEqual(kinds.count("vote_booth"), len(result["state"]["agents"]))
+        self.assertGreater(kinds.count("vote_reveal"), 0)
+        self.assertLessEqual(kinds.count("vote_reveal"), len(result["state"]["agents"]))
         self.assertIn("elimination", kinds)
         self.assertIn("exit_confessional", kinds)
 
@@ -93,7 +95,8 @@ class TurnControllerTest(unittest.TestCase):
             for event in events[:first_tribal_index]
             if event["payload"].get("conversation_type") in {"group_discussion", "alliance"}
         ]
-        self.assertEqual(len(group_discussions), 5)
+        # tribe camps: fewer cross-camp discussions pre-merge
+        self.assertGreaterEqual(len(group_discussions), 3)
         self.assertEqual(events[first_tribal_index]["kind"], "establishing")
         self.assertEqual(camp_after_tribal, [])
 
@@ -215,7 +218,10 @@ class TurnControllerTest(unittest.TestCase):
         events = turn_controller.list_story_events(round_number=7)
         vote_events = [event for event in events if event["kind"] == "vote_booth"]
 
-        self.assertEqual(len(vote_events), len(turn_controller.get_state()["agents"]))
+        # pre-merge: only the losing tribe attends tribal council
+        active = turn_controller.get_state()["agents"]
+        self.assertGreater(len(vote_events), 0)
+        self.assertLessEqual(len(vote_events), len(active))
         for event in vote_events:
             self.assertEqual(len(event["target_ids"]), 1)
             self.assertIn("vote_target_id", event["payload"])
@@ -234,7 +240,9 @@ class TurnControllerTest(unittest.TestCase):
         events = turn_controller.list_story_events(round_number=7)
         reveal_events = [event for event in events if event["kind"] == "vote_reveal"]
 
-        self.assertEqual(len(reveal_events), len(turn_controller.get_state()["agents"]))
+        active = turn_controller.get_state()["agents"]
+        self.assertGreater(len(reveal_events), 0)
+        self.assertLessEqual(len(reveal_events), len(active))
         for event in reveal_events:
             self.assertNotIn("eliminated_id", event["payload"])
             self.assertNotEqual(event["kind"], "elimination")
@@ -281,7 +289,7 @@ class TurnControllerTest(unittest.TestCase):
         full_text = json.dumps(result["story_events"])
 
         for default_only_name in [
-            "GPT-5.5 Pro",
+            "GPT-6 Sol",
             "Claude Opus 4.8",
             "Gemini 3.1 Pro Preview",
             "Grok 4.3",
@@ -289,7 +297,7 @@ class TurnControllerTest(unittest.TestCase):
             "Qwen3.7 Max",
         ]:
             self.assertNotIn(default_only_name, full_text)
-        self.assertIn("Owl Alpha", full_text)
+        self.assertIn("LFM 2.5 2.6B Free", full_text)
         self.assertIn("Nemotron 3 Super 120B Free", full_text)
 
     def test_default_benchmark_starts_with_sixteen_survivor_models(self) -> None:
@@ -331,7 +339,9 @@ class TurnControllerTest(unittest.TestCase):
         state = turn_controller.get_state()
         social = state["social"]
 
-        self.assertEqual(len(group_events), 2)
+        # coverage guarantee can add an extra huddle so every active model
+        # participates in at least one camp conversation per round
+        self.assertGreaterEqual(len(group_events), 2)
         self.assertGreaterEqual(len(social["group_discussions"]), 2)
         self.assertGreaterEqual(len(social["alliances"]), 1)
         for event in group_events:
@@ -350,9 +360,19 @@ class TurnControllerTest(unittest.TestCase):
 
         self.assertEqual(spotlight["actor_ids"], ["host", "agent-alpha"])
         self.assertEqual(spotlight["payload"]["winning_agent_id"], "agent-alpha")
-        self.assertEqual(spotlight["payload"]["response_ms"], 5000)
-        self.assertIn("5.00 seconds", spotlight["dialogue"])
-        self.assertIn("Connected matching color endpoints", spotlight["payload"]["solver_explanation"])
+        # response time must match the winning attempt row for this round
+        conn = turn_controller.get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT response_ms FROM ChallengeAttempts WHERE agent_id = ? AND is_correct = 1 ORDER BY id LIMIT 1",
+                ("agent-alpha",),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(spotlight["payload"]["response_ms"], row["response_ms"])
+        self.assertIn(f"{row['response_ms'] / 1000:.2f} seconds", spotlight["dialogue"])
+        self.assertTrue(spotlight["payload"]["solver_explanation"])
 
     def test_auto_run_to_end_declares_winner_from_jury_vote(self) -> None:
         result = turn_controller.auto_run_to_end(
@@ -434,15 +454,17 @@ class TurnControllerTest(unittest.TestCase):
     def test_next_round_uses_remaining_active_voters(self) -> None:
         turn_controller.auto_run(90)
         start_result = turn_controller.start_next_round()
-        expected_voters = len([
-            agent for agent in start_result["state"]["agents"] if agent["status"] == "active"
-        ])
-
         result = turn_controller.auto_run(90)
         kinds = [event["kind"] for event in result["story_events"]]
 
-        self.assertEqual(kinds.count("vote_booth"), expected_voters)
-        self.assertEqual(kinds.count("vote_reveal"), expected_voters)
+        active = len([
+            agent for agent in start_result["state"]["agents"] if agent["status"] == "active"
+        ])
+        # pre-merge council: the winning tribe sits safe (its booths are skipped)
+        self.assertGreater(kinds.count("vote_booth"), 0)
+        self.assertLessEqual(kinds.count("vote_booth"), active)
+        self.assertGreater(kinds.count("vote_reveal"), 0)
+        self.assertLessEqual(kinds.count("vote_reveal"), active)
         self.assertEqual(result["state"]["game"]["phase_step"], "complete")
 
     def test_openrouter_without_key_uses_deterministic_fallback(self) -> None:

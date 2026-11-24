@@ -8,7 +8,7 @@ from backend.fixtures import DEMO_AGENTS
 class OpenRouterFrontierRosterTest(unittest.TestCase):
     def test_default_roster_is_git_pinned_smoke_fallback_not_live_lock(self) -> None:
         expected = [
-            ("GPT-5.5 Pro", "openai/gpt-5.5-pro"),
+            ("GPT-6 Sol", "openai/gpt-6-sol"),
             ("Claude Opus 4.8", "anthropic/claude-opus-4.8"),
             ("Gemini 3.1 Pro Preview", "google/gemini-3.1-pro-preview"),
             ("Grok 4.3", "x-ai/grok-4.3"),

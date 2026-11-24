@@ -31,3 +31,9 @@ tmp/
 
 # Live frontier snapshots (no secrets, but host-local)
 artifacts/rosters/*.json
+
+# Runtime state written by live seasons (host-local)
+artifacts/seasons/
+artifacts/demo/
+artifacts/pricing_cache.json
+artifacts/public_live_ledger.json

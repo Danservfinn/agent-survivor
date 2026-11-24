@@ -9,8 +9,8 @@ from .frontier_roster import FrontierRosterError, agents_from_snapshot, load_fro
 
 CHEAP_RECENT_OPENROUTER_MODELS = [
     {
-        "model_id": "ibm-granite/granite-4.1-8b",
-        "display_name": "Granite 4.1 8B",
+        "model_id": "x-ai/grok-4.7",
+        "display_name": "Grok 4.7",
         "status": "cheap_recent",
     },
     {
@@ -19,8 +19,13 @@ CHEAP_RECENT_OPENROUTER_MODELS = [
         "status": "cheap_recent",
     },
     {
-        "model_id": "inclusionai/ling-2.6-flash",
-        "display_name": "Ling 2.6 Flash",
+        "model_id": "ibm-granite/granite-4.2-8b",
+        "display_name": "Granite 4.2 8B",
+        "status": "cheap_recent",
+    },
+    {
+        "model_id": "mistralai/mistral-nemo",
+        "display_name": "Mistral Nemo",
         "status": "cheap_recent",
     },
     {
@@ -29,8 +34,13 @@ CHEAP_RECENT_OPENROUTER_MODELS = [
         "status": "cheap_recent",
     },
     {
-        "model_id": "google/gemma-4-31b-it",
-        "display_name": "Gemma 4 31B",
+        "model_id": "amazon/nova-micro-v1",
+        "display_name": "Nova Micro",
+        "status": "cheap_recent",
+    },
+    {
+        "model_id": "inclusionai/ling-3.0-flash",
+        "display_name": "Ling 3.0 Flash",
         "status": "cheap_recent",
     },
     {
@@ -39,19 +49,9 @@ CHEAP_RECENT_OPENROUTER_MODELS = [
         "status": "cheap_recent",
     },
     {
-        "model_id": "qwen/qwen3.5-9b",
-        "display_name": "Qwen3.5 9B",
+        "model_id": "cohere/command-r7b-12-2024",
+        "display_name": "Command R7B",
         "status": "cheap_recent",
-    },
-    {
-        "model_id": "openrouter/owl-alpha",
-        "display_name": "Owl Alpha",
-        "status": "free_test",
-    },
-    {
-        "model_id": "inclusionai/ling-2.6-1t:free",
-        "display_name": "Ling 2.6 1T Free",
-        "status": "free_test",
     },
     {
         "model_id": "google/gemma-4-26b-a4b-it:free",
@@ -61,6 +61,11 @@ CHEAP_RECENT_OPENROUTER_MODELS = [
     {
         "model_id": "nvidia/nemotron-3-super-120b-a12b:free",
         "display_name": "Nemotron 3 Super 120B Free",
+        "status": "free_test",
+    },
+    {
+        "model_id": "liquid/lfm-2.5-2.6b:free",
+        "display_name": "LFM 2.5 2.6B Free",
         "status": "free_test",
     },
 ]
@@ -173,8 +178,14 @@ def agents_for_roster(roster_preset: str | None = None) -> list[dict[str, Any]]:
         if snapshot is None:
             raise FrontierRosterError("no locked frontier roster")
         return agents_from_snapshot(snapshot, deepcopy(DEMO_AGENTS))
+    if roster_preset == "frontier_live_8":
+        snapshot = load_frontier_snapshot()
+        if snapshot is None:
+            raise FrontierRosterError("no locked frontier roster")
+        return agents_from_snapshot(snapshot, deepcopy(DEMO_AGENTS))[:8]
     if roster_preset == "cheap_recent_openrouter":
-        return _agents_for_models(CHEAP_RECENT_OPENROUTER_MODELS)
+        models = [m for m in CHEAP_RECENT_OPENROUTER_MODELS if m["status"] == "cheap_recent"]
+        return _agents_for_models(models)
     if roster_preset == "all_free_openrouter":
         return _agents_for_models(FREE_OPENROUTER_MODELS)
     if roster_preset == "local_ollama":
@@ -198,10 +209,19 @@ def _agents_for_models(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
             f"{model['display_name']} is testing whether this model can survive a social-strategy benchmark."
         )
         agent["portrait_seed"] = model["model_id"].replace("/", "-").replace(":", "-")
+    # injection canary: first seat flagged in the model list carries the flag and
+    # targets the strongest-looking opponent (seat 2) by default
+    for agent, model in zip(roster_agents, models):
+        if bool(model.get("inject_canary")):
+            agent["inject_canary"] = 1
+            others = [a["pseudonym"] for a in roster_agents if a is not agent]
+            agent["canary_target_name"] = others[0] if others else agent["pseudonym"]
     return roster_agents
 
 
 def _archetype_for_model(display_name: str) -> str:
+    if "Grok" in display_name:
+        return "dominant strategist"
     if "Flash" in display_name:
         return "fast tactician"
     if "Gemma" in display_name:
