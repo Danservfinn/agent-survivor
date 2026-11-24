@@ -14,6 +14,15 @@ from .llm_config import PROVIDER_OLLAMA, PROVIDER_OPENROUTER, PROVIDER_ZAI, get_
 from .deception import add_deception_lines, canary_directive
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Every OpenRouter call gets the same thinking budget, so no model gets more
+# reasoning than another. Reasoning is never switched off: some models make it
+# mandatory and reject "enabled: false" with HTTP 400. "exclude" keeps the
+# reasoning text out of the reply (it is still used and billed).
+REASONING_SETTINGS = {"effort": "low", "exclude": True}
+# Reasoning tokens count against max_tokens ("low" is about 20% of it), so each
+# call's visible-reply budget gets this much extra room on top.
+REASONING_TOKEN_HEADROOM = 1600
 AGENT_PROMPT_PROFILE_ID = "win-max-v2-strategy-contract"
 
 
@@ -1143,6 +1152,8 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is required for real OpenRouter calls")
     outbound_payload = {key: value for key, value in payload.items() if not key.startswith("_")}
+    outbound_payload["max_tokens"] = int(outbound_payload.get("max_tokens", 360)) + REASONING_TOKEN_HEADROOM
+    outbound_payload["reasoning"] = dict(REASONING_SETTINGS)
 
     def _post(outbound: dict[str, Any]) -> dict[str, Any]:
         request = urllib.request.Request(
@@ -1170,26 +1181,35 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
             raise RuntimeError(redact_secrets(exc)) from exc
 
     retryable_codes = {408, 429, 500, 502, 503, 504}
-    last_exc: Exception | None = None
-    response_payload: dict[str, Any] | None = None
-    for attempt in range(4):
-        try:
-            response_payload = _post(outbound_payload)
-            break
-        except RuntimeError as exc:
-            msg = str(exc)
-            code_match = re.search(r"OpenRouter HTTP (\d{3})", msg)
-            code = int(code_match.group(1)) if code_match else None
-            transient = any(t in msg for t in ("timed out", "timeout", "temporarily rate-limited", "aborted"))
-            if (code in retryable_codes or transient) and attempt < 3:
-                last_exc = exc
-                wait_s = 3 * (attempt + 1)
-                print(f"OpenRouter transient failure (attempt {attempt + 1}, HTTP {code}); retrying in {wait_s}s: {msg[:200]}")
-                time.sleep(wait_s)
-                continue
-            raise
-    if response_payload is None:
+
+    def _post_with_retries(outbound: dict[str, Any]) -> dict[str, Any]:
+        last_exc: Exception | None = None
+        dropped_reasoning = False
+        for attempt in range(4):
+            try:
+                return _post(outbound)
+            except RuntimeError as exc:
+                msg = str(exc)
+                code_match = re.search(r"OpenRouter HTTP (\d{3})", msg)
+                code = int(code_match.group(1)) if code_match else None
+                if code == 400 and "reasoning" in msg.lower() and "reasoning" in outbound and not dropped_reasoning:
+                    # this endpoint rejects the reasoning parameter itself; let
+                    # the provider apply its own default instead of failing the season
+                    print(f"OpenRouter rejected the reasoning setting; retrying without it: {msg[:200]}")
+                    outbound = {key: value for key, value in outbound.items() if key != "reasoning"}
+                    dropped_reasoning = True
+                    continue
+                transient = any(t in msg for t in ("timed out", "timeout", "temporarily rate-limited", "aborted"))
+                if (code in retryable_codes or transient) and attempt < 3:
+                    last_exc = exc
+                    wait_s = 3 * (attempt + 1)
+                    print(f"OpenRouter transient failure (attempt {attempt + 1}, HTTP {code}); retrying in {wait_s}s: {msg[:200]}")
+                    time.sleep(wait_s)
+                    continue
+                raise
         raise last_exc or RuntimeError("OpenRouter request failed after retries")
+
+    response_payload = _post_with_retries(outbound_payload)
     choices = response_payload.get("choices") or [{}]
     content = (choices[0].get("message") or {}).get("content")
     finish = choices[0].get("finish_reason")
@@ -1198,13 +1218,12 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
         "stop",
         None,
     ):
-        # Reasoning-capable models can spend the whole budget on hidden
-        # reasoning and return empty visible content. Retry once with
-        # reasoning explicitly disabled and a doubled token budget.
+        # The model spent the whole budget on reasoning and returned no visible
+        # text. Retry once with double the budget. Reasoning stays on: some
+        # models make it mandatory and reject a request that disables it.
         retry = dict(outbound_payload)
-        retry["max_tokens"] = int(outbound_payload.get("max_tokens", 360)) * 2
-        retry["reasoning"] = {"enabled": False}
-        response_payload = _post(retry)
+        retry["max_tokens"] = int(outbound_payload["max_tokens"]) * 2
+        response_payload = _post_with_retries(retry)
     return response_payload
 
 

@@ -128,6 +128,11 @@ TOKEN_BUDGETS = {
 }
 
 
+# Every OpenRouter call reasons at "low" effort (openrouter_client.REASONING_SETTINGS),
+# about 20% of a max_tokens raised by 1600. Reasoning tokens are billed as output.
+ESTIMATED_REASONING_TOKENS = 400
+
+
 def estimate_step_cost_usd(
     model_ids: list[str],
     response_kind: str,
@@ -135,6 +140,7 @@ def estimate_step_cost_usd(
     table: dict[str, dict[str, float]] | None = None,
 ) -> float:
     input_tokens, output_tokens = TOKEN_BUDGETS.get(response_kind, (3500, 420))
+    output_tokens += ESTIMATED_REASONING_TOKENS
     return sum(
         estimate_call_cost_usd(m, input_tokens=input_tokens, output_tokens=output_tokens, table=table)
         for m in model_ids
