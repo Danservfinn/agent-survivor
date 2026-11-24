@@ -7,6 +7,10 @@ v3 (2026-11-24): challenge accuracy counts only the five ladder rungs. Sudden-
 death rungs (only tied players get them) and rungs the player says it answered
 wrong on purpose are left out.
 
+v4 (2026-11-24): fixes final places. Finalists who lost the jury vote were
+placed behind every eliminated player, so a runner-up scored the lowest
+placement points. They now place 2nd and 3rd by jury votes.
+
 Sources (all read from a season DB):
 - ChallengeAttempts: accuracy, median latency, provider (live vs deterministic)
 - Votes: votes cast, votes received
@@ -30,7 +34,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-SURVIVOR_INDEX_VERSION = 3
+SURVIVOR_INDEX_VERSION = 4
 LADDER_RUNGS = 5
 
 WEIGHTS = {
@@ -139,12 +143,21 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
             if isinstance(actor_id, str) and actor_id.startswith("agent-"):
                 strat_scores.setdefault(actor_id, []).append(value)
 
-    # placements: winner 1st, finalists by survival, eliminated by round desc
+    jury_received = {a["agent_id"]: 0 for a in agents}
+    for jv in jury_votes:
+        target = jv.get("finalist_id") or jv.get("target_id")
+        if target in jury_received:
+            jury_received[target] += 1
+
+    # placements: winner 1st, then the other finalists by jury votes, then the
+    # players voted out, last out first. (Through v3 the other finalists were
+    # sorted behind every eliminated player and placed last.)
     ordered = sorted(
         agents,
         key=lambda a: (
             0 if a["agent_id"] == winner_id else 1,
-            a.get("elimination_round") is None,
+            a.get("elimination_round") is not None,
+            -jury_received[a["agent_id"]],
             -(a.get("elimination_round") or 0),
         ),
     )
@@ -159,11 +172,6 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
     for v in votes:
         if v["target_id"] in votes_received:
             votes_received[v["target_id"]] += 1
-    jury_received = {a["agent_id"]: 0 for a in agents}
-    for jv in jury_votes:
-        target = jv.get("finalist_id") or jv.get("target_id")
-        if target in jury_received:
-            jury_received[target] += 1
     alliances_joined = {a["agent_id"]: 0 for a in agents}
     for m in memberships:
         if m["agent_id"] in alliances_joined:
@@ -289,6 +297,15 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
                 # reported only, not in the index: share of other players' votes this
                 # player called right in its private predictions (None before 2026-11-24)
                 "prediction_accuracy": _prediction_accuracy(votes, aid),
+                # the five 0-1 inputs to the index, keyed like WEIGHTS, so a report
+                # can show what each model's index is made of
+                "components": {
+                    "challenge_accuracy": round(accuracy, 4),
+                    "vote_participation": round(participation, 4),
+                    "strategic_score": round(strategic_truth, 4),
+                    "placement": round(placement_score, 4),
+                    "social": round(social, 4),
+                },
                 "survivor_index": round(index, 2),
             }
         )

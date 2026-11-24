@@ -106,7 +106,7 @@ class ScoringTest(unittest.TestCase):
         self.report = score_season(self.db)
 
     def test_version_and_weights_frozen(self) -> None:
-        self.assertEqual(SURVIVOR_INDEX_VERSION, 3)
+        self.assertEqual(SURVIVOR_INDEX_VERSION, 4)
         self.assertAlmostEqual(sum(WEIGHTS.values()), 1.0)
 
     def test_rows_cover_all_agents(self) -> None:
@@ -142,6 +142,18 @@ class ScoringTest(unittest.TestCase):
         top = self.report["rows"][0]
         self.assertTrue(top["is_winner"])
         self.assertEqual(top["place"], 1)
+
+    def test_losing_finalist_places_ahead_of_everyone_voted_out(self) -> None:
+        places = {r["model"]: r["place"] for r in self.report["rows"]}
+        # Z reached the final and lost the jury vote; X left in round 9, Y in round 8
+        self.assertEqual(places, {"Model W": 1, "Model Z": 2, "Model X": 3, "Model Y": 4})
+
+    def test_rows_carry_the_five_index_parts(self) -> None:
+        for row in self.report["rows"]:
+            parts = row["components"]
+            self.assertEqual(set(parts), set(WEIGHTS))
+            rebuilt = sum(WEIGHTS[key] * parts[key] for key in WEIGHTS) * 100
+            self.assertAlmostEqual(rebuilt, row["survivor_index"], delta=0.02)
 
     def test_index_bounds(self) -> None:
         for row in self.report["rows"]:
