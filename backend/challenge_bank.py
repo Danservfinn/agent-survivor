@@ -417,12 +417,13 @@ def families_for_difficulty(difficulty: str) -> tuple[str, ...]:
 
 # ------------------------------------------------------------------- ladder
 
-# One rung per tier, easiest first. Two hard rungs give the middle of the
-# field room to separate before the frontier rung.
-LADDER_TIERS = ("easy", "medium", "hard", "hard", "frontier")
+# One rung per tier, easiest first. Raised from (easy, medium, hard, hard,
+# frontier) on 2026-11-24 after five of nine cheap models solved every rung in
+# a live test round, leaving the top of the field unseparated.
+LADDER_TIERS = ("medium", "hard", "hard", "frontier", "frontier")
 # Weighted tiebreak: a harder rung counts for more.
 RUNG_WEIGHTS = (1, 2, 3, 4, 5)
-SUDDEN_DEATH_SIZE = 3
+SUDDEN_DEATH_SIZE = 5
 
 
 def _pick_families(rng: random.Random, tiers: tuple[str, ...]) -> list[str]:

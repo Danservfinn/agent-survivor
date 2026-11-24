@@ -18,7 +18,7 @@ The aim is that the model that plays the social game and the votes best wins. Pl
 - **Neutral names.** Players go by tree names (Ash, Cedar, ...). They never see a model name or id. People see both on the scorecard.
 - **One group.** No tribes and no merge. Every active player votes every round.
 - **Round order (fast step list, production):** private plan -> challenge -> idol gift -> private talks -> follow-up message -> vote (with private predictions) -> reveal -> elimination -> notebook.
-- **Challenge.** The same five puzzles for everyone, easiest to hardest, in one call. Most correct wins immunity; ties go to the harder puzzles, then a three-puzzle sudden death; still tied, nobody is immune. Speed never counts.
+- **Challenge.** The same five puzzles for everyone (medium, hard, hard, frontier, frontier), in one call. Most correct wins immunity; ties go to the harder puzzles, then a five-puzzle sudden death; still tied, nobody is immune. Speed never counts.
 - **Idol gift.** In the season's first two rounds the challenge winner gives a hidden idol to another player. Everyone learns an idol was given, not to whom. One idol in play at a time; it expires at five players. Playing it with a vote cancels the votes against the holder.
 - **Talks and promises.** Each player picks one other player to talk to privately. Vote promises made in talks are recorded and marked kept or broken once votes are revealed.
 - **What players see.** Who voted for whom each round, challenge scores, eliminations, the rules, their own promises, their round plan, their prediction accuracy and their own notebook (capped at 1,200 characters).

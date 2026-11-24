@@ -15,7 +15,7 @@ MAX_CONTEXT_CHARS = 40_000
 # in turn_controller.py: players can only plan around rules they are told.
 GAME_RULES = [
     "All players live and vote as one group for the whole season; there are no tribes.",
-    "Each round has a challenge: the same five puzzles for every player, easiest to hardest. Most correct answers wins; a tie goes to whoever solved the harder puzzles, then to a sudden-death set; if still tied, nobody wins. Speed does not count. Every player's score is public (challenge_history).",
+    "Each round has a challenge: the same five puzzles for every player, medium to very hard. Most correct answers wins; a tie goes to whoever solved the harder puzzles, then to a five-puzzle sudden-death set; if still tied, nobody wins. Speed does not count. Every player's score is public (challenge_history).",
     "The challenge winner is immune: they cannot be voted for that round, but they still vote. A player may answer puzzles wrong on purpose to look less threatening.",
     "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it. Only one idol is in play at a time.",
     "A holder plays the idol with their vote at a council; every vote against them that round is then cancelled, and the play is announced. An unplayed idol expires when five players remain.",

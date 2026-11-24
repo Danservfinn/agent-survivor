@@ -83,7 +83,7 @@ class LadderScoringTest(_SeasonDb):
 
     def test_exact_tie_goes_to_sudden_death(self) -> None:
         a, b, *_ = self.players
-        # rungs 5-7 are the sudden-death puzzles
+        # rungs 5-9 are the sudden-death puzzles
         result = self._run({a: {0, 1, 2, 5, 6}, b: {0, 1, 2, 5}})
         self.assertEqual(result["winning_agent_id"], a)
         self.assertEqual(result["result_payload"]["sudden_death_scores"], {a: 2, b: 1})

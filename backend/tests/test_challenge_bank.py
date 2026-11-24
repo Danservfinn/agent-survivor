@@ -163,10 +163,10 @@ class Ladder(unittest.TestCase):
     def test_sudden_death_is_harder_and_never_repeats_a_rung(self) -> None:
         ladder = {p["puzzle_id"] for p in ladder_for_round(3, 9)}
         sudden = sudden_death_for_round(3, 9)
-        self.assertEqual(len(sudden), 3)
+        self.assertEqual(len(sudden), 5)
         self.assertTrue(all(p["difficulty"] == "frontier" and p["sudden_death"] for p in sudden))
         self.assertFalse(ladder & {p["puzzle_id"] for p in sudden})
-        self.assertEqual([p["rung"] for p in sudden], [5, 6, 7])
+        self.assertEqual([p["rung"] for p in sudden], [5, 6, 7, 8, 9])
 
     def test_every_puzzle_states_its_answer_format(self) -> None:
         for seed in range(30):
