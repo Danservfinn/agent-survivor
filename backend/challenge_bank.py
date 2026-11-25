@@ -13,9 +13,11 @@ Families:
 - instruction_exact  (medium): verifiable short string answer task
 
 A challenge is a ladder: five puzzles of rising difficulty, the same for
-every player (ladder_for_round). Ties on the ladder go to a sudden-death set
-of harder puzzles (sudden_death_for_round). Both are pure functions of the
-season seed and round, so any live run is reproducible puzzle-for-puzzle.
+every player (ladder_for_round). The ladder's difficulty level adapts to the
+field (see turn_controller._ladder_level), and an "extreme" tier sits above
+frontier so strong fields cannot saturate it. Ladder ties are broken by a
+guessing game, not by more puzzles. Puzzles are pure functions of the season
+seed, round and level, so any live run is reproducible puzzle-for-puzzle.
 Speed is never scored.
 """
 
@@ -28,7 +30,7 @@ from typing import Any
 
 FAMILIES = ("grid_fill_border", "grid_row_copy", "grid_line_cross", "sequence_next", "instruction_exact", "chain_two_step")
 
-DIFFICULTY_TIERS = ("easy", "medium", "hard", "frontier")
+DIFFICULTY_TIERS = ("easy", "medium", "hard", "frontier", "extreme")
 
 _EASY_FAMILIES = ("grid_fill_border", "sequence_next")
 _MEDIUM_FAMILIES = ("grid_row_copy", "instruction_exact", "sequence_next")
@@ -36,6 +38,9 @@ _HARD_FAMILIES = ("grid_line_cross", "grid_row_copy", "chain_two_step")
 # frontier tier: only the compounding families survive at this size; a 3-step
 # chain and large grids are where cheap models fall off a cliff.
 _FRONTIER_FAMILIES = ("grid_line_cross", "chain_two_step")
+# extreme: added 2026-11-24 after frontier models solved 97% of frontier-tier
+# rungs; only families whose size or depth scales cleanly
+_EXTREME_FAMILIES = ("grid_line_cross", "grid_row_copy", "sequence_next")
 
 _PROMPT_BY_FAMILY = {
     "grid_fill_border": (
@@ -133,7 +138,7 @@ def _make_line_cross(rng: random.Random, size: int) -> tuple[list[list[int]], li
 def _grid_family_puzzle(family: str, difficulty: str, seed: int) -> dict[str, Any]:
     rng = _rng(family, difficulty, seed)
     if family == "grid_fill_border":
-        size = {"easy": 3, "medium": 4, "hard": 5, "frontier": 7}[difficulty]
+        size = {"easy": 3, "medium": 4, "hard": 5, "frontier": 7, "extreme": 10}[difficulty]
         color = rng.randint(1, 9)
         examples = []
         used_colors = {color}
@@ -146,7 +151,7 @@ def _grid_family_puzzle(family: str, difficulty: str, seed: int) -> dict[str, An
         answer = _make_fill_border(rng, size, color)[1]
         test_input = _make_fill_border(rng, size, color)[0]
     elif family == "grid_row_copy":
-        dims = {"easy": (4, 3), "medium": (6, 4), "hard": (8, 5), "frontier": (12, 8)}[difficulty]
+        dims = {"easy": (4, 3), "medium": (6, 4), "hard": (8, 5), "frontier": (12, 8), "extreme": (18, 12)}[difficulty]
         examples = []
         for ex_seed in (1, 2):
             ex_rng = _rng(family, difficulty, seed * 37 + ex_seed)
@@ -154,7 +159,7 @@ def _grid_family_puzzle(family: str, difficulty: str, seed: int) -> dict[str, An
             examples.append({"input": ex_inp, "output": ex_out})
         test_input, answer = _make_row_copy(rng, *dims)
     elif family == "grid_line_cross":
-        size = {"easy": 5, "medium": 6, "hard": 7, "frontier": 9}[difficulty]
+        size = {"easy": 5, "medium": 6, "hard": 7, "frontier": 9, "extreme": 14}[difficulty]
         examples = []
         for ex_seed in (1, 2):
             ex_rng = _rng(family, difficulty, seed * 41 + ex_seed)
@@ -184,8 +189,10 @@ def _grid_family_puzzle(family: str, difficulty: str, seed: int) -> dict[str, An
 
 def _sequence_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
     rng = _rng("sequence_next", difficulty, seed)
-    lo, hi = {"easy": (2, 9), "medium": (-12, 20), "hard": (-40, 60), "frontier": (-90, 120)}[difficulty]
+    lo, hi = {"easy": (2, 9), "medium": (-12, 20), "hard": (-40, 60), "frontier": (-90, 120), "extreme": (-90, 120)}[difficulty]
     start = rng.randint(lo, hi)
+    if difficulty == "extreme":
+        return _quadratic_sequence_puzzle(rng, start, seed)
     step = rng.choice([d for d in range(-6, 7) if d != 0]) if difficulty != "easy" else rng.randint(1, 6)
     terms = [start + step * i for i in range(5)]
     answer = start + step * 5
@@ -234,6 +241,44 @@ def _sequence_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
     }
 
 
+def _quadratic_sequence_puzzle(rng: random.Random, start: int, seed: int) -> dict[str, Any]:
+    """Extreme tier: two interleaved sequences. Odd positions follow a quadratic
+    (their differences change by a constant); even positions are arithmetic.
+    Eight terms are shown and the ninth (an odd position) is asked for."""
+    a = rng.choice([d for d in range(-4, 5) if d != 0])
+    b = rng.randint(-9, 9)
+    even_start = rng.randint(-60, 60)
+    even_step = rng.choice([d for d in range(-11, 12) if d != 0])
+
+    def odd(k: int) -> int:
+        return a * k * k + b * k + start
+
+    terms = []
+    for position in range(8):
+        k = position // 2
+        terms.append(odd(k) if position % 2 == 0 else even_start + even_step * k)
+    answer = odd(4)
+    prompt = (
+        "Integer sequence task with two interleaved sequences. The 1st, 3rd, 5th, ... terms form one "
+        "sequence whose differences change by a constant amount; the 2nd, 4th, 6th, ... terms form an "
+        "arithmetic sequence. Example: [1, 10, 3, 7, 7, 4, 13, 1] -> odd positions 1, 3, 7, 13 have "
+        "differences 2, 4, 6 -> next 21. "
+        f"Return the 9th term for [{', '.join(str(t) for t in terms)}]. Return it as a JSON number."
+    )
+    return {
+        "puzzle_id": f"sequence_next-extreme-{seed:04d}",
+        "family": "sequence_next",
+        "prompt": prompt,
+        "examples": [{"input": [1, 10, 3, 7, 7, 4, 13, 1], "output": [21]}],
+        "test_input": terms,
+        "answer": answer,
+        "answer_kind": "number",
+        "difficulty": "extreme",
+        "eligibility": "both",
+        "_terms": terms,
+    }
+
+
 # ------------------------------------------------------- instruction family
 
 
@@ -256,13 +301,13 @@ def _instruction_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
         "island torch shelter palm coral wave drift sand ember ridge cove anchor beacon "
         "kayak lagoon mangrove signal tide voyage hollow timber"
     ).split()
-    if difficulty in ("hard", "frontier"):
+    if difficulty in ("hard", "frontier", "extreme"):
         word_bank = [w for w in word_bank if len(w) >= 6]
     # draw the word and position once; the prompt and the answer both use them
     word = rng.choice(word_bank)
     kind, template = rng.choice(_INSTRUCTION_TEMPLATES)
     n = rng.randint(1, len(word))
-    if difficulty == "frontier":
+    if difficulty in ("frontier", "extreme"):
         # chained instruction: reverse the word, THEN index into the reversed
         # form and transform the letter. Two dependent steps, exact-match.
         reversed_word = word[::-1]
@@ -335,7 +380,7 @@ def _chain_two_step_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
         answer = "".join(chr((ord(ch) - 97 + shift) % 26 + 97) for ch in pair)
         example = {"input": "letters 2,3 of 'signal' -> 'ig' -> shift +2", "output": "ki"}
 
-    if difficulty == "frontier":
+    if difficulty in ("frontier", "extreme"):
         # three-step chain: extract, transform, then index back into the word.
         # error compounding across 3 hops separates frontier reasoners.
         if t == "alphabet_sum":
@@ -412,18 +457,26 @@ def families_for_difficulty(difficulty: str) -> tuple[str, ...]:
         "medium": _MEDIUM_FAMILIES,
         "hard": _HARD_FAMILIES,
         "frontier": _FRONTIER_FAMILIES,
+        "extreme": _EXTREME_FAMILIES,
     }[difficulty]
 
 
 # ------------------------------------------------------------------- ladder
 
-# One rung per tier, easiest first. Raised from (easy, medium, hard, hard,
-# frontier) on 2026-11-24 after five of nine cheap models solved every rung in
-# a live test round, leaving the top of the field unseparated.
-LADDER_TIERS = ("medium", "hard", "hard", "frontier", "frontier")
+# One rung per tier, easiest first, at three difficulty levels. A season starts
+# at level 0 and moves up when half the field solves every rung (see
+# turn_controller._ladder_level). Level 0 was raised from (easy, medium, hard,
+# hard, frontier) on 2026-11-24 after five of nine cheap models solved every
+# rung; levels 1 and 2 were added the same day after frontier models solved
+# 97% of all rungs and no round produced a winner.
+LADDER_LEVELS = (
+    ("medium", "hard", "hard", "frontier", "frontier"),
+    ("hard", "frontier", "frontier", "extreme", "extreme"),
+    ("frontier", "extreme", "extreme", "extreme", "extreme"),
+)
+LADDER_TIERS = LADDER_LEVELS[0]
 # Weighted tiebreak: a harder rung counts for more.
 RUNG_WEIGHTS = (1, 2, 3, 4, 5)
-SUDDEN_DEATH_SIZE = 5
 
 
 def _pick_families(rng: random.Random, tiers: tuple[str, ...]) -> list[str]:
@@ -435,31 +488,18 @@ def _pick_families(rng: random.Random, tiers: tuple[str, ...]) -> list[str]:
     return used
 
 
-def ladder_for_round(season_seed: int, round_number: int) -> list[dict[str, Any]]:
+def ladder_for_round(season_seed: int, round_number: int, level: int = 0) -> list[dict[str, Any]]:
     """The five puzzles every player answers this round, easiest first."""
-    rng = _rng("ladder", "round", season_seed * 1000 + round_number)
-    families = _pick_families(rng, LADDER_TIERS)
+    tiers = LADDER_LEVELS[max(0, min(level, len(LADDER_LEVELS) - 1))]
+    rng = _rng("ladder", f"round-l{level}" if level else "round", season_seed * 1000 + round_number)
+    families = _pick_families(rng, tiers)
     ladder = []
-    for rung, (tier, family) in enumerate(zip(LADDER_TIERS, families)):
+    for rung, (tier, family) in enumerate(zip(tiers, families)):
         puzzle = dict(generate_puzzle(family, tier, season_seed * 10000 + round_number * 10 + rung))
         puzzle["rung"] = rung
+        puzzle["ladder_level"] = level
         ladder.append(puzzle)
     return ladder
-
-
-def sudden_death_for_round(season_seed: int, round_number: int) -> list[dict[str, Any]]:
-    """Harder puzzles for players tied at the top of the ladder."""
-    rng = _rng("sudden-death", "round", season_seed * 1000 + round_number)
-    tiers = ("frontier",) * SUDDEN_DEATH_SIZE
-    families = _pick_families(rng, tiers)
-    puzzles = []
-    for index, (tier, family) in enumerate(zip(tiers, families)):
-        # separate seed space from the ladder so no sudden-death puzzle repeats a rung
-        puzzle = dict(generate_puzzle(family, tier, 7_000_000 + season_seed * 10000 + round_number * 10 + index))
-        puzzle["rung"] = len(LADDER_TIERS) + index
-        puzzle["sudden_death"] = True
-        puzzles.append(puzzle)
-    return puzzles
 
 
 _ANSWER_FORMATS = {

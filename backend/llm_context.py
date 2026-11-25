@@ -16,7 +16,7 @@ MAX_CONTEXT_CHARS = 40_000
 # in turn_controller.py: players can only plan around rules they are told.
 GAME_RULES = [
     "All players live and vote as one group for the whole season; there are no tribes.",
-    "Each round has a challenge: the same five puzzles for every player, medium to very hard. Most correct answers wins; a tie goes to whoever solved the harder puzzles, then to a five-puzzle sudden-death set; if still tied, nobody wins. Speed does not count. Every player's score is public (challenge_history).",
+    "Each round has a challenge: the same five puzzles for every player; the difficulty rises when half the field solves them all and falls when nobody reaches three. Most correct answers wins; a tie goes to whoever solved the harder puzzles, then to a guessing game played in the same answer: every player names a whole number from 0 to 100 and the tied player closest to two-thirds of the average wins; if still tied, nobody wins. Speed does not count. Every player's score is public (challenge_history).",
     "The challenge winner is immune: they cannot be voted for that round, but they still vote. A player may answer puzzles wrong on purpose to look less threatening.",
     "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it. Only one idol is in play at a time.",
     "A holder plays the idol with their vote at a council; every vote against them that round is then cancelled, and the play is announced. An unplayed idol expires when five players remain.",
@@ -417,6 +417,10 @@ def _challenge_history(conn) -> list[dict[str, Any]]:
                 "winner": names.get(row["winning_agent_id"], row["winning_agent_id"]) if row["winning_agent_id"] else None,
                 "immune": [names.get(agent_id, agent_id) for agent_id in immune_ids],
                 "scores_out_of_5": scores,
+                "ladder_level": result.get("ladder_level", 0),
+                # everyone's number in the guessing game, public after the round
+                "guesses": {names.get(agent_id, agent_id): guess for agent_id, guess in (result.get("guesses") or {}).items()},
+                "two_thirds_of_average": result.get("guess_target"),
                 "idol_given_by_winner": row["round"] in idol_rounds,
             }
         )

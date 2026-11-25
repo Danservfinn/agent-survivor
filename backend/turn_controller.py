@@ -21,7 +21,7 @@ from .database import (
     seed_demo,
 )
 from .llm_context import add_open_promise, build_agent_episode_context, build_host_episode_context, context_digest
-from .challenge_bank import LADDER_TIERS, RUNG_WEIGHTS, grade_answer, ladder_for_round, sudden_death_for_round
+from .challenge_bank import LADDER_LEVELS, LADDER_TIERS, RUNG_WEIGHTS, grade_answer, ladder_for_round
 from .live_cost import estimate_step_cost_usd, get_pricing_table
 from .llm_config import (
     PROVIDER_OLLAMA,
@@ -418,6 +418,8 @@ class ChallengeAttemptDecision:
     # the player says it answered this rung wrong on purpose (kept out of accuracy stats only)
     thrown: bool = False
     sudden_death: bool = False
+    # the player's number for the tiebreak guessing game (stored on every rung row)
+    guess: int | None = None
 
 
 def get_state(include_hidden_votes: bool = False) -> dict[str, Any]:
@@ -2554,7 +2556,8 @@ def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, A
     active_names = ", ".join(agent["pseudonym"] for agent in _active_agent_rows(conn))
     stakes = (
         f"Every player gets the same {len(ladder)} puzzles, easiest to hardest. Most correct answers wins immunity; "
-        "a tie goes to the harder puzzles, then to sudden death. Speed does not count."
+        "a tie goes to the harder puzzles, then to a guessing game: the tied player closest to two-thirds "
+        "of the average number named wins. Speed does not count."
     )
     if _idol_gift_round(conn, round_number):
         stakes += " This round the winner also gives a hidden idol to another player."
@@ -2698,8 +2701,12 @@ def _challenge_attempt_events(conn, round_number: int, turn_id: int) -> list[dic
 
 
 def _challenge_standings(conn, result: dict[str, Any]) -> list[dict[str, Any]]:
-    scores = (result.get("result_payload") or {}).get("scores") or {}
-    sudden = (result.get("result_payload") or {}).get("sudden_death_scores") or {}
+    payload = result.get("result_payload") or {}
+    scores = payload.get("scores") or {}
+    # seasons before 2026-11-24 broke ties with sudden-death puzzles
+    sudden = payload.get("sudden_death_scores") or {}
+    guesses = payload.get("guesses") or {}
+    target = payload.get("guess_target")
     standings = [
         {
             "agent_id": agent_id,
@@ -2707,10 +2714,17 @@ def _challenge_standings(conn, result: dict[str, Any]) -> list[dict[str, Any]]:
             "correct": score["correct"],
             "weighted": score["weighted"],
             "sudden_death": sudden.get(agent_id),
+            "guess": guesses.get(agent_id),
         }
         for agent_id, score in scores.items()
     ]
-    standings.sort(key=lambda row: (-row["correct"], -row["weighted"], -(row["sudden_death"] or 0), row["name"]))
+
+    def guess_distance(row: dict[str, Any]) -> float:
+        return abs(row["guess"] - target) if row["guess"] is not None and target is not None else float("inf")
+
+    standings.sort(
+        key=lambda row: (-row["correct"], -row["weighted"], -(row["sudden_death"] or 0), guess_distance(row), row["name"])
+    )
     return standings
 
 
@@ -2721,14 +2735,21 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
     standings = _challenge_standings(conn, result)
     rungs = len(LADDER_TIERS)
     score_line = ", ".join(f"{row['name']} {row['correct']}/{rungs}" for row in standings)
-    tied = (result.get("result_payload") or {}).get("tied") or []
+    result_payload = result.get("result_payload") or {}
+    tied = result_payload.get("tied") or []
+    target = result_payload.get("guess_target")
+    guess_line = ""
+    if result_payload.get("guesses"):
+        guess_line = " Guesses: " + ", ".join(
+            f"{row['name']} {row['guess']}" for row in standings if row.get("guess") is not None
+        ) + (f"; two-thirds of the average was {target}." if target is not None else ".")
     if winner_id:
-        tiebreak = " after sudden death" if (result.get("result_payload") or {}).get("sudden_death_scores") else ""
-        dialogue = f"{winner_name} wins immunity{tiebreak}. Scores: {score_line}."
+        tiebreak = " on the guessing game" if result_payload.get("tied_on_ladder") else ""
+        dialogue = f"{winner_name} wins immunity{tiebreak}. Scores: {score_line}.{guess_line}"
     elif tied:
         dialogue = (
-            f"{', '.join(_agent_name(conn, agent_id) for agent_id in tied)} are still level after sudden death, "
-            f"so nobody is immune this round. Scores: {score_line}."
+            f"{', '.join(_agent_name(conn, agent_id) for agent_id in tied)} tied on the puzzles and on the guessing game, "
+            f"so nobody is immune this round. Scores: {score_line}.{guess_line}"
         )
     else:
         dialogue = f"Nobody solved a puzzle, so nobody is immune this round. Scores: {score_line}."
@@ -2739,6 +2760,8 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
         "immunity_agent_ids": result["immunity_agent_ids"],
         "immunity_agent_names": [_agent_name(conn, agent_id) for agent_id in result["immunity_agent_ids"]],
         "standings": standings,
+        "guess_target": result_payload.get("guess_target"),
+        "ladder_level": result_payload.get("ladder_level", 0),
         "result_status": result["status"],
         "host_narration": dialogue,
         "llm_provider": "deterministic",
@@ -3118,15 +3141,42 @@ def _persist_puzzles(conn, puzzles: list[dict[str, Any]]) -> None:
 
 
 def _round_ladder(conn, round_number: int) -> list[dict[str, Any]]:
-    ladder = ladder_for_round(_season_seed(), round_number)
+    ladder = ladder_for_round(_season_seed(), round_number, _ladder_level(conn, round_number))
     _persist_puzzles(conn, ladder)
     return ladder
 
 
-def _round_sudden_death(conn, round_number: int) -> list[dict[str, Any]]:
-    puzzles = sudden_death_for_round(_season_seed(), round_number)
-    _persist_puzzles(conn, puzzles)
-    return puzzles
+def _ladder_level(conn, round_number: int) -> int:
+    """Difficulty level for this round's ladder, from the previous round's result.
+    Up a level when at least half the field solved every rung, down a level when
+    nobody solved three, so the ladder keeps separating the field."""
+    previous = conn.execute(
+        "SELECT result_payload FROM ChallengeResults WHERE round < ? ORDER BY round DESC LIMIT 1", (round_number,)
+    ).fetchone()
+    if previous is None:
+        return 0
+    payload = json.loads(previous["result_payload"] or "{}")
+    level = int(payload.get("ladder_level", 0))
+    scores = [score["correct"] for score in (payload.get("scores") or {}).values()]
+    if not scores:
+        return level
+    rungs = len(LADDER_TIERS)
+    if sum(1 for correct in scores if correct == rungs) * 2 >= len(scores):
+        level += 1
+    elif max(scores) < 3:
+        level -= 1
+    return max(0, min(level, len(LADDER_LEVELS) - 1))
+
+
+# Ties on the ladder are broken by a guessing game played in the same call:
+# every player names a whole number from 0 to 100, and the tied player closest
+# to two-thirds of the average of all guesses wins. It rewards modelling how the
+# other players reason, and unlike puzzles it cannot be maxed out.
+GUESS_FRACTION = 2 / 3
+
+
+def _guess_target(guesses: dict[str, int]) -> float | None:
+    return GUESS_FRACTION * sum(guesses.values()) / len(guesses) if guesses else None
 
 
 def _deterministic_challenge_attempts(
@@ -3157,6 +3207,7 @@ def _deterministic_challenge_attempts(
                     attempt_order=index,
                     rung_index=int(puzzle.get("rung", position)),
                     sudden_death=bool(puzzle.get("sudden_death")),
+                    guess=(17 + 23 * index) % 101,  # no model: a fixed spread of numbers
                 )
             )
     return attempts
@@ -3216,6 +3267,7 @@ def _live_challenge_attempts(
                         context_digest=context_digest(contexts[agent["agent_id"]]),
                         rung_index=rung,
                         sudden_death=bool(puzzle.get("sudden_death")),
+                        guess=None,
                     )
                 )
                 continue
@@ -3235,6 +3287,7 @@ def _live_challenge_attempts(
                     rung_index=rung,
                     thrown=puzzle["puzzle_id"] in solution.thrown,
                     sudden_death=bool(puzzle.get("sudden_death")),
+                    guess=solution.guess,
                 )
             )
     return attempts
@@ -3251,6 +3304,7 @@ def _insert_challenge_attempt(
         "llm_context_digest": attempt.context_digest or {},
         "thrown": attempt.thrown,
         "sudden_death": attempt.sudden_death,
+        "guess": attempt.guess,
     }
     if attempt.error:
         payload["error"] = attempt.error
@@ -3280,8 +3334,8 @@ def _insert_challenge_attempt(
 
 def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
     """Score the ladder: most correct answers wins; ties go to the rung-weighted
-    total, then to a sudden-death set; still level means nobody is immune.
-    Response time is never used."""
+    total, then to the guessing game (closest to two-thirds of the average guess);
+    still level means nobody is immune. Response time is never used."""
     existing = row_to_dict(
         conn.execute("SELECT * FROM ChallengeResults WHERE round = ?", (round_number,)).fetchone()
     )
@@ -3306,8 +3360,14 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
     best = max((score["correct"], score["weighted"]) for score in scores.values())
     leaders = sorted(agent_id for agent_id, score in scores.items() if (score["correct"], score["weighted"]) == best)
 
+    guesses: dict[str, int] = {}
+    for row in ladder_rows:
+        guess = (row.get("attempt_payload") or {}).get("guess")
+        if isinstance(guess, int) and row["agent_id"] not in guesses:
+            guesses[row["agent_id"]] = guess
+    target = _guess_target(guesses)
+
     winning_agent_id: str | None = None
-    sudden_scores: dict[str, int] | None = None
     tied: list[str] = []
     if best[0] == 0:
         status = "no_winner"
@@ -3315,34 +3375,17 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
         winning_agent_id = leaders[0]
         status = live_llm_provider() if should_use_live_llm() else "deterministic"
     else:
-        sudden = _round_sudden_death(conn, round_number)
-        sudden_rows = [row for row in rows if row["rung_index"] >= rungs]
-        if not sudden_rows:
-            players = [agent for agent in _active_agent_rows(conn) if agent["agent_id"] in leaders]
-            new_attempts = (
-                _live_challenge_attempts(conn, round_number, sudden, players)
-                if should_use_live_llm()
-                else _deterministic_challenge_attempts(round_number, sudden, players)
-            )
-            for attempt in new_attempts:
-                _insert_challenge_attempt(conn, round_number, sudden[attempt.rung_index - rungs]["puzzle_id"], attempt)
-            sudden_rows = [
-                row_to_dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM ChallengeAttempts WHERE round = ? AND rung_index >= ?", (round_number, rungs)
-                ).fetchall()
-            ]
-        sudden_scores = {agent_id: 0 for agent_id in leaders}
-        for row in sudden_rows:
-            if row["is_correct"] and row["agent_id"] in sudden_scores:
-                sudden_scores[row["agent_id"]] += 1
-        top = max(sudden_scores.values())
-        sudden_leaders = [agent_id for agent_id, count in sudden_scores.items() if count == top]
-        if len(sudden_leaders) == 1:
-            winning_agent_id = sudden_leaders[0]
+        # the tied leaders are separated by the guessing game; no extra calls
+        distances = {
+            agent_id: abs(guesses[agent_id] - target) for agent_id in leaders if agent_id in guesses and target is not None
+        }
+        closest = min(distances.values()) if distances else None
+        nearest = sorted(agent_id for agent_id, distance in distances.items() if distance == closest)
+        if len(nearest) == 1:
+            winning_agent_id = nearest[0]
             status = live_llm_provider() if should_use_live_llm() else "deterministic"
         else:
-            tied = sorted(sudden_leaders)
+            tied = nearest or leaders
             status = "no_winner_tied"
 
     immunity_agent_ids = [winning_agent_id] if winning_agent_id else []
@@ -3368,7 +3411,10 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
                 {
                     "ladder": [puzzle["puzzle_id"] for puzzle in ladder],
                     "scores": scores,
-                    "sudden_death_scores": sudden_scores,
+                    "ladder_level": int(ladder[0].get("ladder_level", 0)),
+                    "guesses": guesses,
+                    "guess_target": round(target, 2) if target is not None else None,
+                    "tied_on_ladder": leaders if len(leaders) > 1 else [],
                     "tied": tied,
                     "top_score": best[0],
                 }
@@ -5612,7 +5658,7 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
     }:
         return 1
     if step == "challenge_attempts":
-        # one call per player for the whole ladder; a sudden death adds a call per tied player
+        # one call per player for the whole ladder and the tiebreak guess
         return len(_active_agent_rows(conn))
     if step == "challenge_gift":
         return 1 if _idol_gift_round(conn, int(game["current_round"])) else 0

@@ -126,6 +126,8 @@ class ChallengeSolution:
     # puzzle ids the player says it answered wrong on purpose; private, used only
     # to keep those rungs out of the accuracy statistic, never in the result
     thrown: tuple[str, ...] = ()
+    # the tiebreak guessing game: a whole number 0-100, or None if missing
+    guess: int | None = None
 
 
 def request_agent_archetype(*, actor: dict[str, Any], episode_context: dict[str, Any] | None = None) -> str:
@@ -429,7 +431,7 @@ def request_challenge_solution(
     puzzles: list[dict[str, Any]],
     episode_context: dict[str, Any] | None = None,
 ) -> ChallengeSolution:
-    """One call: the player answers every puzzle in the ladder (or sudden death)."""
+    """One call: the player answers every puzzle in the ladder and makes its guess."""
     settings = get_llm_settings()
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if settings.provider == PROVIDER_OPENROUTER and not api_key:
@@ -455,7 +457,8 @@ You are a player in an island social-strategy game. This is the round's challeng
 
 How the challenge works:
 - Every player gets these same {len(puzzles)} puzzles, easiest first.
-- Most correct answers wins immunity. A tie goes to whoever solved the harder puzzles, then to a sudden-death set.
+- Most correct answers wins immunity. A tie goes to whoever solved the harder puzzles, then to the guessing game below.
+- Guessing game: every player names a whole number from 0 to 100. Among players still tied, the one closest to two-thirds of the average of everyone's numbers wins. Everyone else is guessing too; think about how they will reason. All numbers are made public afterwards.
 - Speed does not count. Take the care you need.
 - Every player sees each player's score afterwards. You may answer some puzzles wrong on purpose to look less threatening; if you do, list their ids in "thrown". That list is private and never changes your score.
 
@@ -477,6 +480,7 @@ Return strict JSON only:
 {{
   "answers": {{{example_answers}}},
   "thrown": [],
+  "guess": 0,
   "explanation": "one short sentence about your approach"
 }}
 
@@ -490,7 +494,7 @@ Rules:
         "messages": [
             {
                 "role": "system",
-                "content": "Return only valid JSON with keys answers, thrown and explanation.",
+                "content": "Return only valid JSON with keys answers, thrown, guess and explanation.",
             },
             {"role": "user", "content": prompt},
         ],
@@ -507,7 +511,7 @@ Rules:
             *payload["messages"],
             {
                 "role": "user",
-                "content": "Return only one complete JSON object with keys answers, thrown and explanation. No markdown.",
+                "content": "Return only one complete JSON object with keys answers, thrown, guess and explanation. No markdown.",
             },
         ]
         response_payload = _post_chat_completion(retry_payload, api_key)
@@ -531,7 +535,21 @@ Rules:
         explanation=str(data.get("explanation") or "").strip(),
         model_id=model_id,
         thrown=tuple(str(item) for item in thrown if str(item) in known_ids),
+        guess=_parse_guess(data.get("guess")),
     )
+
+
+def _parse_guess(value: Any) -> int | None:
+    """A whole number 0-100; anything else is no guess."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number < 0 or number > 100:
+        return None
+    return int(round(number))
 
 
 def _agent_prompt_v2(

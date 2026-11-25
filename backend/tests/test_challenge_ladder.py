@@ -40,8 +40,14 @@ class _SeasonDb(unittest.TestCase):
 class LadderScoringTest(_SeasonDb):
     """Live path with the model call stubbed: each player solves a chosen set of rungs."""
 
-    def _run(self, solved: dict[str, set[int]], delays: dict[str, float] | None = None) -> dict:
+    def _run(
+        self,
+        solved: dict[str, set[int]],
+        delays: dict[str, float] | None = None,
+        guesses: dict[str, int] | None = None,
+    ) -> dict:
         delays = delays or {}
+        guesses = guesses or {}
 
         def fake_solution(*, actor, puzzles, episode_context):
             time.sleep(delays.get(actor["agent_id"], 0))
@@ -50,7 +56,9 @@ class LadderScoringTest(_SeasonDb):
                 puzzle["puzzle_id"]: puzzle["answer"] if puzzle["rung"] in rungs else "wrong"
                 for puzzle in puzzles
             }
-            return ChallengeSolution(answers=answers, explanation="", model_id="test/model")
+            return ChallengeSolution(
+                answers=answers, explanation="", model_id="test/model", guess=guesses.get(actor["agent_id"], 50)
+            )
 
         with patch.object(tc, "should_use_live_llm", return_value=True), patch.object(
             tc, "live_llm_provider", return_value="openrouter"
@@ -79,27 +87,45 @@ class LadderScoringTest(_SeasonDb):
         a, b, *_ = self.players
         result = self._run({a: {0, 1, 2, 3}, b: {0, 1, 2, 4}})
         self.assertEqual(result["winning_agent_id"], b)
-        self.assertIsNone(result["result_payload"]["sudden_death_scores"])
+        self.assertEqual(result["result_payload"]["tied_on_ladder"], [])
 
-    def test_exact_tie_goes_to_sudden_death(self) -> None:
-        a, b, *_ = self.players
-        # rungs 5-9 are the sudden-death puzzles
-        result = self._run({a: {0, 1, 2, 5, 6}, b: {0, 1, 2, 5}})
-        self.assertEqual(result["winning_agent_id"], a)
-        self.assertEqual(result["result_payload"]["sudden_death_scores"], {a: 2, b: 1})
-        sudden_players = {
-            row["agent_id"]
-            for row in self.conn.execute("SELECT agent_id FROM ChallengeAttempts WHERE rung_index >= 5")
-        }
-        self.assertEqual(sudden_players, {a, b})
+    def test_exact_tie_goes_to_the_guess_closest_to_two_thirds_of_the_average(self) -> None:
+        a, b, *rest = self.players
+        # everyone else guesses 50; a guesses 30 and b guesses 45
+        guesses = {a: 30, b: 45, **{agent: 50 for agent in rest}}
+        result = self._run({a: {0, 1, 2}, b: {0, 1, 2}}, guesses=guesses)
+        target = (2 / 3) * sum(guesses.values()) / len(guesses)
+        self.assertAlmostEqual(result["result_payload"]["guess_target"], round(target, 2))
+        winner = min((a, b), key=lambda agent: abs(guesses[agent] - target))
+        self.assertEqual(result["winning_agent_id"], winner)
+        self.assertEqual(sorted(result["result_payload"]["tied_on_ladder"]), sorted([a, b]))
+        # no extra puzzles are asked: only the five ladder rungs exist
+        self.assertEqual(
+            self.conn.execute("SELECT MAX(rung_index) FROM ChallengeAttempts WHERE round = ?", (ROUND,)).fetchone()[0], 4
+        )
 
-    def test_tie_after_sudden_death_means_nobody_is_immune(self) -> None:
+    def test_same_ladder_score_and_same_guess_means_nobody_is_immune(self) -> None:
         a, b, *_ = self.players
-        result = self._run({a: {0, 1, 5}, b: {0, 1, 5}})
+        result = self._run({a: {0, 1}, b: {0, 1}}, guesses={a: 20, b: 20})
         self.assertIsNone(result["winning_agent_id"])
         self.assertEqual(result["immunity_agent_ids"], [])
         self.assertEqual(result["result_payload"]["tied"], sorted([a, b]))
         self.assertEqual(self._immune(), [])
+
+    def test_ladder_gets_harder_when_half_the_field_solves_everything(self) -> None:
+        everyone = {agent: {0, 1, 2, 3, 4} for agent in self.players}
+        self._run(everyone)
+        self.assertEqual(tc._ladder_level(self.conn, ROUND + 1), 1)
+        next_ladder = tc._round_ladder(self.conn, ROUND + 1)
+        self.assertEqual(tuple(p["difficulty"] for p in next_ladder), tc.LADDER_LEVELS[1])
+
+    def test_ladder_eases_when_nobody_reaches_three(self) -> None:
+        self.conn.execute(
+            "INSERT INTO ChallengeResults (round, puzzle_id, challenge_type, immunity_agent_ids, status, result_payload)"
+            " VALUES (?, 'p', 'individual', '[]', 'x', ?)",
+            (ROUND, json.dumps({"ladder_level": 2, "scores": {self.players[0]: {"correct": 2, "weighted": 3}}})),
+        )
+        self.assertEqual(tc._ladder_level(self.conn, ROUND + 1), 1)
 
     def test_nobody_scores_means_nobody_is_immune(self) -> None:
         result = self._run({})

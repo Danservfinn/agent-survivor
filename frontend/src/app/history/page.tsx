@@ -26,12 +26,15 @@ type Season = {
 
 type Attempt = { who: string; correct: boolean; ms: number };
 
-type LadderStanding = { who: string; correct: number; sudden_death: number | null };
+type LadderStanding = { who: string; correct: number; sudden_death: number | null; guess?: number | null };
 
 type Challenge = {
   type: string;
   // ladder seasons (2026-11-24 on) carry standings; older seasons carry timed attempts
   standings?: LadderStanding[];
+  // the tiebreak guessing game (seasons from 2026-11-24 on)
+  guess_target?: number | null;
+  ladder_level?: number | null;
   idol_given?: boolean;
   winner: string;
   tribe: string;
@@ -123,6 +126,7 @@ function Line({
 function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n: string) => void }) {
   const standings = challenge.standings ?? [];
   const suddenDeath = standings.some((row) => row.sudden_death != null);
+  const guessed = standings.some((row) => row.guess != null);
   return (
     <div className="narrative-block">
       <h4 className="narrative-label">challenge: five-puzzle ladder</h4>
@@ -142,6 +146,10 @@ function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n:
           "Nobody won immunity."
         )}
         {challenge.idol_given ? " The winner gave a hidden idol to another player." : ""}
+        {guessed && challenge.guess_target != null
+          ? ` Ties went to the number closest to two-thirds of the average guess (${challenge.guess_target}).`
+          : ""}
+        {challenge.ladder_level ? ` Difficulty level ${challenge.ladder_level} of 2.` : ""}
       </p>
       <table className="bench-table">
         <thead>
@@ -149,6 +157,7 @@ function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n:
             <th>player</th>
             <th className="num">correct of 5</th>
             {suddenDeath && <th className="num">sudden death</th>}
+            {guessed && <th className="num">guess</th>}
           </tr>
         </thead>
         <tbody>
@@ -157,6 +166,7 @@ function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n:
               <td>{row.who}</td>
               <td className="num">{row.correct}</td>
               {suddenDeath && <td className="num">{row.sudden_death ?? "-"}</td>}
+              {guessed && <td className="num">{row.guess ?? "-"}</td>}
             </tr>
           ))}
         </tbody>

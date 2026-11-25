@@ -400,7 +400,8 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         _ensure_column(conn, "Votes", "predicted_eliminated", "TEXT")
         _ensure_column(conn, "Votes", "predicted_votes", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "Votes", "prediction_confidence", "REAL")
-        # challenge ladder: one attempt row per player per puzzle (rungs 0-4, sudden death 5+)
+        # challenge ladder: one attempt row per player per puzzle (rungs 0-4; rungs 5+ are
+        # sudden-death puzzles in seasons before 2026-11-24)
         _ensure_column(conn, "ChallengeAttempts", "rung_index", "INTEGER NOT NULL DEFAULT 0")
         _ensure_agent_model_ids(conn)
         _ensure_viewer_state(conn)

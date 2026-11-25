@@ -19,7 +19,6 @@ from backend.challenge_bank import (  # noqa: E402
     generate_puzzle,
     grade_answer,
     ladder_for_round,
-    sudden_death_for_round,
 )
 
 
@@ -160,17 +159,30 @@ class Ladder(unittest.TestCase):
             [p["puzzle_id"] for p in ladder_for_round(1, 7)], [p["puzzle_id"] for p in ladder_for_round(2, 7)]
         )
 
-    def test_sudden_death_is_harder_and_never_repeats_a_rung(self) -> None:
-        ladder = {p["puzzle_id"] for p in ladder_for_round(3, 9)}
-        sudden = sudden_death_for_round(3, 9)
-        self.assertEqual(len(sudden), 5)
-        self.assertTrue(all(p["difficulty"] == "frontier" and p["sudden_death"] for p in sudden))
-        self.assertFalse(ladder & {p["puzzle_id"] for p in sudden})
-        self.assertEqual([p["rung"] for p in sudden], [5, 6, 7, 8, 9])
+    def test_levels_rise_in_difficulty_and_keep_level_zero_unchanged(self) -> None:
+        from backend.challenge_bank import LADDER_LEVELS
+
+        order = ("easy", "medium", "hard", "frontier", "extreme")
+        for level, tiers in enumerate(LADDER_LEVELS):
+            ladder = ladder_for_round(3, 9, level)
+            self.assertEqual(tuple(p["difficulty"] for p in ladder), tiers)
+            self.assertEqual([order.index(t) for t in tiers], sorted(order.index(t) for t in tiers))
+        self.assertEqual(
+            [p["puzzle_id"] for p in ladder_for_round(3, 9)], [p["puzzle_id"] for p in ladder_for_round(3, 9, 0)]
+        )
+
+    def test_extreme_sequences_are_verified_independently(self) -> None:
+        for seed in range(300):
+            puzzle = generate_puzzle("sequence_next", "extreme", seed)
+            odd, even = puzzle["_terms"][0::2], puzzle["_terms"][1::2]
+            steps = [b - a for a, b in zip(odd, odd[1:])]
+            self.assertEqual(len({b - a for a, b in zip(steps, steps[1:])}), 1)
+            self.assertEqual(len({b - a for a, b in zip(even, even[1:])}), 1)
+            self.assertEqual(puzzle["answer"], odd[-1] + steps[-1] + (steps[-1] - steps[-2]))
 
     def test_every_puzzle_states_its_answer_format(self) -> None:
         for seed in range(30):
-            for puzzle in ladder_for_round(seed, 7) + sudden_death_for_round(seed, 7):
+            for puzzle in ladder_for_round(seed, 7) + ladder_for_round(seed, 7, 1) + ladder_for_round(seed, 7, 2):
                 self.assertNotEqual(answer_format(puzzle), "a JSON value", puzzle["puzzle_id"])
                 if puzzle["answer_kind"] == "grid":
                     self.assertIsInstance(puzzle["answer"], list)
