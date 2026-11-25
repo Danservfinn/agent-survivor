@@ -383,7 +383,8 @@ class VoteDecision:
 
 @dataclass(frozen=True)
 class JuryDecision:
-    finalist_id: str
+    # None: the juror abstained (no legal vote after every retry)
+    finalist_id: str | None
     rationale: str
     provider: str
     model_id: str | None = None
@@ -1079,7 +1080,8 @@ def _apply_step(
     if step.startswith("jury_vote_"):
         juror_id = step.removeprefix("jury_vote_")
         decision = _resolve_jury_decision(conn, juror_id, step)
-        _insert_jury_vote(conn, round_number, juror_id, decision)
+        if decision.finalist_id is not None:
+            _insert_jury_vote(conn, round_number, juror_id, decision)
         event = _jury_vote_event(conn, round_number, turn_id, juror_id, decision)
         return [event], {"jury_vote_by": juror_id}, event["title"]
 
@@ -3842,9 +3844,17 @@ def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
             break
         print(f"live jury vote attempt {attempt + 1} failed for {juror_id}: {last_error or 'no legal target_id'}")
     if not action or not action.target_id:
-        raise RuntimeError(
-            f"Live jury vote for {juror_id} failed after 3 real-time retries "
-            f"(last error: {last_error or 'no legal target_id'}); refusing to cast a fallback vote."
+        # The model answered but never named a finalist: its own failure. It
+        # abstains; no vote is invented for it and the season goes on. (A
+        # 2026-11-24 comparison season died here after two hours because one
+        # small juror kept naming a fellow juror.) Provider outages never get
+        # here: they are held, retried, then end the run as SeasonInterrupted.
+        return JuryDecision(
+            None,
+            f"No valid vote after 3 tries ({last_error or 'no legal target_id'}).",
+            "abstained",
+            action.model_id if action else None,
+            context_digest(agent_context),
         )
     return JuryDecision(
         action.target_id,
@@ -3898,8 +3908,10 @@ def _jury_vote_event(
     decision: JuryDecision,
 ) -> dict[str, Any]:
     juror_name = _agent_name(conn, juror_id)
-    finalist_name = _agent_name(conn, decision.finalist_id)
-    if decision.provider == failed_llm_provider():
+    finalist_name = _agent_name(conn, decision.finalist_id) if decision.finalist_id else "no vote"
+    if decision.finalist_id is None:
+        dialogue = f"{juror_name} did not name a finalist in three tries, so the vote is not counted."
+    elif decision.provider == failed_llm_provider():
         dialogue = (
             f"{juror_name} did not return a live jury response. No substitute model was used; "
             f"the deterministic finale ledger records the vote for {finalist_name}."
@@ -3960,7 +3972,11 @@ def _winner_declared_event(conn, round_number: int, turn_id: int) -> dict[str, A
         ).fetchall()
     ]
     expected_jury_count = len(_jury_rows(conn))
-    if len(jury_votes) < expected_jury_count:
+    # every juror has had a turn: a vote, or an abstention (a jury_vote event with no vote row)
+    jury_turns = conn.execute(
+        "SELECT COUNT(*) AS n FROM StoryEvents WHERE round = ? AND kind = 'jury_vote'", (round_number,)
+    ).fetchone()["n"]
+    if max(len(jury_votes), jury_turns) < expected_jury_count:
         raise RuntimeError("Cannot declare winner before all jury votes are cast")
 
     winner_id = _resolve_winner(conn, finalists, jury_votes)

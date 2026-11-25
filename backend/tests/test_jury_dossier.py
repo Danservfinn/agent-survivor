@@ -88,6 +88,33 @@ class JuryDossierTest(unittest.TestCase):
         keys = list(dossier)
         self.assertLess(keys.index("first_to_commit_to_the_elimination_in_rounds"), keys.index("promises_kept"))
 
+    def test_a_juror_who_never_names_a_finalist_abstains_and_the_season_finishes(self) -> None:
+        silent, *others = self.jury
+        winner = self.finalists[2]
+
+        def action(**kwargs):
+            # the silent juror names a fellow juror every time (as Command R7B did)
+            target = None if kwargs["actor"]["agent_id"] == silent else winner
+            return AgentAction(dialogue="My vote.", inner_thought="", model_id="m", target_id=target)
+
+        state = {"current_round": 9}
+        self.conn.execute("UPDATE GameState SET current_round = 9")
+        with patch.object(tc, "should_use_live_llm", return_value=True), patch.object(
+            tc, "live_llm_provider", return_value="openrouter"
+        ), patch.object(tc, "build_agent_episode_context", return_value={}), patch.object(
+            tc, "request_agent_action", side_effect=action
+        ):
+            for index, juror in enumerate(self.jury):
+                tc._apply_step(self.conn, state, f"jury_vote_{juror}", 100 + index, index)
+            tc._apply_step(self.conn, state, "winner_declared", 200, 99)
+        votes = [tuple(row) for row in self.conn.execute("SELECT juror_id, finalist_id FROM JuryVotes")]
+        self.assertEqual(sorted(votes), sorted((juror, winner) for juror in others))
+        self.assertEqual(self.conn.execute("SELECT winner FROM GameState").fetchone()[0], winner)
+        abstained = self.conn.execute(
+            "SELECT dialogue FROM StoryEvents WHERE kind = 'jury_vote' AND actor_ids LIKE ?", (f"%{silent}%",)
+        ).fetchone()[0]
+        self.assertIn("not counted", abstained)
+
     def test_jury_vote_prompt_carries_the_standard_and_every_dossier(self) -> None:
         seen: list[str] = []
 
