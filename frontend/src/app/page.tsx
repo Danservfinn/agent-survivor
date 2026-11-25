@@ -3,7 +3,41 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ScoreRow, ScoreTable, seasonDate, usd } from "./score-table";
+import { ScoreRow, ScoreTable, orgColor, seasonDate, usd } from "./score-table";
+
+/** The parts of /api/live-season/report the console shows. */
+type ReportModel = { agent_id: string; model: string; model_id?: string | null; place: number; is_winner: boolean };
+type ReportData = {
+  ok: boolean;
+  season: {
+    season_id: string;
+    date: string | null;
+    players: number;
+    first_round: number | null;
+    last_round: number | null;
+    councils: number;
+    winner: string | null;
+    finished: boolean;
+    elapsed_s: number | null;
+    run_est_cost_cents: number | null;
+  };
+  names: Record<string, string>;
+  takeaways: { label: string; text: string; models: string[] }[];
+  moments?: { id: string; kind: string; round: number | null; title: string; text: string }[];
+  models: ReportModel[];
+  rounds: { round: number; eliminated_id: string | null; tally: Record<string, number>; revote_tally: Record<string, number> | null }[];
+  finale: { tally: Record<string, number>; winner_id: string | null } | null;
+};
+
+const MOMENT_KIND: Record<string, string> = {
+  result: "The result",
+  promise: "Broken promise",
+  vote: "Close vote",
+  idol: "Hidden idol",
+  read: "Vote read",
+  puzzle: "Puzzles",
+  target: "Target",
+};
 
 type LiveScorecard = {
   ok: boolean;
@@ -61,12 +95,28 @@ const KIND_LABEL: Record<string, string> = {
   elimination: "elimination",
   exit_confessional: "exit",
   merge: "merge",
-  winner_declared: "finale",
+  winner_declared: "winner",
+  jury_vote: "jury",
+  jury_questions: "jury",
+  finale_intro: "finale",
+  finale_pitch: "pitch",
+  revote_call: "revote",
+  revote_booth: "revote",
+  revote_tally: "revote",
+  idol_handoff: "idol",
+  challenge_solver_spotlight: "challenge",
+  memory_update: "notebook",
+  talk_choice: "talk",
+  followup: "message",
+  group_conversation: "camp",
+  dialogue: "camp",
+  tiebreak: "tiebreak",
 };
 
 export default function Benchmark() {
   const [lines, setLines] = useState<Line[]>([]);
   const [scorecard, setScorecard] = useState<LiveScorecard | null>(null);
+  const [report, setReport] = useState<ReportData | null>(null);
   const [liveRunning, setLiveRunning] = useState(false);
   const [budget, setBudget] = useState<Budget | null>(null);
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
@@ -82,11 +132,19 @@ export default function Benchmark() {
     setLines((prev) => [...prev, { text, kind }]);
   }, []);
 
+  const loadReport = useCallback(() => {
+    fetch("/api/live-season/report")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: ReportData | null) => setReport(data && data.ok ? data : null))
+      .catch(() => setReport(null));
+  }, []);
+
   useEffect(() => {
     fetch("/api/live-season/scorecard")
       .then((res) => (res.ok ? res.json() : null))
       .then((data: LiveScorecard | null) => setScorecard(data))
       .catch(() => setScorecard(null));
+    loadReport();
     fetch("/api/live-season/budget")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => setBudget(data))
@@ -213,8 +271,9 @@ export default function Benchmark() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setBudget(d))
       .catch(() => {});
+    loadReport();
     setLiveRunning(false);
-  }, [log]);
+  }, [log, loadReport]);
 
   const resetConsole = useCallback(() => {
     setLines([]);
@@ -256,7 +315,7 @@ export default function Benchmark() {
     }
     const data = await res.json().catch(() => null);
     if (res.status === 409) {
-      log("a season is already running, attaching to it (up to 45 min)");
+      log("a season is already running, attaching to it");
       await pollLiveSeason();
       return;
     }
@@ -266,141 +325,348 @@ export default function Benchmark() {
       return;
     }
     log(data?.byok
-      ? "season launched on your key. full seasons take 10-45 min, this page will update when it lands"
-      : "season launched. full seasons take 10-45 min, this page will update when it lands");
+      ? "season launched on your key. full seasons take one to two hours, this page will update when it lands"
+      : "season launched. full seasons take one to two hours, this page will update when it lands");
     await pollLiveSeason();
   }, [log, pollLiveSeason, byok, budget]);
 
   const hasOutput = lines.length > 0 || feedEvents.length > 0;
+  const showLive = liveRunning || feedEvents.length > 0;
+  const latest = scorecard && scorecard.ok && scorecard.rows && scorecard.rows.length > 0 ? scorecard : null;
+  let sectionNo = 0;
+  const nextNo = () => String(++sectionNo).padStart(2, "0");
 
   return (
-    <main className="bench-shell">
-      <header className="bench-header">
-        <h1>LLM Survivor Benchmark</h1>
-        <p className="bench-sub">
-          Social-strategy benchmark for language models: challenges, alliances, tribal votes, jury.
-          One button runs a complete season with real model API calls. No sign-in required.
-        </p>
+    <main>
+      <header className="hero">
+        <div className="wrap">
+          <p className="kicker">LLM Survivor · social strategy benchmark</p>
+          <h1>Nine AI models play Survivor. One of them wins.</h1>
+          <p className="hero-sub">
+            Each round the models talk in private, make and break vote promises, solve puzzles for immunity and vote
+            one player out. A <b>jury of the players they voted out</b> picks the winner. Every line is a live model
+            call; nothing is scripted.
+          </p>
+          <div className="tags">
+            <span className="tag on">one model per lab</span>
+            <span className="tag">neutral names: no model knows who it plays</span>
+            {budget && <span className="tag">{usd(budget.per_run_cap_cents)} cap per run</span>}
+          </div>
+
+          <div className="card run-card">
+            <div>
+              <h3>Run a season</h3>
+              <p>
+                One click starts a full season on our OpenRouter key. A season takes one to two hours; this page
+                follows it live and shows the result when it lands.
+              </p>
+              {budget && (
+                <div className="run-meta">
+                  <span>
+                    cap <b>{usd(budget.per_run_cap_cents)}</b> per run
+                  </span>
+                  <span>
+                    spent today <b>{usd(budget.spent_cents)}</b>
+                  </span>
+                  <span>one season at a time</span>
+                </div>
+              )}
+            </div>
+            <button className="btn-solid btn-big" onClick={runLive} disabled={liveRunning}>
+              {liveRunning ? (
+                <>
+                  <span className="pulse" aria-hidden="true" /> Season in progress
+                </>
+              ) : (
+                "Run a full season"
+              )}
+            </button>
+            <div className="byok">
+              <label htmlFor="byok-key">Or use your own OpenRouter key</label>
+              <input
+                id="byok-key"
+                type="password"
+                autoComplete="off"
+                placeholder="sk-or-..."
+                value={byok}
+                onChange={(e) => setByok(e.target.value)}
+                disabled={liveRunning}
+              />
+              <button className="chip" onClick={runLive} disabled={liveRunning || byok.trim().length < 8}>
+                Run on my key
+              </button>
+              <span className="note">sent once for this run, never stored</span>
+            </div>
+          </div>
+        </div>
       </header>
 
-      <section className="bench-controls">
-        <button className="bench-run" onClick={runLive} disabled={liveRunning}>
-          {liveRunning ? "SEASON IN PROGRESS..." : "RUN FULL SEASON"}
-        </button>
-        <Link href="/history">run history</Link>
-        {budget && (
-          <span className="bench-meta">
-            cap {usd(budget.per_run_cap_cents)} per run | spent today {usd(budget.spent_cents)}
-          </span>
-        )}
-      </section>
-
-      <section className="bench-byok">
-        <label htmlFor="byok-key">or use your own OpenRouter key</label>
-        <input
-          id="byok-key"
-          type="password"
-          autoComplete="off"
-          placeholder="sk-or-..."
-          value={byok}
-          onChange={(e) => setByok(e.target.value)}
-          disabled={liveRunning}
-        />
-        <button className="bench-run bench-run-quiet" onClick={runLive} disabled={liveRunning || byok.trim().length < 8}>
-          run on my key
-        </button>
-        <span className="bench-meta">the key is sent once for this run and never stored</span>
-      </section>
-
-      {lines.length > 0 && (
-        <section className="bench-log" aria-label="Run log">
-          {lines.map((line, i) => (
-            <div key={i} className={`bench-line bench-${line.kind}`}>
-              {line.text}
+      {(showLive || lines.length > 0) && (
+        <section className="sec" aria-label="Live season">
+          <div className="wrap">
+            <div className="sec-h">
+              <span className="sec-n">{nextNo()}</span>
+              <h2>Live season</h2>
             </div>
-          ))}
-        </section>
-      )}
-
-      {(liveRunning || feedEvents.length > 0) && (
-        <section className="bench-section" aria-label="Live season console">
-          <h2>
-            Live season console
-            {feedRound !== null && <span className="bench-meta"> round {feedRound}</span>}
-            {!liveRunning && feedEvents.length > 0 && (
-              <span className="bench-meta"> season ended, last events below</span>
-            )}
-          </h2>
-          {feedPlayers.length > 0 && (
-            <div className="bench-table-wrap">
-              <table className="bench-table">
-                <thead>
-                  <tr>
-                    <th>still in ({feedPlayers.length})</th>
-                    <th>plays as</th>
-                    <th>model</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {feedPlayers.map((p) => (
-                    <tr key={p.agent_id}>
-                      <td>{p.name}</td>
-                      <td>{p.alias ?? "-"}</td>
-                      <td>{p.model}</td>
-                    </tr>
+            <p className="sec-sub">The public feed of the season as it plays. Private talks stay hidden until the season ends.</p>
+            <div className="sec-body">
+              {lines.length > 0 && (
+                <div className="card card-pad log" aria-label="Run log">
+                  {lines.map((line, i) => (
+                    <div key={i} className={`log-line ${line.kind}`}>
+                      {line.text}
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="bench-log bench-log-feed" ref={feedBoxRef} onScroll={onFeedScroll}>
-            {feedEvents.length === 0 ? (
-              <div className="bench-line bench-info">
-                season is running, waiting for the first events to land...
-              </div>
-            ) : (
-              feedEvents.map((e) => (
-                <div key={e.id} className="bench-line bench-feed">
-                  <span className="feed-round">R{e.round}</span>{" "}
-                  <span className="feed-kind">{KIND_LABEL[e.kind] ?? e.kind}</span>
-                  {e.title && <span className="feed-title"> | {e.title}</span>}
-                  {e.dialogue && <div className="feed-dialogue">{e.dialogue}</div>}
                 </div>
-              ))
-            )}
+              )}
+              {showLive && (
+                <div className="card card-pad">
+                  <div className="live-head">
+                    <span className={liveRunning ? "live-state" : "live-state ended"}>
+                      <span className="pulse" aria-hidden="true" />
+                      {liveRunning ? "Live" : "Ended"}
+                      {feedRound !== null ? ` · round ${feedRound}` : ""}
+                    </span>
+                    {feedPlayers.length > 0 && <span className="k-lab">{feedPlayers.length} still in</span>}
+                  </div>
+                  {feedPlayers.length > 0 && (
+                    <div className="players">
+                      {feedPlayers.map((p) => (
+                        <div key={p.agent_id} className="player" title={p.model}>
+                          <span className="mdot" style={{ background: orgColor(p.model) }} />
+                          <span className="nm">{p.name}</span>
+                          {p.alias && <span className="al">as {p.alias}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="feed" ref={feedBoxRef} onScroll={onFeedScroll}>
+                    {feedEvents.length === 0 ? (
+                      <p className="empty">The season is starting. The first events appear within a minute or two.</p>
+                    ) : (
+                      feedEvents.map((e) => {
+                        const kind = KIND_LABEL[e.kind] ?? e.kind;
+                        return (
+                          <div key={e.id} className="feed-row">
+                            <span className="feed-r">R{e.round}</span>
+                            <span className={`feed-k k-${kind.replace(/\s+/g, "-")}`}>{kind}</span>
+                            <div className="feed-body">
+                              {e.title && <div className="feed-t">{e.title}</div>}
+                              {e.dialogue && <div className="feed-d">{e.dialogue}</div>}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+              {hasOutput && !liveRunning && (
+                <div className="row-actions">
+                  <button className="chip" onClick={resetConsole}>
+                    Clear the console
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </section>
       )}
 
-      {hasOutput && !liveRunning && (
-        <p className="bench-meta">
-          <button className="narrative-toggle" onClick={resetConsole}>
-            clear log
-          </button>
-        </p>
-      )}
-
-      {scorecard && scorecard.ok && scorecard.rows && scorecard.rows.length > 0 && (
-        <section className="bench-section" aria-label="Latest finished season">
-          <h2>Latest finished season</h2>
-          <p className="bench-result-line">
-            {scorecard.game?.winner ? `${scorecard.game.winner} won` : "no winner"}
-            <span className="bench-meta">
-              {" "}
-              {seasonDate(scorecard.season_id ?? "")} | ended in round {scorecard.game?.rounds ?? "-"} |{" "}
-              {Math.round((scorecard.elapsed_s ?? 0) / 60)} min | {scorecard.caps?.estimated_live_calls ?? "-"} live
-              calls | {usd(scorecard.caps?.estimated_cost_cents)}
-            </span>
-          </p>
-          <ScoreTable rows={scorecard.rows} />
-          <p className="bench-note">
-            {/* the report is served by the backend, not by this static export, so it is a plain link */}
-            <a href={reportHref(scorecard)}>Full season report: charts, every vote, cost and the jury</a>.{" "}
-            Index v{scorecard.index_version ?? "-"} weights: challenge accuracy 30%, vote participation 20%, strategy
-            20%, placement 15%, social 15%. <Link href="/history">Every season, with transcripts</Link>.
-          </p>
+      {(latest || report) && (
+        <section className="sec" aria-label="Latest season">
+          <div className="wrap">
+            <div className="sec-h">
+              <span className="sec-n">{nextNo()}</span>
+              <h2>Latest season</h2>
+            </div>
+            <p className="sec-sub">
+              {report?.season.winner
+                ? `${report.season.winner} won the season of ${report.season.date ?? seasonDate(report.season.season_id)}.`
+                : latest?.game?.winner
+                  ? `${latest.game.winner} won the season of ${seasonDate(latest.season_id ?? "")}.`
+                  : "The newest recorded season."}{" "}
+              The full report has every vote with the reason the model gave, every broken promise and the jury.
+            </p>
+            <div className="sec-body">
+              {report && <LatestTiles report={report} />}
+              {report && <EliminationOrder report={report} />}
+              {report && (report.moments ?? []).length > 0 && (
+                <div className="moments">
+                  {(report.moments ?? []).slice(0, 3).map((m) => (
+                    <article key={m.id} className="card card-pad moment">
+                      <p className="sub-l">
+                        {MOMENT_KIND[m.kind] ?? m.kind}
+                        {m.round ? ` · round ${m.round}` : ""}
+                      </p>
+                      <h3>{m.title}</h3>
+                      <p>{m.text}</p>
+                      <a href={`/report/${report.season.season_id}#${m.id}`}>Read the evidence</a>
+                    </article>
+                  ))}
+                </div>
+              )}
+              {latest?.rows && <ScoreTable rows={latest.rows} />}
+              <div className="report-cta">
+                <p>
+                  <b>The full season report</b>: charts, player cards, every vote and the jury, with images ready to
+                  share.
+                </p>
+                <div className="row-actions">
+                  <a className="btn-solid" href={report ? `/report/${report.season.season_id}` : latest ? reportHref(latest) : "/report"}>
+                    Open the report
+                  </a>
+                  <Link className="chip" href="/history">
+                    All seasons
+                  </Link>
+                </div>
+              </div>
+              {latest && (
+                <p className="foot">
+                  {"// "}
+                  {seasonDate(latest.season_id ?? "")} · ended in round {latest.game?.rounds ?? "-"} ·{" "}
+                  {Math.round((latest.elapsed_s ?? 0) / 60)} min · {latest.caps?.estimated_live_calls ?? "-"} model calls · est.{" "}
+                  {usd(latest.caps?.estimated_cost_cents)} · Survivor Index v{latest.index_version ?? "-"}
+                </p>
+              )}
+            </div>
+          </div>
         </section>
       )}
+
+      <section className="sec" aria-label="How a season works">
+        <div className="wrap">
+          <div className="sec-h">
+            <span className="sec-n">{nextNo()}</span>
+            <h2>How a season works</h2>
+          </div>
+          <p className="sec-sub">The same rules for every model. The model that plays the social game best should win.</p>
+          <div className="sec-body">
+            <div className="card card-pad">
+              <ul className="terms">
+                <li>
+                  <b>Neutral names</b>
+                  <span>
+                    Players go by tree names such as Ash and Cedar. No model ever sees which model it is playing; the
+                    names on this site are for readers.
+                  </span>
+                </li>
+                <li>
+                  <b>Private plan</b>
+                  <span>Each round starts with every player writing a private plan: allies, threats and who it expects to leave.</span>
+                </li>
+                <li>
+                  <b>Challenge</b>
+                  <span>
+                    The same puzzles for everyone. The best score wins immunity, and in the first rounds the winner hands a
+                    hidden idol to another player.
+                  </span>
+                </li>
+                <li>
+                  <b>Talks and promises</b>
+                  <span>
+                    Each player picks one other player to talk to in private. Vote promises are recorded and marked kept or
+                    broken once the votes are revealed.
+                  </span>
+                </li>
+                <li>
+                  <b>The vote</b>
+                  <span>Everyone votes and privately predicts how the others will vote. The player with the most votes leaves.</span>
+                </li>
+                <li>
+                  <b>The jury</b>
+                  <span>
+                    At three players left, the players already voted out question the finalists and pick the winner.
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
+  );
+}
+
+function LatestTiles({ report }: { report: ReportData }) {
+  const s = report.season;
+  const lead = (label: string) => report.takeaways.find((t) => t.label === label);
+  const name = (id?: string) => (id ? report.names[id] ?? id : "–");
+  const index = lead("Survivor Index");
+  const read = lead("Reading the vote");
+  const minutes = s.elapsed_s ? Math.round(s.elapsed_s / 60) : null;
+  return (
+    <div className="tiles">
+      <div className="card tile hl">
+        <div className="k-lab">Winner</div>
+        <div className="k-val">{s.winner ?? "In progress"}</div>
+        <div className="k-sub">{s.players} models · {s.councils} councils</div>
+      </div>
+      {index && (
+        <div className="card tile">
+          <div className="k-lab">Highest index</div>
+          <div className="k-val">{name(index.models[0])}</div>
+          <div className="k-sub">Survivor Index, 0 to 100</div>
+        </div>
+      )}
+      {read && (
+        <div className="card tile">
+          <div className="k-lab">Best read of the vote</div>
+          <div className="k-val">{name(read.models[0])}</div>
+          <div className="k-sub">predicted the others&apos; votes best</div>
+        </div>
+      )}
+      <div className="card tile">
+        <div className="k-lab">Season</div>
+        <div className="k-val">{minutes != null ? `${minutes} min` : "–"}</div>
+        <div className="k-sub">
+          rounds {s.first_round ?? "?"} to {s.last_round ?? "?"}
+          {s.run_est_cost_cents != null ? ` · est. ${usd(s.run_est_cost_cents)}` : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EliminationOrder({ report }: { report: ReportData }) {
+  const out = report.rounds.filter((r) => r.eliminated_id);
+  if (!out.length) return null;
+  const name = (id: string | null) => (id ? report.names[id] ?? id : "–");
+  const counts = (t: Record<string, number>) =>
+    Object.values(t)
+      .sort((a, b) => b - a)
+      .join("-");
+  const winnerId = report.finale?.winner_id ?? null;
+  const jury = report.finale?.tally ? counts(report.finale.tally) : "";
+  return (
+    <div className="card tl">
+      <div className="tl-head">
+        <span className="k-lab">Elimination order</span>
+        {report.season.winner && <span className="tl-winner">Winner: {report.season.winner}</span>}
+      </div>
+      <div className="tl-scroll">
+        <div className="tl-track">
+          {out.map((r) => (
+            <div key={r.round} className="tl-stop">
+              <div className="r">R{r.round}</div>
+              <div className="pt" />
+              <div className="who">{name(r.eliminated_id)}</div>
+              <div className="how">
+                out {counts(r.tally)}
+                {r.revote_tally ? ", revote" : ""}
+              </div>
+            </div>
+          ))}
+          {winnerId && (
+            <div className="tl-stop end">
+              <div className="r">Final</div>
+              <div className="pt" />
+              <div className="who">{name(winnerId)}</div>
+              <div className="how">{jury ? `jury ${jury}` : "winner"}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
