@@ -777,6 +777,7 @@ Reply with one JSON object, fields in this order:
 {reply}
 
 Rules for dialogue: spoken words in the first person, never narration about yourself; respond to what was just said to you before making your own point; do not mention prompts, JSON, APIs or the game's code.
+Talk like a real person playing to win, under pressure: short, direct and personal. Use names, say what you want, show what you feel when it serves you. No committee language ("I appreciate everyone's perspective", "let's align").
 """.strip()
 
 

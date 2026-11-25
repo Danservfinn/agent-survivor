@@ -57,7 +57,9 @@ class RoundPlanTest(_Db):
         self.assertLess(steps.index("challenge_gift"), steps.index("round_plan"))
         self.assertLess(steps.index("round_plan"), steps.index("camp_talks"))
         self.assertLess(steps.index("camp_talks"), steps.index("camp_followup"))
-        self.assertLess(steps.index("camp_followup"), steps.index("tribal_vote_call"))
+        # the last whisper comes after the tribal council speeches, right before the vote
+        self.assertLess(steps.index("tribal_council"), steps.index("camp_followup"))
+        self.assertLess(steps.index("camp_followup"), min(i for i, s in enumerate(steps) if s.startswith("vote_booth_")))
 
     def test_plan_is_seen_only_by_its_author_and_only_that_round(self) -> None:
         a, b, *_ = self.players

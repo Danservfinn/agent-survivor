@@ -176,6 +176,27 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- the game plan each player writes for the season (round 1) and
+            -- rewrites once half the cast is gone; private to its author
+            CREATE TABLE IF NOT EXISTS GamePlans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                plan TEXT NOT NULL DEFAULT '{}',
+                provider TEXT NOT NULL DEFAULT 'deterministic',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- a player's confessional to the camera after each council: private
+            -- in the game (only its author reads it back), shown to viewers
+            CREATE TABLE IF NOT EXISTS Confessionals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- each player's private plan for a round, written before the challenge
             CREATE TABLE IF NOT EXISTS PrivatePlans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -497,6 +518,8 @@ def seed_demo(
         conn.execute("DELETE FROM ViewerState")
         conn.execute("DELETE FROM Promises")
         conn.execute("DELETE FROM SpoiledVotes")
+        conn.execute("DELETE FROM GamePlans")
+        conn.execute("DELETE FROM Confessionals")
         conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
         conn.execute("DELETE FROM Alliances")
@@ -579,6 +602,8 @@ def _database_ready() -> bool:
             "Promises",
             "PrivatePlans",
             "SpoiledVotes",
+            "GamePlans",
+            "Confessionals",
         }
         tables = {
             row["name"]

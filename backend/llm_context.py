@@ -145,6 +145,8 @@ def build_agent_episode_context(
         "your_promises": _your_promises(conn, actor_id),
         # private: this round's plan, and how well past vote predictions held up
         "your_plan_this_round": _your_plan(conn, actor_id, round_number),
+        "your_game_plan": _your_game_plan(conn, actor_id),
+        "your_last_confessional": _your_last_confessional(conn, actor_id, round_number),
         "your_predictions": _your_predictions(conn, actor_id),
         "visible_game_state": _visible_game_state(conn, current_step),
         "public_timeline": public_timeline,
@@ -500,6 +502,25 @@ def _challenge_history(conn) -> list[dict[str, Any]]:
             }
         )
     return history
+
+
+def _your_game_plan(conn, actor_id: str) -> dict[str, Any] | None:
+    """The game plan this player wrote for the season, latest version."""
+    row = conn.execute(
+        "SELECT round, plan FROM GamePlans WHERE agent_id = ? ORDER BY round DESC, id DESC LIMIT 1", (actor_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    return {"written_in_round": row["round"], **json.loads(row["plan"] or "{}")}
+
+
+def _your_last_confessional(conn, actor_id: str, round_number: int) -> dict[str, Any] | None:
+    """What this player told the camera after the last council: its own voice."""
+    row = conn.execute(
+        "SELECT round, text FROM Confessionals WHERE agent_id = ? AND round < ? ORDER BY round DESC, id DESC LIMIT 1",
+        (actor_id, round_number + 1),
+    ).fetchone()
+    return {"round": row["round"], "you_said": row["text"]} if row else None
 
 
 def _your_plan(conn, actor_id: str, round_number: int) -> dict[str, Any] | None:

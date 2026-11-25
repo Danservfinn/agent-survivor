@@ -1047,6 +1047,10 @@ def _apply_step(
         written = _round_plans(conn, round_number)
         return [], {"round_plans": written}, f"{written} private plans"
 
+    if step == "game_plan":
+        written = _game_plans(conn, round_number)
+        return [], {"game_plans": written}, f"{written} game plans"
+
     if step == "camp_followup":
         events = _followup_events(conn, round_number, turn_id)
         return events, {"followups": len(events)}, f"{len(events)} follow-up messages"
@@ -1162,6 +1166,9 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
     if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
         return [
             "challenge_intro",
+            # each player writes its game plan for the season (round 1) and
+            # rewrites it once half the cast is gone
+            *(["game_plan"] if _game_plan_round(conn, state["current_round"]) else []),
             "challenge_attempts",
             "challenge_result",
             "challenge_gift",
@@ -1169,11 +1176,11 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
             "round_plan",
             # every conversation in a round is one a player chose to have
             "camp_talks",
-            # one short private message to react to what the talks revealed
-            "camp_followup",
             "tribal_vote_call",
             # everyone speaks once in front of everyone before the vote
             "tribal_council",
+            # then one last private whisper, after hearing the speeches
+            "camp_followup",
             *vote_booth_steps,
             *vote_reveal_steps,
             "elimination",
@@ -1634,6 +1641,9 @@ def _plan_from_reply(conn, written_plan: dict[str, Any]) -> dict[str, Any]:
         "threats": str(written_plan.get("threats") or "")[:400],
         "allies": str(written_plan.get("allies") or "")[:400],
         "talk_plan": str(written_plan.get("talk_plan") or "")[:400],
+        # kept since 2026-11-25: dropping them threw the image goal away
+        "image_goal": str(written_plan.get("image_goal") or "")[:300],
+        "image_moves": str(written_plan.get("image_moves") or "")[:300],
         "expected_out": _resolve_player(conn, written_plan.get("expected_out")),
         "confidence": written_plan.get("confidence"),
     }
@@ -1680,23 +1690,123 @@ def _round_plans_parallel(conn, round_number: int) -> int:
     return written
 
 
+GAME_PLAN_TASK = (
+    "Before the game starts, decide who you are in it. Real Survivor players arrive with an identity and a "
+    "plan: under the radar, the one who runs the votes, the loyal ally, the challenge threat, the social "
+    "glue. Choose yours, say how you plan to reach the final three and win the jury, and what would make "
+    "you change course. This is yours; nobody assigns it."
+)
+GAME_PLAN_REVISIT_TASK = (
+    "Half the cast is gone. Look back at the game plan you wrote at the start (your_game_plan) and at how "
+    "the game has actually gone. Rewrite it: keep it, adjust it or throw it out, and say why."
+)
+GAME_PLAN_FIELDS = {
+    "identity": "who you are in this game: the kind of player you will be",
+    "how_to_win": "how you will reach the final three and win the jury",
+    "change_if": "what would make you change this plan",
+}
+
+
+def _game_plan_round(conn, round_number: int) -> bool:
+    """Round 1, and the first round in which half the cast or fewer remain
+    (once). A round that already has plans keeps its step, so the step list
+    does not change under a running round."""
+    rounds = [row["round"] for row in conn.execute("SELECT DISTINCT round FROM GamePlans ORDER BY round")]
+    if round_number in rounds:
+        return True
+    if not rounds:
+        return round_number == database_first_round()
+    if len(rounds) >= 2:
+        return False
+    cast = conn.execute("SELECT COUNT(*) AS n FROM Agents").fetchone()["n"]
+    active = conn.execute("SELECT COUNT(*) AS n FROM Agents WHERE status = 'active'").fetchone()["n"]
+    return active <= (cast + 1) // 2
+
+
+def database_first_round() -> int:
+    from .database import FIRST_ROUND
+
+    return FIRST_ROUND
+
+
+def _game_plans(conn, round_number: int) -> int:
+    """Every player writes (or rewrites) its own game plan. Private, read by
+    nobody else this step, so the calls can run at once."""
+    revisit = bool(conn.execute("SELECT 1 FROM GamePlans WHERE round < ?", (round_number,)).fetchone())
+    task = GAME_PLAN_REVISIT_TASK if revisit else GAME_PLAN_TASK
+    pending = [
+        agent
+        for agent in _active_agent_rows(conn)
+        if not conn.execute(
+            "SELECT 1 FROM GamePlans WHERE round = ? AND agent_id = ?", (round_number, agent["agent_id"])
+        ).fetchone()
+    ]
+    if not should_use_live_llm():
+        for agent in pending:
+            plan = {"identity": "A steady player.", "how_to_win": "Stay in the majority.", "change_if": "I am targeted."}
+            conn.execute(
+                "INSERT INTO GamePlans (round, agent_id, plan, provider) VALUES (?, ?, ?, 'deterministic')",
+                (round_number, agent["agent_id"], json_dumps(plan)),
+            )
+        return len(pending)
+    contexts = {
+        agent["agent_id"]: build_agent_episode_context(
+            conn, actor_id=agent["agent_id"], round_number=round_number, current_step="game_plan"
+        )
+        for agent in pending
+    }
+    jobs = [
+        (lambda agent=agent: request_private_writing(
+            actor=agent, task=task, fields=GAME_PLAN_FIELDS, episode_context=contexts[agent["agent_id"]], max_tokens=500
+        ))
+        for agent in pending
+    ]
+    results = _run_parallel(jobs) if _parallel_enabled() else [_call_or_error(job) for job in jobs]
+    written = 0
+    for agent, (reply, error) in zip(pending, results):
+        if error is not None:
+            print(f"live game plan failed for {agent['agent_id']}: {error}")
+            continue
+        plan = {key: str(reply.get(key) or "")[:400] for key in GAME_PLAN_FIELDS}
+        conn.execute(
+            "INSERT INTO GamePlans (round, agent_id, plan, provider) VALUES (?, ?, ?, ?)",
+            (round_number, agent["agent_id"], json_dumps(plan), live_llm_provider()),
+        )
+        written += 1
+    return written
+
+
+def _call_or_error(job: Any) -> tuple[Any, Exception | None]:
+    try:
+        return job(), None
+    except Exception as exc:  # noqa: BLE001 - the same contract as _run_parallel
+        return None, exc
+
+
 def _write_notebook(conn, round_number: int, agent: dict[str, Any], eliminated_name: str, remaining: int) -> None:
     """The player rewrites its own private notebook after the council. It replaces
     the old memory and is capped so it cannot crowd out the game record."""
-    note = None
+    note = confessional = None
     if should_use_live_llm():
         context = build_agent_episode_context(
             conn, actor_id=agent["agent_id"], round_number=round_number, current_step="memory_update"
         )
         try:
-            note = _request_notebook(agent, context)
+            note, confessional = _request_notebook(agent, context)
         except Exception as exc:
             print(f"live notebook failed for {agent['agent_id']}: {exc}")
-    _store_notebook(conn, round_number, agent, note, eliminated_name, remaining)
+    _store_notebook(conn, round_number, agent, note, eliminated_name, remaining, confessional)
 
 
-def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> str | None:
-    """The model call for a notebook. Needs no database, so it can run in a worker."""
+CONFESSIONAL_FIELD = (
+    "your confessional to the camera, first person, under 80 words: what you fear right now, who you "
+    "trust and who you don't, and what you want. Only you read it back next round; viewers see it."
+)
+
+
+def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> tuple[str | None, str | None]:
+    """The model call for a notebook and the confessional. Needs no database,
+    so it can run in a worker. Returns (notebook, confessional)."""
     if prompt_profile() == "v2":
         written = request_private_writing(
             actor=agent,
@@ -1707,11 +1817,14 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> str | N
                 f"remaining player, and your plan for next round, including how you will play the next challenge "
                 f"(to win, or to do worse on purpose and look less threatening). At most {NOTEBOOK_MAX_CHARS} characters."
             ),
-            fields={"notebook": f"your new notebook, first person, at most {NOTEBOOK_MAX_CHARS} characters"},
+            fields={
+                "notebook": f"your new notebook, first person, at most {NOTEBOOK_MAX_CHARS} characters",
+                "confessional": CONFESSIONAL_FIELD,
+            },
             episode_context=context,
-            max_tokens=600,
+            max_tokens=750,
         )
-        return str(written.get("notebook") or "").strip() or None
+        return str(written.get("notebook") or "").strip() or None, _confessional_text(written)
     written = request_private_writing(
         actor=agent,
         task=(
@@ -1724,16 +1837,32 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> str | N
             "image": "how the others see you now and the evidence (votes against you, talks you were left out of, what was said about you in public), and whether this round's image goal worked",
             "lessons": "what you predicted vs what happened, and who lied to you",
             "plan": "your plan for next round",
+            "confessional": CONFESSIONAL_FIELD,
         },
         episode_context=context,
-        max_tokens=600,
+        max_tokens=750,
     )
-    return _render_notebook(written)
+    return _render_notebook(written), _confessional_text(written)
+
+
+def _confessional_text(written: dict[str, Any]) -> str | None:
+    return str(written.get("confessional") or "").strip()[:700] or None
 
 
 def _store_notebook(
-    conn, round_number: int, agent: dict[str, Any], note: str | None, eliminated_name: str, remaining: int
+    conn,
+    round_number: int,
+    agent: dict[str, Any],
+    note: str | None,
+    eliminated_name: str,
+    remaining: int,
+    confessional: str | None = None,
 ) -> None:
+    if confessional:
+        conn.execute(
+            "INSERT INTO Confessionals (round, agent_id, text) VALUES (?, ?, ?)",
+            (round_number, agent["agent_id"], confessional),
+        )
     if note is None:
         # no model (or it failed): keep the old memory and add one line, still within the cap
         previous = str(agent.get("confessional_memory") or "")
@@ -1762,7 +1891,8 @@ def _render_notebook(written: dict[str, Any]) -> str | None:
 
 
 def _followup_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
-    """After the talks each player may send one short private message, or pass."""
+    """After the tribal council speeches each player may send one last short
+    private whisper before the vote, or pass."""
     if not should_use_live_llm():
         return []
     active = _active_agent_rows(conn)
@@ -1778,9 +1908,10 @@ def _followup_events(conn, round_number: int, turn_id: int) -> list[dict[str, An
                 actor_id=agent["agent_id"],
                 step="camp_followup",
                 scene_context=(
-                    "The private talks are over. Before the vote you may send one short private message to one "
-                    "player, for example to act on a lie or a swing you noticed. Put their id in target_id and the "
-                    "message in dialogue. To send nothing, set target_id to null."
+                    "Tribal council has spoken and the vote is next. You may send one last short private whisper "
+                    "to one player, for example to answer what was said about you, lock in a vote, or act on a lie "
+                    "or a swing you just noticed. Put their id in target_id and the message in dialogue. To send "
+                    "nothing, set target_id to null."
                 ),
                 response_kind="followup",
                 episode_context=context,
@@ -3284,10 +3415,11 @@ def _memory_update_event(conn, round_number: int, turn_id: int) -> dict[str, Any
         results = _run_parallel(
             [(lambda agent=agent, context=context: _request_notebook(agent, context)) for agent, context in zip(active, contexts)]
         )
-        for agent, (note, error) in zip(active, results):
+        for agent, (written, error) in zip(active, results):
             if error is not None:
                 print(f"live notebook failed for {agent['agent_id']}: {error}")
-            _store_notebook(conn, round_number, agent, note, eliminated_name, len(active))
+            note, confessional = written if written else (None, None)
+            _store_notebook(conn, round_number, agent, note, eliminated_name, len(active), confessional)
     else:
         for agent in active:
             _write_notebook(conn, round_number, agent, eliminated_name, len(active))
@@ -4063,6 +4195,76 @@ def _strategic_record(
     }
 
 
+def juror_history(conn, juror_id: str, finalist_id: str) -> dict[str, Any]:
+    """What this finalist did to this juror, from the tables: what a real juror
+    remembers. Votes are the true votes (jurors see them at the finale)."""
+    names = {row["agent_id"]: row["pseudonym"] for row in conn.execute("SELECT agent_id, pseudonym FROM Agents")}
+    me = names.get(juror_id, juror_id)
+    out_round = conn.execute("SELECT elimination_round FROM Agents WHERE agent_id = ?", (juror_id,)).fetchone()
+    out_round = out_round["elimination_round"] if out_round else None
+    their_votes = [
+        row["round"]
+        for row in conn.execute(
+            "SELECT round FROM Votes WHERE voter_id = ? AND target_id = ? AND revealed = 1 ORDER BY round",
+            (finalist_id, juror_id),
+        )
+    ]
+    my_votes = [
+        row["round"]
+        for row in conn.execute(
+            "SELECT round FROM Votes WHERE voter_id = ? AND target_id = ? AND revealed = 1 ORDER BY round",
+            (juror_id, finalist_id),
+        )
+    ]
+    promises = [
+        {"round": entry["round"], "promised_vote": entry["promised_vote"], "status": entry["status"], "they_voted": entry["actual_vote"]}
+        for entry in promise_record(conn, finalist_id)
+        if entry["promised_to"] == me
+    ]
+    pacts = []
+    for row in conn.execute(
+        """
+        SELECT mine.alliance_id, theirs.status, theirs.left_round, theirs.betrayed_round
+        FROM AllianceMemberships mine
+        JOIN AllianceMemberships theirs ON theirs.alliance_id = mine.alliance_id AND theirs.agent_id = ?
+        WHERE mine.agent_id = ?
+        """,
+        (finalist_id, juror_id),
+    ).fetchall():
+        if row["status"] == "left":
+            pacts.append(f"they left your pact openly in round {row['left_round']}")
+        elif row["status"] == "betrayed":
+            pacts.append(f"they betrayed your pact in round {row['betrayed_round']}")
+        else:
+            pacts.append("they stayed in your pact")
+    talks = conn.execute(
+        """
+        SELECT COUNT(*) AS n FROM GroupDiscussionParticipants a
+        JOIN GroupDiscussionParticipants b ON a.discussion_id = b.discussion_id
+        WHERE a.agent_id = ? AND b.agent_id = ?
+        """,
+        (juror_id, finalist_id),
+    ).fetchone()["n"]
+    return {
+        "finalist": names.get(finalist_id, finalist_id),
+        "voted_you_out": out_round in their_votes,
+        "rounds_they_voted_against_you": their_votes,
+        "rounds_you_voted_against_them": my_votes,
+        "promises_they_made_you": promises,
+        "pacts_with_you": pacts,
+        "private_talks_together": talks,
+    }
+
+
+def _juror_history_text(conn, juror_id: str, finalists: list[dict[str, Any]]) -> str:
+    history = [juror_history(conn, juror_id, finalist["agent_id"]) for finalist in finalists]
+    return (
+        " Your own history with each finalist (what they did to you, from the record): "
+        + json_dumps(history)
+        + " How you feel about that is yours to weigh."
+    )
+
+
 def _dossiers_text(conn, finalists: list[dict[str, Any]]) -> str:
     return json.dumps([_finalist_dossier(conn, agent["agent_id"]) for agent in finalists], separators=(",", ":"))
 
@@ -4091,6 +4293,7 @@ def _real_jury_question(
             )
             + "Name a specific vote, promise or move from the record. "
             f"{jury_standard()} Finalist records: {_dossiers_text(conn, finalists)}"
+            + _juror_history_text(conn, juror["agent_id"], finalists)
         ),
         response_kind="dialogue",
         episode_context=episode_context,
@@ -4160,6 +4363,7 @@ def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
             "The pitches, the finalists' questions to each other, their answers to the jury and their closing "
             "rebuttals are in the record. "
             f"{jury_standard()} Finalist records: {_dossiers_text(conn, finalist_rows)}"
+            + _juror_history_text(conn, juror_id, finalist_rows)
         )
         if attempt > 0:
             ballot = _target_roster_line(finalist_rows)
@@ -5204,7 +5408,7 @@ def _tie_talk(
     speakers: list[str],
     kind: str,
     title: str,
-    scene: str,
+    scene: Any,
     phase: str = "tribal",
     private_to: list[str] | None = None,
 ) -> list[dict[str, str]]:
@@ -5219,7 +5423,8 @@ def _tie_talk(
                 conn,
                 actor_id=speaker,
                 step=kind,
-                scene_context=f"{scene} Said so far: {said or '(nothing yet)'}",
+                # a scene may differ per speaker (a juror's own history)
+                scene_context=f"{scene(speaker) if callable(scene) else scene} Said so far: {said or '(nothing yet)'}",
                 response_kind="dialogue",
                 episode_context=context,
                 allowed_targets=[],
@@ -5360,7 +5565,8 @@ def _parting_words_event(conn, round_number: int, turn_id: int) -> dict[str, Any
 def _jury_deliberation_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     """Jurors talk it over among themselves before voting; finalists do not hear."""
     jurors = [juror["agent_id"] for juror in _jury_rows(conn)]
-    finalists = ", ".join(agent["pseudonym"] for agent in _active_agent_rows(conn))
+    finalist_rows = _active_agent_rows(conn)
+    finalists = ", ".join(agent["pseudonym"] for agent in finalist_rows)
     _tie_talk(
         conn,
         round_number,
@@ -5370,9 +5576,10 @@ def _jury_deliberation_event(conn, round_number: int, turn_id: int) -> dict[str,
         title="Jury Deliberation",
         phase="finale",
         private_to=jurors,
-        scene=(
+        scene=lambda juror: (
             f"Jury deliberation, before the final vote between {finalists}. Only jurors hear this. Speak once, "
             "in under 100 words: who you lean toward and why, and answer what other jurors have said."
+            + _juror_history_text(conn, juror, finalist_rows)
         ),
     )
     return row_to_dict(conn.execute("SELECT * FROM StoryEvents WHERE kind = 'jury_deliberation' ORDER BY id DESC LIMIT 1").fetchone())
@@ -6480,6 +6687,8 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         return len(_active_agent_rows(conn))
     if step == "tribal_council":
         return len(_active_agent_rows(conn))
+    if step == "game_plan":
+        return len(_active_agent_rows(conn))
     if step == "parting_words":
         return 1
     if step == "jury_deliberation":
@@ -6525,6 +6734,7 @@ _STEP_RESPONSE_KIND = {
     "finale_crossfire": "finale_pitch",
     "finale_rebuttal": "finale_pitch",
     "tribal_council": "conversation",
+    "game_plan": "conversation",
     "parting_words": "conversation",
     "jury_deliberation": "conversation",
     "winner_declared": "host",
