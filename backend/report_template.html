@@ -1140,6 +1140,8 @@ function download() {
 }
 /* ---------- sharing: every moment and player card can be posted with its image and its credit */
 var HANDLE = LINKS.handle, SHARE = LINKS.share, REPORT_URL = LINKS.report;
+/* images are cached at the edge for hours; a rescore changes the index version, so the URL changes too */
+var IMGV = S.index_version ? "?v=" + S.index_version : "";
 var KIND = { result: "The result", promise: "Broken promise", vote: "Close vote", idol: "Hidden idol", read: "Vote read", puzzle: "Puzzles", target: "Target" };
 function withCredit(text) { return text + (HANDLE ? "\n\nvia " + HANDLE : ""); }
 function intentUrl(text, anchor) {
@@ -1162,7 +1164,7 @@ function shareRow(id, post) {
   return h("div", { class: "share-row" },
     h("a", { class: "chip chip-x", href: intentUrl(post, id), target: "_blank", rel: "noopener", text: "Post on X" }),
     copyButton("Copy text", function () { return withCredit(post) + (REPORT_URL ? "\n" + REPORT_URL + "#" + id : ""); }),
-    SHARE ? h("a", { class: "chip", href: SHARE + id + ".png", target: "_blank", rel: "noopener", text: "Image" }) : null);
+    SHARE ? h("a", { class: "chip", href: SHARE + id + ".png" + IMGV, target: "_blank", rel: "noopener", text: "Image" }) : null);
 }
 function tagName(id) { return nm(id) + (ALIAS[id] ? " (" + ALIAS[id] + ")" : ""); }
 function receiptLabel(r) { return tagName(r.who) + ", " + r.context + (r.to ? " " + tagName(r.to) : ""); }
@@ -1178,8 +1180,8 @@ function moments() {
   return add(sec, [
     h("div", { class: "controls" }, copyButton("Copy the draft thread (" + (D.thread || []).length + " posts)", function () { return thread; }),
       SHARE && LINKS.video ? h("a", { class: "chip chip-x", href: SHARE + "season.mp4", target: "_blank", rel: "noopener", text: "Season video" }) : null,
-      SHARE ? h("a", { class: "chip", href: SHARE + "season.png", target: "_blank", rel: "noopener", text: "Season image" }) : null,
-      SHARE ? h("a", { class: "chip", href: SHARE + "leaderboard.png", target: "_blank", rel: "noopener", text: "Leaderboard image" }) : null),
+      SHARE ? h("a", { class: "chip", href: SHARE + "season.png" + IMGV, target: "_blank", rel: "noopener", text: "Season image" }) : null,
+      SHARE ? h("a", { class: "chip", href: SHARE + "leaderboard.png" + IMGV, target: "_blank", rel: "noopener", text: "Leaderboard image" }) : null),
     h("div", { class: "moment-grid" }, list.map(function (m) {
       return h("article", { class: "card card-pad moment", id: m.id },
         h("p", { class: "sub-l", text: (KIND[m.kind] || m.kind) + (m.round ? " · round " + m.round : "") }),
@@ -1290,7 +1292,7 @@ app.appendChild(main);
 app.appendChild(h("footer", null, h("div", { class: "wrap" },
   HANDLE ? h("div", { class: "card cta" }, h("p", { text: "A new season runs with new models. The results and the best moments are posted on X first." }), h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE })) : null,
   LINKS.contact ? h("div", { class: "card cta" }, h("p", { text: "Want a model in the next season, or the full data for every season?" }), h("a", { class: "btn-solid", href: LINKS.contact, text: "Get in touch" })) : null,
-  h("p", { text: "LLM Survivor season " + S.season_id + " · report format v" + D.report_version + " · built from the season's own database with no model calls." }))));
+  h("p", { text: "LLM Survivor season " + S.season_id + " · scored with Survivor Index v" + S.index_version + (S.rescored_at ? ", rescored " + String(S.rescored_at).slice(0, 10) : "") + " · report format v" + D.report_version + " · built from the season's own database with no model calls." }))));
 })();
 </script>
 </body>

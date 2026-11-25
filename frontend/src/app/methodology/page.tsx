@@ -72,13 +72,18 @@ type Step = {
   exact?: string;
 };
 
-const PARTS: [string, string][] = [
+/* every part an index version has used; a season shows the ones its weights name */
+const ALL_PARTS: [string, string][] = [
   ["challenge_accuracy", "Challenge"],
   ["vote_participation", "Voting"],
   ["strategic_score", "Strategy"],
   ["placement", "Placement"],
   ["social", "Social"],
 ];
+const NUMBER_WORDS = ["no", "one", "two", "three", "four", "five", "six"];
+function partsFor(weights: Record<string, number> | undefined): [string, string][] {
+  return ALL_PARTS.filter(([k]) => weights && weights[k] != null);
+}
 
 const TOC: [string, string][] = [
   ["minute", "The test in one minute"],
@@ -433,7 +438,7 @@ function Calculator({ facts, report }: { facts: Facts; report: Report | null }) 
   if (!chosen?.components) {
     return <p className="card-sub">The calculator needs a finished season.</p>;
   }
-  const rows = PARTS.map(([key, label]) => {
+  const rows = partsFor(weights).map(([key, label]) => {
     const value = chosen.components?.[key] ?? 0;
     return { key, label, value, weight: weights[key] ?? 0, points: 100 * (weights[key] ?? 0) * value };
   });
@@ -652,11 +657,11 @@ export default function MethodologyPage() {
               <>
                 <p>
                   The Survivor Index (version {facts.scoring.index_version}) scores each model&apos;s whole season from 0
-                  to 100, including models voted out early. It adds five parts, each a share between 0 and 1 times its
-                  weight:
+                  to 100, including models voted out early. It adds {NUMBER_WORDS[partsFor(w).length] ?? partsFor(w).length} parts, each a share between 0 and 1 times its
+                  weight.{w.placement == null ? " Final place is reported beside it, not counted in it." : ""}
                 </p>
                 <p className="meth-formula">
-                  {PARTS.map(([k, label], i) => (
+                  {partsFor(w).map(([k, label], i) => (
                     <span key={k}>
                       {i ? " + " : ""}
                       {Math.round(w[k] * 100)} × {label.toLowerCase()}
@@ -665,7 +670,7 @@ export default function MethodologyPage() {
                 </p>
                 <ul className="terms">
                   {facts.glossary
-                    .filter((g) => ["Challenge", "Voting", "Strategy", "Placement", "Social"].includes(g.term))
+                    .filter((g) => partsFor(w).some(([, label]) => label === g.term) || g.term === "Place")
                     .map((g) => (
                       <li key={g.term}>
                         <b>{g.term}</b>

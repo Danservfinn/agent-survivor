@@ -130,6 +130,16 @@ CHANGES: list[dict[str, Any]] = [
         ],
         "fingerprint": "0a960fd93cd1a3d6",
     },
+    {
+        "version": 10,
+        "since": "2026-11-25T18:00",
+        "title": "Survivor Index v6",
+        "changes": [
+            "No change to how the game plays. The score now counts each part over the councils a player actually sat at, including revotes and spoiled ballots: the finale is no longer a missed vote, a tied first ballot credits the player who left, influence is a share of councils, and votes survived are no longer scaled to the most-targeted player.",
+            "Placement leaves the index and is shown on its own; the weights are puzzles 25, voting 15, strategy 35, social 25. Every past season is rescored.",
+        ],
+        "fingerprint": "cfb170f666f85844",
+    },
 ]
 
 

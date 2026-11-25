@@ -227,7 +227,7 @@ class SeasonReportTest(unittest.TestCase):
                 clip = api.season_report_share_image(SEASON, "season.mp4")
                 self.assertEqual(clip.media_type, "video/mp4")
                 html = api.season_report_page(SEASON).body.decode()
-                self.assertIn(f'<meta property="og:image" content="https://example.test/report/{SEASON}/share/season.png">', html)
+                self.assertIn(f'<meta property="og:image" content="https://example.test/report/{SEASON}/share/season.png?v={season_report.SURVIVOR_INDEX_VERSION}">', html)
                 self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
                 self.assertIn('<meta name="twitter:creator" content="@someone">', html)
                 for bad in ("thread.md", "..%2Fseason.db", "nope.png"):

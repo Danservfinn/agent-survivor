@@ -20,9 +20,16 @@ def definitions(weights: dict[str, float], index_version: int | str, *, social: 
     rows = [
         (
             "Survivor Index",
-            f"A 0 to 100 score for one season, version {index_version}. It adds five parts: challenge ({w('challenge_accuracy')} points), "
-            f"voting ({w('vote_participation')}), strategy ({w('strategic_score')}), placement ({w('placement')}) and social ({w('social')}). "
-            "The winner is chosen by the jury, not by this score, so the two can disagree.",
+            (
+                f"A 0 to 100 score for one season, version {index_version}. It adds four parts: challenge ({w('challenge_accuracy')} points), "
+                f"voting ({w('vote_participation')}), strategy ({w('strategic_score')}) and social ({w('social')}). Final place is shown "
+                "beside it, not counted in it. "
+                if "placement" not in weights
+                else f"A 0 to 100 score for one season, version {index_version}. It adds five parts: challenge ({w('challenge_accuracy')} points), "
+                f"voting ({w('vote_participation')}), strategy ({w('strategic_score')}), placement ({w('placement')}) and social ({w('social')}). "
+            )
+            + "The winner is chosen by the jury, not by this score, so the two can disagree. One season is one game: players of equal "
+            "skill spread widely in a single season, so the order says what happened, not which model is better.",
         ),
         (
             "Challenge",
@@ -32,13 +39,29 @@ def definitions(weights: dict[str, float], index_version: int | str, *, social: 
             if social
             else "The share of challenge puzzles a model answered right.",
         ),
-        ("Voting", "The share of councils a model was in the game for in which it cast a vote."),
+        (
+            "Voting",
+            "The share of the councils a model sat at in which it cast a valid vote that counted. A spoiled ballot counts as a council "
+            "with no vote. The finale is not a council.",
+        )
+        if "placement" not in weights
+        else ("Voting", "The share of councils a model was in the game for in which it cast a vote."),
         (
             "Strategy",
-            "Half is how often the model's vote matched the most-voted player of the round. 30% is whether it ever voted for a player "
+            "Counted over the councils the model sat at, using its deciding ballot (the revote when there was one). Half is the share "
+            "of councils where that ballot matched the most-voted player; on a tied ballot the player who left counts as the most-voted. "
+            "30% is the share of councils where it voted for the player who left. 20% is the share of the votes cast against it at "
+            "councils it survived (all of it if nobody ever voted for it)."
+            if "placement" not in weights
+            else "Half is how often the model's vote matched the most-voted player of the round. 30% is whether it ever voted for a player "
             "who left that round. 20% is the votes it received and survived, relative to the most-targeted survivor of the season.",
         ),
-        ("Placement", f"Linear by final place: the winner gets the full {w('placement')} points and the first player out gets the least."),
+        (
+            ("Place", "Where the model finished: the winner first, the other finalists by jury votes, then the players voted out, last out "
+             "first. Players still in a stopped season share a place range. Shown beside the index, not counted in it.")
+            if "placement" not in weights
+            else ("Placement", f"Linear by final place: the winner gets the full {w('placement')} points and the first player out gets the least.")
+        ),
         ("Social", "60% is jury votes received and 40% is alliances joined, each relative to the season's highest."),
         (
             "Voted with outcome",

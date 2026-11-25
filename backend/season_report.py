@@ -19,6 +19,7 @@ import json
 import re
 import sqlite3
 import statistics
+import time
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,7 @@ from typing import Any
 from .season_character import build_character
 from .council_record import councils as council_records, tally_text
 from . import glossary, live_cost, report_facts, rules_changelog, season_story, season_video
-from .benchmark_scoring import LADDER_RUNGS, WEIGHTS, score_season
+from .benchmark_scoring import LADDER_RUNGS, SURVIVOR_INDEX_VERSION, WEIGHTS, score_season
 
 REPORT_VERSION = 1
 TEMPLATE_PATH = Path(__file__).resolve().parent / "report_template.html"
@@ -927,6 +928,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "cost_complete": bool(known_costs) and len(known_costs) == len(models),
         "cost_basis": models[0]["cost_basis"] if models else None,
         "recorded_at": stored.get("generated_at"),
+        "rescored_at": stored.get("rescored_at"),
         "totals": scorecard.get("totals") or {},
     }
     if season.get("entry"):
@@ -990,6 +992,10 @@ def cached_season_report(season_dir: Path | str) -> dict[str, Any]:
     card = season_dir / "scorecard.json"
     wal = season_dir / "season.db-wal"
     stamp = (
+        # a code change (new index or template) rebuilds every cached report
+        REPORT_VERSION,
+        SURVIVOR_INDEX_VERSION,
+        TEMPLATE_PATH.stat().st_mtime,
         db.stat().st_mtime,
         # size, not mtime: a read-only open creates an empty WAL file, a write grows it
         wal.stat().st_size if wal.exists() else 0,
@@ -1042,7 +1048,7 @@ def render_report_html(
         lead = (report.get("takeaways") or [{}])[0].get("text") or "After-action report and benchmark results."
         tags = {"og:type": "article", "og:title": title, "og:description": lead, "og:url": report_url, "twitter:card": "summary"}
         if share_base and share_base.startswith("/"):
-            tags["og:image"] = f"{site.rstrip('/')}{share_base}season.png"
+            tags["og:image"] = f"{site.rstrip('/')}{share_base}season.png?v={season.get('index_version') or ''}"
             tags["twitter:card"] = "summary_large_image"
         if handle:
             tags["twitter:creator"] = handle
@@ -1072,6 +1078,28 @@ def _json_for_script(value: Any) -> str:
 
 def _html_escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
+
+
+def rescore_scorecard(season_dir: Path | str) -> bool:
+    """Bring a season's stored scorecard to the current Survivor Index. The old
+    file is kept beside it as scorecard.v<old>.json (never served). Returns True
+    when the scorecard changed."""
+    season_dir = Path(season_dir)
+    path = season_dir / "scorecard.json"
+    db = season_dir / "season.db"
+    if not path.exists() or not db.exists():
+        return False
+    stored = _json(_read_text(path), {})
+    if stored.get("index_version") == SURVIVOR_INDEX_VERSION:
+        return False
+    keep = season_dir / f"scorecard.v{stored.get('index_version') or 'old'}.json"
+    if not keep.exists():
+        keep.write_text(path.read_text())
+    card = score_season(db)
+    stored.update({key: card[key] for key in ("index_version", "weights", "rows", "totals", "game") if key in card})
+    stored["rescored_at"] = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    path.write_text(json.dumps(stored, indent=1, ensure_ascii=False))
+    return True
 
 
 def write_report_files(
@@ -1106,7 +1134,7 @@ def write_report_files(
         if video
         else {"written": False, "reason": "video not requested"}
     )
-    if clip["written"]:
+    if clip["written"] or (not video and (share_dir / season_video.CLIP_NAME).exists()):
         # the clip leads the thread, and the page links it
         thread = season_story.build_thread(report, handle=season_story.safe_handle(handle), report_url=report_url, video=True)
         (share_dir / "thread.md").write_text(season_story.thread_markdown(thread))
