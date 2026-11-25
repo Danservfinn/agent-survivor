@@ -1868,12 +1868,13 @@ PRIVATE_TALKS_PER_ROUND = 1
 
 
 def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
-    """Every active player names one other player to talk to. Each pick becomes a
-    private two-person talk (two lines each); mutual picks share one talk."""
+    """Every active player starts one private talk and invites one or more
+    players (any number). Each participant speaks twice; picks that name the
+    same group share one talk."""
     active = _active_agent_rows(conn)
     if len(active) < 2:
         return []
-    picks: list[tuple[str, str]] = []
+    picks: list[tuple[str, list[str]]] = []
     asks: dict[str, str] = {}
     parallel = should_use_live_llm() and _parallel_enabled()
     choices = _choose_talk_partners_parallel(conn, round_number, active) if parallel else None
@@ -1884,50 +1885,60 @@ def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, A
                 choice = choices[index * PRIVATE_TALKS_PER_ROUND + repeat]
             else:
                 choice = _choose_talk_partner(conn, round_number, agent["agent_id"], others, index)
-            partner, ask = choice if isinstance(choice, tuple) else (choice, None)
-            if partner:
-                picks.append((agent["agent_id"], partner))
+            invited, ask = choice if isinstance(choice, tuple) else (choice, None)
+            if isinstance(invited, str):
+                invited = [invited]
+            if invited:
+                picks.append((agent["agent_id"], list(invited)))
                 if ask:
                     asks[agent["agent_id"]] = ask
     talks: list[list[str]] = []
     seen: set[frozenset[str]] = set()
-    for chooser, partner in picks:
-        pair = frozenset((chooser, partner))
-        if pair in seen:
-            continue  # a mutual pick is one conversation
-        seen.add(pair)
-        talks.append([chooser, partner])
+    for chooser, invited in picks:
+        group = frozenset((chooser, *invited))
+        if group in seen:
+            continue  # the same group picked twice (a mutual pick) is one conversation
+        seen.add(group)
+        talks.append([chooser, *[agent_id for agent_id in invited if agent_id != chooser]])
     if parallel:
         return _camp_talks_parallel(conn, round_number, turn_id, talks, asks)
     events = []
-    for number, (chooser, partner) in enumerate(talks):
+    for number, members in enumerate(talks):
         event = _group_discussion_event(
             conn,
             round_number,
             turn_id,
             f"camp_talk_{number}",
-            force_participants=[chooser, partner],
-            talk_asks={agent_id: ask for agent_id, ask in asks.items() if agent_id in (chooser, partner)},
+            force_participants=members,
+            talk_asks={agent_id: ask for agent_id, ask in asks.items() if agent_id in members},
         )
         if event:
-            event["payload"]["chosen_by"] = chooser
+            event["payload"]["chosen_by"] = members[0]
             events.append(event)
     return events
 
 
 TALK_CHOICE_SCENE = (
-    "Before tonight's vote you get one private conversation. Choose the one player you want to talk to; "
-    "only the two of you will hear it. Put their id in target_id. In summary, state the one specific "
-    "thing you want from this talk: a named vote, a commitment, or a piece of information. You will "
-    "make that ask in the talk and should leave with a yes, a no, or a counter-offer."
+    "Before tonight's vote you start one private conversation. Invite one player or several, any number; "
+    "everyone you invite hears everything said, and nobody else does. Put their ids in invite. A pair is "
+    "best for a secret deal, a group for building a voting bloc. In summary, state the one specific thing "
+    "you want from this talk: a named vote, a commitment, or a piece of information. You will make that "
+    "ask in the talk and should leave with a yes, a no, or a counter-offer."
 )
 
 
-def _talk_choice_result(action: AgentAction | None, others: list[dict[str, Any]]) -> tuple[str, str | None] | None:
+def _talk_choice_result(
+    action: AgentAction | None, others: list[dict[str, Any]]
+) -> tuple[list[str], str | None] | None:
     legal = {other["agent_id"] for other in others}
-    if not action or action.target_id not in legal:
+    if not action:
         return None
-    return action.target_id, (action.strategic_summary or "").strip()[:240] or None
+    invited = [agent_id for agent_id in action.invite_ids if agent_id in legal]
+    if not invited and action.target_id in legal:
+        invited = [action.target_id]  # v2 replies, or a single target_id
+    if not invited:
+        return None
+    return invited, (action.strategic_summary or "").strip()[:240] or None
 
 
 def _choose_talk_partners_parallel(conn, round_number: int, active: list[dict[str, Any]]) -> list[Any]:
@@ -2018,6 +2029,13 @@ def _prepare_talk(conn, round_number: int, number: int, pair: list[str], asks: d
 SILENT_LINE = "(says nothing)"
 
 
+def _add_to_transcript(transcript: str, name: str, text: str) -> str:
+    """Every line said so far in a talk, so each speaker in a group talk hears
+    all of it, not only the line just before its own."""
+    line = f"{name}: {text}"
+    return f"{transcript} | {line}" if transcript else line
+
+
 def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
     """Generate one talk's lines in a worker thread, with no database access.
     Mirrors _group_speaker_lines for a live two-person talk. A promise made in
@@ -2070,7 +2088,7 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
             if action and action.promised_vote_target:
                 promises.append((agent_id, action.promised_vote_target))
             text = action.dialogue if action else SILENT_LINE
-            previous_line = text
+            previous_line = _add_to_transcript(previous_line, names.get(agent_id, agent_id), text)
             lines.append({"agent_id": agent_id, "text": text})
             metadata.append(
                 {
@@ -2080,6 +2098,7 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
                     "llm_provider": live_llm_provider() if action else "silent",
                     "model_id": action.model_id if action else prep["actors"][agent_id].get("model_id"),
                     "join_intent": _join_intent(action) if action else "none",
+                    "end_pact": bool(action and action.end_pact),
                     "llm_context_digest": context_digest(context),
                 }
             )
@@ -2361,6 +2380,7 @@ def _group_speaker_lines(
                 provider = live_llm_provider()
                 model_id = action.model_id
                 join_intent = _join_intent(action)
+                end_pact = action.end_pact
                 if action.promised_vote_target:
                     _record_promise(conn, round_number, agent_id, participant_ids, action.promised_vote_target, step)
             elif should_use_live_llm():
@@ -2369,13 +2389,15 @@ def _group_speaker_lines(
                 provider = "silent"
                 model_id = agent.get("model_id") if agent else None
                 join_intent = "none"
+                end_pact = False
             else:
                 text = _deterministic_group_line(conn, agent_id, participant_ids, declined_ids, stage, previous_line)
                 provider = "deterministic"
                 model_id = agent.get("model_id") if agent else None
                 # no model: a simulated pact, half the time (both sides must declare one)
                 join_intent = "reinforce" if _stable_index(f"{step}:{agent_id}:reinforce", 2) == 0 else "none"
-            previous_line = text
+                end_pact = False
+            previous_line = _add_to_transcript(previous_line, _agent_name(conn, agent_id), text)
             lines.append({"agent_id": agent_id, "text": text})
             metadata.append(
                 {
@@ -2385,6 +2407,7 @@ def _group_speaker_lines(
                     "llm_provider": provider,
                     "model_id": model_id,
                     "join_intent": join_intent,
+                    "end_pact": end_pact,
                     "llm_context_digest": context_digest(agent_context),
                 }
             )
@@ -2418,7 +2441,8 @@ def _dialogue_context_base(conn, stage: str, participant_ids: list[str], decline
         "stage": stage,
         "participants": [_agent_public_identity(conn, agent_id) for agent_id in participant_ids],
         "declined_invites": [_agent_public_identity(conn, agent_id) for agent_id in declined_ids],
-        "active_alliances": _agent_alliance_summaries(conn, participant_ids[0]) if participant_ids else [],
+        # each player's own pacts are in its situation brief (your_pacts); this
+        # used to show the first participant's alliances to everyone in the talk
     }
 
 
@@ -2433,14 +2457,15 @@ def _finish_dialogue_context(
     """Needs no database, so a talk running in a worker thread can call it."""
     context = dict(base)
     if previous_line:
-        context["previous_line_in_this_private_group"] = previous_line
+        # everything said so far in this talk, oldest first
+        context["said_so_far_in_this_talk"] = previous_line
     if ask:
         # the purpose this player chose the talk for (camp talks only)
         context["your_ask_in_this_talk"] = ask
     if last_turn:
         context["instruction"] = (
-            "This is your last line in this talk. Give a clear yes, no, or counter-offer to what the other "
-            "player asked of you, and say plainly where your own ask stands."
+            "This is your last line in this talk. Give a clear yes, no, or counter-offer to what was asked of "
+            "you, and say plainly where your own ask stands."
         )
     elif pass_no > 0:
         context["instruction"] = (
@@ -2488,11 +2513,14 @@ def _maybe_update_alliance(
     # Each player's last line decides, and each player counts once. Counting
     # every line let one player who spoke twice "ally" with itself (seen as
     # "Juniper + Juniper" in the 2026-11-24 lab_mix season).
+    _apply_pact_exits(conn, round_number, participant_ids, line_metadata)
     last_intent: dict[str, str] = {}
     for meta in line_metadata:
         last_intent[meta["agent_id"]] = meta.get("join_intent") or "none"
     joiners = [agent_id for agent_id, intent in last_intent.items() if intent in {"join", "reinforce"}]
-    if len(joiners) < 2 or (prompt_profile() != "v2" and len(joiners) < len(last_intent)):
+    # the players who end the talk declaring a pact form it, two or more of
+    # them; in a two-person talk that means both
+    if len(joiners) < 2:
         return None, "none"
     existing = _find_existing_alliance(conn, joiners)
     if existing:
@@ -2509,7 +2537,7 @@ def _maybe_update_alliance(
         status = "reinforced"
     else:
         alliance_id = f"alliance-r{round_number}-{discussion_id}"
-        name = " + ".join(_agent_name(conn, agent_id) for agent_id in joiners[:3])
+        name = " + ".join(_agent_name(conn, agent_id) for agent_id in joiners)
         conn.execute(
             """
             INSERT INTO Alliances (alliance_id, name, round_created, status, strength, summary)
@@ -2535,7 +2563,51 @@ def _maybe_update_alliance(
     return alliance_id, status
 
 
+def _apply_pact_exits(conn, round_number: int, participant_ids: list[str], line_metadata: list[dict[str, Any]]) -> None:
+    """A player who says end_pact in a talk openly leaves every active pact it
+    shares with someone in that talk: a clean exit, recorded with the round. An
+    alliance left with fewer than two members is dissolved."""
+    leavers = sorted({meta["agent_id"] for meta in line_metadata if meta.get("end_pact")})
+    for leaver in leavers:
+        others = [agent_id for agent_id in participant_ids if agent_id != leaver]
+        if not others:
+            continue
+        placeholders = ",".join("?" for _ in others)
+        shared = conn.execute(
+            f"""
+            SELECT DISTINCT me.alliance_id
+            FROM AllianceMemberships me
+            JOIN AllianceMemberships them ON them.alliance_id = me.alliance_id
+            JOIN Alliances a ON a.alliance_id = me.alliance_id
+            WHERE me.agent_id = ? AND me.status = 'active' AND a.status = 'active'
+              AND them.status = 'active' AND them.agent_id IN ({placeholders})
+            ORDER BY me.alliance_id
+            """,
+            (leaver, *others),
+        ).fetchall()
+        for row in shared:
+            conn.execute(
+                """
+                UPDATE AllianceMemberships
+                SET status = 'left', left_round = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE alliance_id = ? AND agent_id = ?
+                """,
+                (round_number, row["alliance_id"], leaver),
+            )
+            remaining = conn.execute(
+                "SELECT COUNT(*) AS n FROM AllianceMemberships WHERE alliance_id = ? AND status = 'active'",
+                (row["alliance_id"],),
+            ).fetchone()["n"]
+            if remaining < 2:
+                conn.execute(
+                    "UPDATE Alliances SET status = 'dissolved', updated_at = CURRENT_TIMESTAMP WHERE alliance_id = ?",
+                    (row["alliance_id"],),
+                )
+
+
 def _find_existing_alliance(conn, agent_ids: list[str]) -> dict[str, Any] | None:
+    """An active alliance with exactly these active members (reinforced, not
+    merged: a group pact never absorbs an older pact of two of its members)."""
     if len(agent_ids) < 2:
         return None
     placeholders = ",".join("?" for _ in agent_ids)
@@ -2546,9 +2618,9 @@ def _find_existing_alliance(conn, agent_ids: list[str]) -> dict[str, Any] | None
         JOIN AllianceMemberships m ON m.alliance_id = a.alliance_id
         WHERE a.status = 'active'
           AND m.status = 'active'
-          AND m.agent_id IN ({placeholders})
         GROUP BY a.alliance_id
-        HAVING COUNT(DISTINCT m.agent_id) >= 2
+        HAVING COUNT(DISTINCT m.agent_id) = {len(set(agent_ids))}
+           AND SUM(CASE WHEN m.agent_id IN ({placeholders}) THEN 1 ELSE 0 END) = {len(set(agent_ids))}
         -- most recently active by game round, then newest; never wall-clock time,
         -- which made the choice depend on how fast calls returned
         ORDER BY MAX(COALESCE(m.last_reinforced_round, m.joined_round)) DESC, a.rowid DESC
@@ -3803,11 +3875,13 @@ def _finalist_dossier(conn, finalist_id: str) -> dict[str, Any]:
             "joined_round": row["joined_round"],
             "status": row["status"],
             "betrayed_round": row["betrayed_round"],
+            # an open, announced exit; voting against a partner instead is a betrayal
+            "left_openly_round": row["left_round"],
             "members": [names.get(member, member) for member in str(row["members"] or "").split(",") if member],
         }
         for row in conn.execute(
             """
-            SELECT m.joined_round, m.status, m.betrayed_round,
+            SELECT m.joined_round, m.status, m.betrayed_round, m.left_round,
                    (SELECT group_concat(o.agent_id) FROM AllianceMemberships o WHERE o.alliance_id = m.alliance_id) AS members
             FROM AllianceMemberships m WHERE m.agent_id = ? ORDER BY m.joined_round
             """,
@@ -4828,6 +4902,7 @@ def _vote_reveal_event(conn, round_number: int, turn_id: int, reveal_index: int)
         raise RuntimeError("Cannot reveal vote before it is cast")
 
     conn.execute("UPDATE Votes SET revealed = 1 WHERE id = ?", (vote_row["id"],))
+    _mark_alliance_betrayal(conn, round_number, vote_row["voter_id"], vote_row["target_id"])
     target_id = vote_row["target_id"]
     target_name = _agent_name(conn, target_id)
     revealed_counts = _revealed_vote_counts(conn, round_number)
@@ -5553,7 +5628,9 @@ def _insert_vote(
             decision.prediction_confidence if decision else None,
         ),
     )
-    _mark_alliance_betrayal(conn, round_number, voter_id, target_id)
+    # a betrayal is marked when the vote is revealed (_vote_reveal_event), not
+    # here: marking it at once removed the betrayer from the alliance that
+    # partners still waiting to vote could see, revealing a secret vote early
 
 
 def _mark_alliance_betrayal(conn, round_number: int, voter_id: str, target_id: str) -> None:
@@ -6161,9 +6238,10 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         # every player rewrites its notebook, plus the host line
         return len(_active_agent_rows(conn)) + 1
     if step == "camp_talks":
-        # one partner pick per player, then at most one talk per pick with four lines
+        # one invitation pick per player, then one talk per pick; each participant
+        # speaks twice. Groups can be any size: estimate four per talk.
         active_count = len(_active_agent_rows(conn))
-        return active_count * PRIVATE_TALKS_PER_ROUND * 5
+        return active_count * PRIVATE_TALKS_PER_ROUND * (1 + 2 * min(active_count, 4))
     if step in GENERATED_BEAT_INTENTS:
         return 1 if GENERATED_BEAT_INTENTS[step]["response_kind"] == "host" else 2
     if step.startswith("vote_booth_"):

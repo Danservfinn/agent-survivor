@@ -119,8 +119,13 @@ class AgentAction:
     # in a private talk: the player this speaker promises to vote for at this round's council
     promised_vote_target: str | None = None
     # in a private talk: the speaker declares an alliance with the others in the talk.
-    # An alliance forms only when every player in the talk ends it by declaring one.
+    # The players who end the talk declaring one form the alliance (two or more).
     pact: bool = False
+    # in a private talk: the speaker openly ends its pact with the others here
+    # (a clean exit, unlike voting against a partner while the pact stands)
+    end_pact: bool = False
+    # talk choice: everyone the player invites to its private talk (one or more)
+    invite_ids: tuple[str, ...] = ()
     # votes only, private: who the voter expects to go home, and how each other voter will vote
     # (raw ids or names; the engine resolves them against the players in the game)
     predicted_eliminated: str | None = None
@@ -680,7 +685,11 @@ V3_REPLY_FIELDS = {
     "group_conversation": [
         ("target_id", "id of the player your words are aimed at, or null"),
         ("promised_vote_target", "allowed id you promise to vote for tonight, or null; checked against your vote"),
-        ("pact", "true to declare an alliance with the other player in this talk; it forms only if they also end the talk with true, and it is shown to them and to the jury"),
+        ("pact", "true to declare an alliance with the others in this talk; it forms among everyone here who ends the talk with true (at least two), and the members and the jury see it"),
+        ("end_pact", "true to openly end your pact with the others in this talk; recorded as a clean exit, which the jury sees as different from voting against a partner while the pact stands"),
+    ],
+    "talk_choice": [
+        ("invite", "list of the ids of everyone you invite to your private talk: one player or several, any number; all of them hear everything said"),
     ],
 }
 
@@ -946,6 +955,8 @@ def _request_agent_action_with_model(
         if data.get("promised_vote_target")
         else None,
         pact=_as_bool(data.get("pact")),
+        end_pact=_as_bool(data.get("end_pact")),
+        invite_ids=_resolve_invites(data.get("invite"), allowed_targets),
         predicted_eliminated=str(data["predicted_eliminated"]).strip() if data.get("predicted_eliminated") else None,
         predicted_votes={
             str(voter): str(target) for voter, target in data["predicted_votes"].items() if voter and target
@@ -954,6 +965,17 @@ def _request_agent_action_with_model(
         else None,
         prediction_confidence=_optional_confidence(data.get("prediction_confidence")),
     )
+
+
+def _resolve_invites(raw: Any, allowed_targets: list[dict[str, Any]]) -> tuple[str, ...]:
+    """A list of ids or names, each resolved against the allowed players."""
+    items = raw if isinstance(raw, list) else ([raw] if isinstance(raw, str) else [])
+    resolved: list[str] = []
+    for item in items:
+        agent_id = _resolve_target_id(item, allowed_targets)
+        if agent_id and agent_id not in resolved:
+            resolved.append(agent_id)
+    return tuple(resolved)
 
 
 def _rejected_target(raw: Any, resolved: str | None) -> str | None:

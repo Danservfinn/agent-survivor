@@ -23,8 +23,8 @@ GAME_RULES = [
     "Each voter casts one secret vote for an eligible player. After everyone votes, the votes are revealed one by one and stay public: every player sees who voted for whom (vote_history).",
     "The player with the most votes leaves. On a tie, everyone may speak once, then the players who are not tied vote again, only for the tied players; the tied players do not vote.",
     "If the revote ties again it is a deadlock: the players who are not tied must agree unanimously on which tied player goes home. If anyone refuses or they cannot agree, the tied players are safe and every other player except those holding immunity draws rocks; one goes home purely by chance.",
-    "Alliances are declared, never assumed: in a private talk each player may declare a pact, and an alliance forms only when every player in the talk ends it by declaring one. Your active alliances are listed in your private memory, and the jury sees them.",
-    "Each round, before the vote, every player picks one other player for a private talk; only the two of them hear it. A promise to vote for someone, made in a talk, is recorded and later checked against the revealed vote (your_promises).",
+    "Alliances are declared, never assumed: in a private talk each player may declare a pact, and the players who end the talk declaring one form it (two or more). A player may also end a pact openly in a talk: that is recorded as a clean exit. Voting against a partner while the pact stands is recorded as a betrayal. Your pacts, with how each partner has actually voted, are in your situation brief (your_pacts); the jury sees every pact, exit and betrayal.",
+    "Each round, before the vote, every player starts one private talk and invites one player or several, any number; only the invited hear it, and each speaks twice. A promise to vote for someone, made in a talk, is recorded and later checked against the revealed vote (your_promises).",
     "Each round you privately write a plan after the challenge, privately predict the vote when you cast yours, and rewrite your private notebook after the council. Only you see these; your prediction accuracy is shown to you (your_predictions).",
     "After the talks, each player may send one short private message to one other player before the vote.",
     "When three players remain the finale starts. Every eliminated player sits on the jury. Jurors receive each finalist's verified record (who first committed to each elimination, how often they voted with the result, how well they predicted votes, the votes they survived, each broken promise and what it achieved, challenge results, idol gifts, alliances and betrayals), each juror questions one finalist of their choosing, and then votes. Most jury votes wins.",
@@ -590,8 +590,72 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
         "other_players_by_threat": players,
         "voting_together": voting_together,
         "votes_against_you": votes_against_you,
+        "your_pacts": _pact_record(conn, actor_id, by_round, names),
         "jury_so_far": jury,
     }
+
+
+def _pact_record(
+    conn, actor_id: str, by_round: dict[int, dict[str, str]], names: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Every pact this player has been in, from the tables: who is still in it,
+    who left openly and who betrayed it (voted against a partner), and how each
+    partner has actually voted alongside this player since the pact formed.
+    Built from revealed votes only, so it never shows a secret ballot."""
+    rows = conn.execute(
+        """
+        SELECT a.alliance_id, a.status AS pact_status, a.round_created, m.status AS my_status,
+               m.left_round AS my_left_round, m.betrayed_round AS my_betrayed_round
+        FROM AllianceMemberships m JOIN Alliances a ON a.alliance_id = m.alliance_id
+        WHERE m.agent_id = ?
+        ORDER BY a.round_created, a.rowid
+        """,
+        (actor_id,),
+    ).fetchall()
+    record = []
+    for row in rows:
+        members = conn.execute(
+            "SELECT agent_id, status, joined_round, left_round, betrayed_round FROM AllianceMemberships "
+            "WHERE alliance_id = ? ORDER BY agent_id",
+            (row["alliance_id"],),
+        ).fetchall()
+        partners = []
+        for member in members:
+            if member["agent_id"] == actor_id:
+                continue
+            since = max(int(member["joined_round"] or 0), int(row["round_created"] or 0))
+            shared = [
+                ballots
+                for round_number, ballots in by_round.items()
+                if round_number >= since and actor_id in ballots and member["agent_id"] in ballots
+            ]
+            partner = {
+                "name": names.get(member["agent_id"], member["agent_id"]),
+                "status": _pact_member_status(member),
+                "councils_voted_together": sum(1 for ballots in shared if ballots[member["agent_id"]] == ballots[actor_id]),
+                "councils_voted_apart": sum(1 for ballots in shared if ballots[member["agent_id"]] != ballots[actor_id]),
+                "voted_against_you": sum(1 for ballots in shared if ballots[member["agent_id"]] == actor_id),
+            }
+            partners.append(partner)
+        record.append(
+            {
+                "formed_round": row["round_created"],
+                "pact": "active" if row["pact_status"] == "active" else row["pact_status"],
+                "you": _pact_member_status(
+                    {"status": row["my_status"], "left_round": row["my_left_round"], "betrayed_round": row["my_betrayed_round"]}
+                ),
+                "partners": partners,
+            }
+        )
+    return record
+
+
+def _pact_member_status(member: Any) -> str:
+    if member["status"] == "left" and member["left_round"]:
+        return f"left openly in round {member['left_round']}"
+    if member["status"] == "betrayed" and member["betrayed_round"]:
+        return f"betrayed the pact in round {member['betrayed_round']} (voted against a partner)"
+    return "in the pact"
 
 
 def _claims_to_you(
@@ -673,6 +737,10 @@ def add_open_promise(context: dict[str, Any], entry: dict[str, Any], *, made_by_
     while protected < len(private) and private[protected].get("kind") in PROTECTED_PRIVATE_KINDS:
         protected += 1
     already = context["context_digest"].get("trimmed_events", 0)
+    # measure exactly as a fresh build would: the counter is not yet set then.
+    # Measuring with it set dropped one extra old event at the size boundary, so
+    # a parallel talk saw a different window than the same talk run one at a time
+    context["context_digest"].pop("trimmed_events", None)
     _fit_budget(context, protected_private=protected)
     context["context_digest"]["trimmed_events"] += already
     return context

@@ -399,6 +399,8 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         )
         _seed_challenge_puzzles(conn)
         _ensure_column(conn, "Agents", "model_id", "TEXT NOT NULL DEFAULT ''")
+        # a pact left openly in a talk (a clean exit, not a betrayal)
+        _ensure_column(conn, "AllianceMemberships", "left_round", "INTEGER")
         _ensure_column(conn, "Agents", "archetype_source", "TEXT NOT NULL DEFAULT 'seeded'")
         _ensure_column(conn, "Agents", "archetype_updated_round", "INTEGER")
         _ensure_column(conn, "Agents", "inject_canary", "INTEGER NOT NULL DEFAULT 0")

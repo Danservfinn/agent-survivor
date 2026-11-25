@@ -81,6 +81,15 @@ class _Stub:
             play_idol=bool(h % 5 == 0),
             promised_vote_target=promise,
             move_type="vote_commitment" if promise else None,
+            # talk invitations: mostly one player, sometimes two or three, so group
+            # talks are compared too (talks sharing a player cannot run at once)
+            invite_ids=tuple(
+                dict.fromkeys(t["agent_id"] for t in targets[h % 3 : h % 3 + 1 + (((h >> 5) % 3) if h % 5 == 0 else 0)])
+            )
+            if kind == "talk_choice"
+            else (),
+            end_pact=kind == "group_conversation" and h % 23 == 0,
+            pact=kind == "group_conversation" and h % 4 == 0,
             predicted_eliminated=target,
             predicted_votes={t["agent_id"]: target for t in targets[:3]} if kind == "vote" and target else None,
             prediction_confidence=0.6,
@@ -181,6 +190,8 @@ class ParallelEquivalenceTest(unittest.TestCase):
         self.assertTrue(sequential_dump["PrivatePlans"])
         self.assertTrue(sequential_dump["GroupDiscussions"])
         self.assertTrue(sequential_dump["SpoiledVotes"])
+        # group talks of three or more happened (column 5 is target_size, the talk's size)
+        self.assertTrue(any(row[5] > 2 for row in sequential_dump["GroupDiscussions"]))
         self.assertIn("(says nothing)", json.dumps(sequential_dump["StoryEvents"]))
 
 
