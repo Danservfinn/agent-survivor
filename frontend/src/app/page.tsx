@@ -1,12 +1,20 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ScoreRow, ScoreTable, orgColor, seasonDate, usd } from "./score-table";
+import { ScoreRow, ScoreTable, duration, friendlyDate, ordinal, orgColor, usd } from "./score-table";
 
 /** The parts of /api/live-season/report the console shows. */
-type ReportModel = { agent_id: string; model: string; model_id?: string | null; place: number; is_winner: boolean };
+type ReportModel = {
+  agent_id: string;
+  model: string;
+  model_id?: string | null;
+  alias?: string | null;
+  place: number;
+  place_known?: boolean;
+  is_winner: boolean;
+  fate?: string;
+};
 type ReportData = {
   ok: boolean;
   season: {
@@ -28,6 +36,19 @@ type ReportData = {
   rounds: { round: number; eliminated_id: string | null; tally: Record<string, number>; revote_tally: Record<string, number> | null }[];
   finale: { tally: Record<string, number>; winner_id: string | null } | null;
 };
+
+/** what a newcomer sees in the live feed by default; the rest is behind "Show every event" */
+const HIGHLIGHT_KINDS = new Set([
+  "challenge_result",
+  "challenge_gift",
+  "elimination",
+  "exit_confessional",
+  "revote_call",
+  "finale_intro",
+  "finale_pitch",
+  "jury_vote",
+  "winner_declared",
+]);
 
 const MOMENT_KIND: Record<string, string> = {
   result: "The result",
@@ -84,16 +105,16 @@ type Feed = {
 };
 
 const KIND_LABEL: Record<string, string> = {
-  conversation: "camp",
+  conversation: "talk",
   challenge_intro: "challenge",
-  challenge_attempts: "attempts",
-  challenge_result: "result",
+  challenge_attempts: "puzzles",
+  challenge_result: "puzzle result",
   challenge_gift: "idol",
   vote_call: "vote call",
   vote_booth: "vote",
   vote_reveal: "reveal",
-  elimination: "elimination",
-  exit_confessional: "exit",
+  elimination: "voted out",
+  exit_confessional: "last words",
   merge: "merge",
   winner_declared: "winner",
   jury_vote: "jury",
@@ -108,8 +129,8 @@ const KIND_LABEL: Record<string, string> = {
   memory_update: "notebook",
   talk_choice: "talk",
   followup: "message",
-  group_conversation: "camp",
-  dialogue: "camp",
+  group_conversation: "talk",
+  dialogue: "talk",
   tiebreak: "tiebreak",
 };
 
@@ -333,92 +354,62 @@ export default function Benchmark() {
   const hasOutput = lines.length > 0 || feedEvents.length > 0;
   const showLive = liveRunning || feedEvents.length > 0;
   const latest = scorecard && scorecard.ok && scorecard.rows && scorecard.rows.length > 0 ? scorecard : null;
-  let sectionNo = 0;
-  const nextNo = () => String(++sectionNo).padStart(2, "0");
+  const [allEvents, setAllEvents] = useState(false);
+  const shownEvents = allEvents ? feedEvents : feedEvents.filter((e) => HIGHLIGHT_KINDS.has(e.kind));
+  const reportLink = report ? `/report/${report.season.season_id}` : latest ? reportHref(latest) : "/report";
+  const winner = report?.season.winner ?? latest?.game?.winner ?? null;
 
   return (
     <main>
       <header className="hero">
         <div className="wrap">
-          <p className="kicker">LLM Survivor · social strategy benchmark</p>
-          <h1>Nine AI models play Survivor. One of them wins.</h1>
-          <p className="hero-sub">
-            Each round the models talk in private, make and break vote promises, solve puzzles for immunity and vote
-            one player out. A <b>jury of the players they voted out</b> picks the winner. Every line is a live model
-            call; nothing is scripted.
+          <p className="kicker">LLM Survivor</p>
+          <h1>AI models play Survivor against each other.</h1>
+          <p className="lead">
+            Nine AI models from nine companies play a game of alliances and betrayal. Every word is the model&apos;s
+            own; nothing is scripted.
           </p>
-          <div className="tags">
-            <span className="tag on">one model per lab</span>
-            <span className="tag">neutral names: no model knows who it plays</span>
-            {budget && <span className="tag">{usd(budget.per_run_cap_cents)} cap per run</span>}
-          </div>
-
-          <div className="card run-card">
-            <div>
-              <h3>Run a season</h3>
-              <p>
-                One click starts a full season on our OpenRouter key. A season takes one to two hours; this page
-                follows it live and shows the result when it lands.
-              </p>
-              {budget && (
-                <div className="run-meta">
-                  <span>
-                    cap <b>{usd(budget.per_run_cap_cents)}</b> per run
-                  </span>
-                  <span>
-                    spent today <b>{usd(budget.spent_cents)}</b>
-                  </span>
-                  <span>one season at a time</span>
-                </div>
-              )}
-            </div>
-            <button className="btn-solid btn-big" onClick={runLive} disabled={liveRunning}>
-              {liveRunning ? (
-                <>
-                  <span className="pulse" aria-hidden="true" /> Season in progress
-                </>
-              ) : (
-                "Run a full season"
-              )}
-            </button>
-            <div className="byok">
-              <label htmlFor="byok-key">Or use your own OpenRouter key</label>
-              <input
-                id="byok-key"
-                type="password"
-                autoComplete="off"
-                placeholder="sk-or-..."
-                value={byok}
-                onChange={(e) => setByok(e.target.value)}
-                disabled={liveRunning}
-              />
-              <button className="chip" onClick={runLive} disabled={liveRunning || byok.trim().length < 8}>
-                Run on my key
-              </button>
-              <span className="note">sent once for this run, never stored</span>
-            </div>
+          <ol className="steps">
+            <li>
+              <span className="step-n">1</span>
+              <b>They talk</b>
+              <span>Each round, players make deals in private.</span>
+            </li>
+            <li>
+              <span className="step-n">2</span>
+              <b>They vote</b>
+              <span>Then everyone votes, and one player is out.</span>
+            </li>
+            <li>
+              <span className="step-n">3</span>
+              <b>The jury decides</b>
+              <span>At the end, the players voted out pick the winner.</span>
+            </li>
+          </ol>
+          <div className="hero-actions">
+            {winner && (
+              <a className="btn-solid btn-big" href="#result">
+                See who won last time
+              </a>
+            )}
+            {/* always the quiet style: switching it once results load would flash on every visit */}
+            <a className="btn-ghost" href="#run">
+              Start a new season
+            </a>
           </div>
         </div>
       </header>
 
       {(showLive || lines.length > 0) && (
-        <section className="sec" aria-label="Live season">
+        <section className="sec" id="live" aria-label="Live season">
           <div className="wrap">
-            <div className="sec-h">
-              <span className="sec-n">{nextNo()}</span>
-              <h2>Live season</h2>
-            </div>
-            <p className="sec-sub">The public feed of the season as it plays. Private talks stay hidden until the season ends.</p>
+            <h2>{liveRunning ? "A season is playing now" : "The season you watched"}</h2>
+            <p className="sec-sub">
+              {liveRunning
+                ? "This page follows it as it happens. A season takes one to two hours; you can leave and come back."
+                : "It has ended. The full story is in the report below."}
+            </p>
             <div className="sec-body">
-              {lines.length > 0 && (
-                <div className="card card-pad log" aria-label="Run log">
-                  {lines.map((line, i) => (
-                    <div key={i} className={`log-line ${line.kind}`}>
-                      {line.text}
-                    </div>
-                  ))}
-                </div>
-              )}
               {showLive && (
                 <div className="card card-pad">
                   <div className="live-head">
@@ -427,7 +418,11 @@ export default function Benchmark() {
                       {liveRunning ? "Live" : "Ended"}
                       {feedRound !== null ? ` · round ${feedRound}` : ""}
                     </span>
-                    {feedPlayers.length > 0 && <span className="k-lab">{feedPlayers.length} still in</span>}
+                    {feedPlayers.length > 0 && (
+                      <span className="muted">
+                        {feedPlayers.length} {feedPlayers.length === 1 ? "player" : "players"} still in
+                      </span>
+                    )}
                   </div>
                   {feedPlayers.length > 0 && (
                     <div className="players">
@@ -441,16 +436,20 @@ export default function Benchmark() {
                     </div>
                   )}
                   <div className="feed" ref={feedBoxRef} onScroll={onFeedScroll}>
-                    {feedEvents.length === 0 ? (
-                      <p className="empty">The season is starting. The first events appear within a minute or two.</p>
+                    {shownEvents.length === 0 ? (
+                      <p className="empty">
+                        {feedEvents.length === 0
+                          ? "The season is starting. The first events appear within a minute or two."
+                          : "Nothing big has happened yet. Show every event to follow along step by step."}
+                      </p>
                     ) : (
-                      feedEvents.map((e) => {
+                      shownEvents.map((e) => {
                         const kind = KIND_LABEL[e.kind] ?? e.kind;
                         return (
                           <div key={e.id} className="feed-row">
-                            <span className="feed-r">R{e.round}</span>
-                            <span className={`feed-k k-${kind.replace(/\s+/g, "-")}`}>{kind}</span>
+                            <span className="feed-r">Round {e.round}</span>
                             <div className="feed-body">
+                              <span className={`feed-k k-${kind.replace(/\s+/g, "-")}`}>{kind}</span>
                               {e.title && <div className="feed-t">{e.title}</div>}
                               {e.dialogue && <div className="feed-d">{e.dialogue}</div>}
                             </div>
@@ -459,14 +458,29 @@ export default function Benchmark() {
                       })
                     )}
                   </div>
+                  <div className="row-actions feed-actions">
+                    <button className="chip" onClick={() => setAllEvents((a) => !a)} aria-pressed={allEvents}>
+                      {allEvents ? "Show only the big moments" : "Show every event"}
+                    </button>
+                    {hasOutput && !liveRunning && (
+                      <button className="chip" onClick={resetConsole}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
-              {hasOutput && !liveRunning && (
-                <div className="row-actions">
-                  <button className="chip" onClick={resetConsole}>
-                    Clear the console
-                  </button>
-                </div>
+              {lines.length > 0 && (
+                <details className="more">
+                  <summary>Technical log ({lines.length})</summary>
+                  <div className="log">
+                    {lines.map((line, i) => (
+                      <div key={i} className={`log-line ${line.kind}`}>
+                        {line.text}
+                      </div>
+                    ))}
+                  </div>
+                </details>
               )}
             </div>
           </div>
@@ -474,112 +488,144 @@ export default function Benchmark() {
       )}
 
       {(latest || report) && (
-        <section className="sec" aria-label="Latest season">
+        <section className="sec" id="result" aria-label="Last season">
           <div className="wrap">
-            <div className="sec-h">
-              <span className="sec-n">{nextNo()}</span>
-              <h2>Latest season</h2>
-            </div>
+            <p className="eyebrow">Last season</p>
+            <h2 className="big">{winner ? `${winner} won.` : "The newest season"}</h2>
             <p className="sec-sub">
-              {report?.season.winner
-                ? `${report.season.winner} won the season of ${report.season.date ?? seasonDate(report.season.season_id)}.`
-                : latest?.game?.winner
-                  ? `${latest.game.winner} won the season of ${seasonDate(latest.season_id ?? "")}.`
-                  : "The newest recorded season."}{" "}
-              The full report has every vote with the reason the model gave, every broken promise and the jury.
+              {[
+                report ? friendlyDate(report.season.season_id) : latest?.season_id ? friendlyDate(latest.season_id) : null,
+                report ? `${report.season.players} models` : null,
+                duration(report?.season.elapsed_s ?? latest?.elapsed_s ?? null),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
             <div className="sec-body">
-              {report && <LatestTiles report={report} />}
-              {report && <EliminationOrder report={report} />}
+              {report && <Podium report={report} />}
+
               {report && (report.moments ?? []).length > 0 && (
-                <div className="moments">
-                  {(report.moments ?? []).slice(0, 3).map((m) => (
-                    <article key={m.id} className="card card-pad moment">
-                      <p className="sub-l">
-                        {MOMENT_KIND[m.kind] ?? m.kind}
-                        {m.round ? ` · round ${m.round}` : ""}
-                      </p>
-                      <h3>{m.title}</h3>
-                      <p>{m.text}</p>
-                      <a href={`/report/${report.season.season_id}#${m.id}`}>Read the evidence</a>
-                    </article>
-                  ))}
+                <div className="group">
+                  <h3 className="group-h">What happened</h3>
+                  <div className="moments">
+                    {(report.moments ?? [])
+                      .filter((m) => m.kind !== "result")
+                      .slice(0, 3)
+                      .map((m) => (
+                        <article key={m.id} className="card card-pad moment">
+                          <p className="sub-l">
+                            {MOMENT_KIND[m.kind] ?? m.kind}
+                            {m.round ? ` · round ${m.round}` : ""}
+                          </p>
+                          <h3>{m.title}</h3>
+                          <p>{m.text}</p>
+                          <a href={`${reportLink}#${m.id}`}>See what they said</a>
+                        </article>
+                      ))}
+                  </div>
                 </div>
               )}
-              {latest?.rows && <ScoreTable rows={latest.rows} />}
+
+              {report && <EliminationOrder report={report} />}
+
+              {latest?.rows && (
+                <details className="more">
+                  <summary>Every model&apos;s score</summary>
+                  <ScoreTable rows={latest.rows} />
+                </details>
+              )}
+
               <div className="report-cta">
                 <p>
-                  <b>The full season report</b>: charts, player cards, every vote and the jury, with images ready to
-                  share.
+                  <b>Read the full story</b>: every vote with the reason the model gave, every broken promise, and
+                  images you can share.
                 </p>
-                <div className="row-actions">
-                  <a className="btn-solid" href={report ? `/report/${report.season.season_id}` : latest ? reportHref(latest) : "/report"}>
-                    Open the report
-                  </a>
-                  <Link className="chip" href="/history">
-                    All seasons
-                  </Link>
-                </div>
+                <a className="btn-solid" href={reportLink}>
+                  Open the full report
+                </a>
               </div>
-              {latest && (
-                <p className="foot">
-                  {"// "}
-                  {seasonDate(latest.season_id ?? "")} · ended in round {latest.game?.rounds ?? "-"} ·{" "}
-                  {Math.round((latest.elapsed_s ?? 0) / 60)} min · {latest.caps?.estimated_live_calls ?? "-"} model calls · est.{" "}
-                  {usd(latest.caps?.estimated_cost_cents)} · Survivor Index v{latest.index_version ?? "-"}
-                </p>
-              )}
             </div>
           </div>
         </section>
       )}
 
-      <section className="sec" aria-label="How a season works">
+      <section className="sec" id="how" aria-label="How it works">
         <div className="wrap">
-          <div className="sec-h">
-            <span className="sec-n">{nextNo()}</span>
-            <h2>How a season works</h2>
-          </div>
-          <p className="sec-sub">The same rules for every model. The model that plays the social game best should win.</p>
+          <p className="eyebrow">How it works</p>
+          <h2 className="big">Four steps, the same for every model.</h2>
           <div className="sec-body">
-            <div className="card card-pad">
-              <ul className="terms">
-                <li>
-                  <b>Neutral names</b>
-                  <span>
-                    Players go by tree names such as Ash and Cedar. No model ever sees which model it is playing; the
-                    names on this site are for readers.
-                  </span>
-                </li>
-                <li>
-                  <b>Private plan</b>
-                  <span>Each round starts with every player writing a private plan: allies, threats and who it expects to leave.</span>
-                </li>
-                <li>
-                  <b>Challenge</b>
-                  <span>
-                    The same puzzles for everyone. The best score wins immunity, and in the first rounds the winner hands a
-                    hidden idol to another player.
-                  </span>
-                </li>
-                <li>
-                  <b>Talks and promises</b>
-                  <span>
-                    Each player picks one other player to talk to in private. Vote promises are recorded and marked kept or
-                    broken once the votes are revealed.
-                  </span>
-                </li>
-                <li>
-                  <b>The vote</b>
-                  <span>Everyone votes and privately predicts how the others will vote. The player with the most votes leaves.</span>
-                </li>
-                <li>
-                  <b>The jury</b>
-                  <span>
-                    At three players left, the players already voted out question the finalists and pick the winner.
-                  </span>
-                </li>
-              </ul>
+            <ol className="how">
+              <li className="card card-pad">
+                <span className="step-n">1</span>
+                <h3>Secret identities</h3>
+                <p>
+                  Players go by tree names like Ash and Cedar. None of them knows which company&apos;s model the others
+                  are.
+                </p>
+              </li>
+              <li className="card card-pad">
+                <span className="step-n">2</span>
+                <h3>A puzzle for safety</h3>
+                <p>Each round starts with the same puzzles for everyone. The best solver can&apos;t be voted out that round.</p>
+              </li>
+              <li className="card card-pad">
+                <span className="step-n">3</span>
+                <h3>Deals, then a vote</h3>
+                <p>Players talk in private and make promises, then vote. The player with the most votes is out.</p>
+              </li>
+              <li className="card card-pad">
+                <span className="step-n">4</span>
+                <h3>The jury picks</h3>
+                <p>When three are left, the players who were voted out question them and choose the winner.</p>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section className="sec" id="run" aria-label="Start a season">
+        <div className="wrap">
+          <p className="eyebrow">Your turn</p>
+          <h2 className="big">Start a new season.</h2>
+          <div className="sec-body">
+            <div className="card run-card">
+              <div>
+                <p>
+                  Anyone can start one; one runs at a time. It plays on its own for one to two hours, and you can watch
+                  it live on this page.
+                </p>
+                {budget && (
+                  <p className="muted">We pay for it, up to {usd(budget.per_run_cap_cents)} a season.</p>
+                )}
+              </div>
+              <button className="btn-solid btn-big" onClick={runLive} disabled={liveRunning}>
+                {liveRunning ? (
+                  <>
+                    <span className="pulse" aria-hidden="true" /> A season is playing
+                  </>
+                ) : (
+                  "Start a season"
+                )}
+              </button>
+              <details className="more byok-more">
+                <summary>Use your own OpenRouter key instead</summary>
+                <div className="byok">
+                  <label htmlFor="byok-key">Your key</label>
+                  <input
+                    id="byok-key"
+                    type="password"
+                    autoComplete="off"
+                    placeholder="sk-or-..."
+                    value={byok}
+                    onChange={(e) => setByok(e.target.value)}
+                    disabled={liveRunning}
+                  />
+                  <button className="chip" onClick={runLive} disabled={liveRunning || byok.trim().length < 8}>
+                    Start on my key
+                  </button>
+                  <span className="note">Used once for this season. Never stored.</span>
+                </div>
+              </details>
             </div>
           </div>
         </div>
@@ -588,42 +634,34 @@ export default function Benchmark() {
   );
 }
 
-function LatestTiles({ report }: { report: ReportData }) {
-  const s = report.season;
-  const lead = (label: string) => report.takeaways.find((t) => t.label === label);
-  const name = (id?: string) => (id ? report.names[id] ?? id : "–");
-  const index = lead("Survivor Index");
-  const read = lead("Reading the vote");
-  const minutes = s.elapsed_s ? Math.round(s.elapsed_s / 60) : null;
+/** The final three: the winner and the two finalists the jury passed over. */
+function Podium({ report }: { report: ReportData }) {
+  const top = [...report.models].filter((m) => m.place_known !== false).sort((a, b) => a.place - b.place).slice(0, 3);
+  if (!top.length) return null;
+  const tally = report.finale?.tally ?? {};
+  const juryTotal = Object.values(tally).reduce((a, b) => a + b, 0);
   return (
-    <div className="tiles">
-      <div className="card tile hl">
-        <div className="k-lab">Winner</div>
-        <div className="k-val">{s.winner ?? "In progress"}</div>
-        <div className="k-sub">{s.players} models · {s.councils} councils</div>
-      </div>
-      {index && (
-        <div className="card tile">
-          <div className="k-lab">Highest index</div>
-          <div className="k-val">{name(index.models[0])}</div>
-          <div className="k-sub">Survivor Index, 0 to 100</div>
-        </div>
-      )}
-      {read && (
-        <div className="card tile">
-          <div className="k-lab">Best read of the vote</div>
-          <div className="k-val">{name(read.models[0])}</div>
-          <div className="k-sub">predicted the others&apos; votes best</div>
-        </div>
-      )}
-      <div className="card tile">
-        <div className="k-lab">Season</div>
-        <div className="k-val">{minutes != null ? `${minutes} min` : "–"}</div>
-        <div className="k-sub">
-          rounds {s.first_round ?? "?"} to {s.last_round ?? "?"}
-          {s.run_est_cost_cents != null ? ` · est. ${usd(s.run_est_cost_cents)}` : ""}
-        </div>
-      </div>
+    <div className="podium">
+      {top.map((m) => {
+        const votes = tally[m.agent_id];
+        const line =
+          votes == null
+            ? m.fate ?? ""
+            : m.is_winner
+              ? `Won ${votes} of ${juryTotal} jury votes`
+              : `${votes} of ${juryTotal} jury votes`;
+        return (
+          <div key={m.agent_id} className={`card podium-card${m.is_winner ? " first" : ""}`}>
+            <span className="podium-place">{m.is_winner ? "Winner" : `${ordinal(m.place)} place`}</span>
+            <span className="podium-name">
+              <span className="mdot" style={{ background: orgColor(m.model_id) }} />
+              {m.model}
+            </span>
+            {m.alias && <span className="muted">played as {m.alias}</span>}
+            <span className="podium-line">{line}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -632,39 +670,27 @@ function EliminationOrder({ report }: { report: ReportData }) {
   const out = report.rounds.filter((r) => r.eliminated_id);
   if (!out.length) return null;
   const name = (id: string | null) => (id ? report.names[id] ?? id : "–");
-  const counts = (t: Record<string, number>) =>
-    Object.values(t)
-      .sort((a, b) => b - a)
-      .join("-");
-  const winnerId = report.finale?.winner_id ?? null;
-  const jury = report.finale?.tally ? counts(report.finale.tally) : "";
   return (
-    <div className="card tl">
-      <div className="tl-head">
-        <span className="k-lab">Elimination order</span>
-        {report.season.winner && <span className="tl-winner">Winner: {report.season.winner}</span>}
-      </div>
-      <div className="tl-scroll">
-        <div className="tl-track">
-          {out.map((r) => (
-            <div key={r.round} className="tl-stop">
-              <div className="r">R{r.round}</div>
-              <div className="pt" />
-              <div className="who">{name(r.eliminated_id)}</div>
-              <div className="how">
-                out {counts(r.tally)}
-                {r.revote_tally ? ", revote" : ""}
+    <div className="group">
+      <h3 className="group-h">Who was voted out, in order</h3>
+      <div className="card tl">
+        <div className="tl-scroll">
+          <div className="tl-track">
+            {out.map((r) => (
+              <div key={r.round} className="tl-stop">
+                <div className="r">Round {r.round}</div>
+                <div className="pt" />
+                <div className="who">{name(r.eliminated_id)}</div>
               </div>
-            </div>
-          ))}
-          {winnerId && (
-            <div className="tl-stop end">
-              <div className="r">Final</div>
-              <div className="pt" />
-              <div className="who">{name(winnerId)}</div>
-              <div className="how">{jury ? `jury ${jury}` : "winner"}</div>
-            </div>
-          )}
+            ))}
+            {report.finale?.winner_id && (
+              <div className="tl-stop end">
+                <div className="r">Winner</div>
+                <div className="pt" />
+                <div className="who">{name(report.finale.winner_id)}</div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

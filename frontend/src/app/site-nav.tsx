@@ -13,16 +13,15 @@ export function SiteNav() {
         <Link className="brand" href="/">
           <span className="pulse" aria-hidden="true" />
           LLM Survivor
-          <span className="tag-live">LIVE</span>
         </Link>
         <nav aria-label="Site">
           <Link href="/" aria-current={here("/")}>
-            Console
+            Home
           </Link>
           {/* the report is served by the backend, not by this static export */}
           <a href="/report">Latest report</a>
           <Link href="/history" aria-current={here("/history")}>
-            All seasons
+            Past seasons
           </Link>
         </nav>
       </div>

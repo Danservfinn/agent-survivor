@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { ScoreRow, ScoreTable, seasonDate, usd } from "../score-table";
+import { ScoreRow, ScoreTable, duration, friendlyDate } from "../score-table";
 
 type HistoryRow = ScoreRow;
 
@@ -413,18 +413,14 @@ export default function HistoryPage() {
     <main>
       <header className="hero">
         <div className="wrap">
-          <p className="kicker">LLM Survivor · all seasons</p>
-          <h1>Every season, every vote.</h1>
-          <p className="hero-sub">
-            Every recorded live season, newest first, rescored to the current Survivor Index. Open a season for its
-            scorecard and round-by-round record; click a model for everything it said and did. Each season also has a
-            full report with charts and share images.
+          <p className="kicker">LLM Survivor</p>
+          <h1>Past seasons</h1>
+          <p className="lead">
+            Every season played so far, newest first. Open one to see who finished where, or read its full story.
           </p>
-          <div className="tags">
-            {loaded && <span className="tag on">{seasons.filter((x) => x.game?.winner).length} finished</span>}
-            {loaded && <span className="tag">{seasons.length} recorded</span>}
-            <Link className="tag" href="/">
-              run a new season
+          <div className="hero-actions">
+            <Link className="btn-ghost" href="/#run">
+              Start a new season
             </Link>
           </div>
         </div>
@@ -445,40 +441,36 @@ export default function HistoryPage() {
           <article key={s.season_id} className="card season" data-open={open}>
             <button className="season-head" onClick={() => toggle(s.season_id)} aria-expanded={open}>
               <span className="caret" aria-hidden="true">▸</span>
-              <span className="date">{seasonDate(s.season_id)}</span>
-              <span className={finished ? "result" : "result dim"}>
-                {s.error ? "Could not be scored" : finished ? `${s.game?.winner} won` : s.interrupted ? "Interrupted" : "Unfinished"}
-              </span>
-              {finished && <span className="badge">finished</span>}
-              <span className="season-head-meta">
-                {finished ? "ended in" : "stopped in"} round {s.game?.rounds ?? "-"}
-                {s.cost_cents != null ? ` · est. ${usd(s.cost_cents)}` : ""}
-                {s.live_calls != null ? ` · ${s.live_calls} calls` : ""}
+              <span className="season-title">
+                <span className={finished ? "result" : "result dim"}>
+                  {s.error
+                    ? "This season could not be scored"
+                    : finished
+                      ? `${s.game?.winner} won`
+                      : s.interrupted
+                        ? "Stopped early: an AI provider went down"
+                        : "Stopped early, no winner"}
+                </span>
+                <span className="season-sub">
+                  {[
+                    friendlyDate(s.season_id),
+                    s.rows ? `${s.rows.length} models` : null,
+                    finished && s.game?.rounds ? `${s.game.rounds} rounds` : null,
+                    duration(s.elapsed_s),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
               </span>
             </button>
 
             {open && !s.error && (
               <div className="season-body">
-                <p className="bench-meta">
-                  {[
-                    s.roster ? `roster ${s.roster}` : null,
-                    s.season_seed != null ? `seed ${s.season_seed}` : null,
-                    s.index_version != null ? `index v${s.index_version}` : null,
-                    s.elapsed_s != null ? `${Math.round(s.elapsed_s / 60)} min` : null,
-                    s.cap_reached ? `cap reached: ${s.cap_reached}` : null,
-                    s.interrupted
-                      ? `interrupted at ${s.interrupted.step}: provider outage, not a result`
-                      : finished
-                        ? null
-                        : "run stopped before a winner was declared",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
                 <div className="row-actions">
                   <a className="btn-solid" href={`/report/${s.season_id}`}>
-                    Open the full report
+                    Read the full story
                   </a>
+                  <span className="muted">Click a model&apos;s name for everything it said and did.</span>
                 </div>
                 <ScoreTable
                   rows={s.rows ?? []}
@@ -494,6 +486,8 @@ export default function HistoryPage() {
                     return <ModelDetail narrative={n} row={row} onClose={() => setOpenModel(null)} />;
                   })()}
 
+                <details className="more">
+                  <summary>Round by round</summary>
                 {narrative === "loading" && <p className="bench-meta">Loading the round-by-round record...</p>}
                 {narrative === "error" && <p className="bench-meta">This season has no round-by-round record.</p>}
 
@@ -601,6 +595,20 @@ export default function HistoryPage() {
                     )}
                   </div>
                 )}
+                </details>
+                <p className="foot">
+                  {[
+                    s.roster ? `roster ${s.roster}` : null,
+                    s.season_seed != null ? `seed ${s.season_seed}` : null,
+                    s.index_version != null ? `score version ${s.index_version}` : null,
+                    s.live_calls != null ? `${s.live_calls} model calls` : null,
+                    s.cost_cents != null ? `about $${(s.cost_cents / 100).toFixed(2)}` : null,
+                    s.cap_reached ? "stopped by its spending limit" : null,
+                    s.interrupted ? `stopped at ${s.interrupted.step}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
               </div>
             )}
             {open && s.error && (
