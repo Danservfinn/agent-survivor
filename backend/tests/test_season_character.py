@@ -162,3 +162,48 @@ class StrategyTest(unittest.TestCase):
         with patch.object(strategy_judging, "_post_chat_completion") as post:
             self.assertEqual(strategy_judging.judge_season(self.db, models=["judge/a"]), 0)
         post.assert_not_called()
+
+
+class SchemesTest(unittest.TestCase):
+    # the same season fixture, without rerunning SeasonCharacterTest's tests
+    setUp = SeasonCharacterTest.setUp
+    _vote = SeasonCharacterTest._vote
+
+    def _character(self) -> dict:
+        self.conn.commit()
+        return build_character(self.db, self.names)
+
+    def test_lies_count_toward_the_evil_index_and_landed_lies_are_shown(self) -> None:
+        liar, listener, goal, other, *_ = self.ids
+        for truth in ("lie", "half", "true", "true"):
+            self.conn.execute(
+                "INSERT INTO Lies (round, agent_id, step, said, truth, purpose, goal_vote, listeners) VALUES (1, ?, 'camp_talk_0', 'Cedar is after you.', ?, 'flip Fir', ?, ?)",
+                (liar, truth, goal if truth != "true" else None, json.dumps([listener])),
+            )
+        self.conn.execute("INSERT INTO Lies (round, agent_id, step, said, truth, listeners) VALUES (1, ?, 'x', 'filler', 'true', '[]')", (liar,))
+        self._vote(1, listener, goal)
+        character = self._character()[liar]
+        self.assertEqual(character["evil"]["lie_rate"], 0.4)
+        self.assertEqual((character["evil"]["lies_told"], character["evil"]["lines_labelled"]), (2, 5))
+        schemes = character["schemes"]
+        self.assertEqual((schemes["lies_told"], schemes["lies_with_a_vote_goal"], schemes["lies_landed"]), (2, 2, 2))
+        self.assertEqual(schemes["best_lies"][0]["said"], "Cedar is after you.")
+
+    def test_moves_are_counted(self) -> None:
+        me, friend, *_ = self.ids
+        self.conn.execute("INSERT INTO Spying (round, spy_id, target_id, caught) VALUES (1, ?, ?, 1)", (me, friend))
+        self.conn.execute("INSERT INTO IdolSearches (round, agent_id, found) VALUES (2, ?, 1)", (me,))
+        self.conn.execute("INSERT INTO Advantages (agent_id, kind, round_won) VALUES (?, 'extra_vote', 4)", (me,))
+        self.conn.execute(
+            "INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed, shown) VALUES (1, 0, ?, ?, 1, 1)", (me, friend)
+        )
+        tc._insert_story_event(
+            self.conn, turn_id=1, round_number=2, phase="challenge", kind="immunity_given", scene="challenge",
+            shot="x", actor_ids=["host", me, friend], target_ids=[friend], visibility="audience", title="t",
+            dialogue="d", payload={"giver_id": me, "recipient_id": friend},
+        )
+        schemes = self._character()[me]["schemes"]
+        self.assertEqual(
+            {k: schemes[k] for k in ("spied", "spy_caught", "idol_searches", "idols_found", "ballots_shown", "immunity_given", "auction_won")},
+            {"spied": 1, "spy_caught": 1, "idol_searches": 1, "idols_found": 1, "ballots_shown": 1, "immunity_given": 1, "auction_won": ["extra_vote"]},
+        )

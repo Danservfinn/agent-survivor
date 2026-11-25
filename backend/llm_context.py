@@ -6,7 +6,7 @@ from typing import Any
 from .database import row_to_dict
 from .advantages import receipt_id
 from .inner_life import context_entries as inner_life_entries
-from .llm_config import advantages_enabled, feelings_enabled, jury_rule, prompt_profile, secret_ballot
+from .llm_config import advantages_enabled, feelings_enabled, inner_life_enabled, jury_rule, prompt_profile, secret_ballot
 
 MAX_CONTEXT_EVENTS = 60
 # Upper bound on a serialized contestant context. When over it, the oldest
@@ -22,7 +22,7 @@ GAME_RULES = [
     "This is a game, and every promise, lie and betrayal in it happens inside the game and harms nobody. Blindsiding an ally is a normal winning move; Survivor winners have done it all along. A loyal player who loses has failed at the only goal. Whether and when to betray anyone is your call.",
     "Your reputation is part of the game: every challenge score, public speech, meeting and vote tally shapes how the others see you (your_reputation in your situation brief shows what they can see). Decide deliberately what image you want, a threat, a loyal ally, a harmless follower, a leader, and act to build it.",
     "The challenge winner is immune: they cannot be voted for that round, but they still vote. You choose how strong you look: every score is public, so you may answer puzzles wrong on purpose to look weaker and less threatening, or play to win and look strong. A player who keeps winning challenges is safe while immune but becomes the obvious target the first round they are not.",
-    "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it. Only one idol is in play at a time.",
+    "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it.",
     "A holder plays the idol with their vote at a council; every vote against them that round is then cancelled, and the play is announced. An unplayed idol expires when five players remain.",
     "The player with the most votes leaves. On a tie, everyone may speak once, then the players who are not tied vote again, only for the tied players; the tied players do not vote.",
     "If the revote ties again it is a deadlock: the players who are not tied must agree unanimously on which tied player goes home. If anyone refuses or they cannot agree, the tied players are safe and every other player except those holding immunity draws rocks; one goes home purely by chance.",
@@ -45,11 +45,32 @@ _BALLOT_RULE = {
 }
 
 
+# moves that give a player something real to work with (SURVIVOR_ADVANTAGES)
+ADVANTAGE_RULES = [
+    "Proof: the game stamps a few things as real, and nothing else can be proven. Forward a private line someone said to you by its receipt_id and your listeners get the exact words, stamped. Show your idol (show_idol) and it is stamped. Show your ballot (show_ballot) and the host names you when it is read. Any quote, idol claim or vote claim without a stamp is only your word.",
+    "Spying: instead of your last whisper you may listen in on one player's private talk that round (spy_on). You hear all of it; one time in three its members are told you listened.",
+    "Idols: instead of your talk you may search camp (search). From round 3, while more than five players remain and nobody holds one, an idol is hidden in about half the rounds; one searcher finds it. Nobody else learns who searched or what they found.",
+    "Immunity: the challenge winner may keep immunity or hand it to another player for that night. Everyone sees it.",
+    "Auction: once, when three players are gone, everyone bids tokens in a sealed auction for an extra vote (counts your ballot twice at one later council), a hidden idol, and a private look at who voted for whom at the last council. You earn 3 tokens a round and 1 per puzzle solved (your situation brief).",
+]
+# a player's private inner life (SURVIVOR_INNER_LIFE)
+INNER_LIFE_RULE = (
+    "Your private record: after each step you keep a one-line summary, read back to you for the rest of the round. "
+    "When you speak, you privately label your line true, half true or a lie; nobody else ever sees the label. You see "
+    "your past lies and what followed, and how well you read what others expect of you."
+)
+
+
 def game_rules() -> list[str]:
-    """GAME_RULES plus the ballot rule (SURVIVOR_SECRET_BALLOT) and the jury
-    rule (SURVIVOR_JURY_RULE) in force."""
+    """GAME_RULES plus the ballot rule (SURVIVOR_SECRET_BALLOT), the moves
+    and private record when switched on, and the jury rule
+    (SURVIVOR_JURY_RULE) in force."""
     rules = list(GAME_RULES)
     rules.insert(5, _BALLOT_RULE[secret_ballot()])
+    if advantages_enabled():
+        rules += ADVANTAGE_RULES
+    if inner_life_enabled():
+        rules.append(INNER_LIFE_RULE)
     return [*rules, _JURY_RULE_TEXT[jury_rule()]]
 
 

@@ -195,3 +195,18 @@ class SwitchTest(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RulesTest(unittest.TestCase):
+    def test_the_rules_describe_the_moves_only_while_switched_on(self) -> None:
+        from backend.llm_context import game_rules
+
+        on = " ".join(game_rules())
+        self.assertIn("receipt_id", on)
+        self.assertIn("sealed auction", on)
+        self.assertIn("label your line true, half true or a lie", on)
+        with patch.dict(os.environ, {"SURVIVOR_ADVANTAGES": "0", "SURVIVOR_INNER_LIFE": "0"}):
+            off = " ".join(game_rules())
+        self.assertNotIn("receipt_id", off)
+        self.assertNotIn("sealed auction", off)
+        self.assertNotIn("half true or a lie", off)
