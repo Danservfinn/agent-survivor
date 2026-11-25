@@ -1854,10 +1854,12 @@ def _parse_json_content(content: str) -> dict[str, Any]:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
+    # strict=False accepts raw line breaks and tabs inside strings: Mistral Nemo
+    # wrote its game plan with real newlines and failed both tries (2026-11-25)
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", text, flags=re.DOTALL)
         if not match:
             raise
-        return json.loads(match.group(0))
+        return json.loads(match.group(0), strict=False)

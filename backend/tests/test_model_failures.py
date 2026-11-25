@@ -183,3 +183,12 @@ class BallotPromptTest(_Base):
         self.assertIn(f"the finalist you vote for: exactly one of {ballot}. Nobody else is on the ballot.", prompts[0])
         self.assertIsNone(result.target_id)
         self.assertEqual(result.rejected_target, "Nobody Here")
+
+
+class JsonParsingTest(_Base):
+    def test_raw_line_breaks_inside_strings_are_accepted(self) -> None:
+        from backend.openrouter_client import _parse_json_content
+
+        # Mistral Nemo wrote its game plan with real newlines inside a string
+        parsed = _parse_json_content('```json\n{"identity": "under the radar\nthen strike", "change_if": "x"}\n```')
+        self.assertEqual(parsed["identity"], "under the radar\nthen strike")
