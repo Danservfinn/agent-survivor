@@ -751,7 +751,7 @@ Before you decide, think like a strategist:
 2. Who is the swing vote, and what would move them?
 3. What does each other player expect to happen, and what do they want?
 4. If I reach the final three, who beats me with this jury, and who do I beat?
-5. How do the others see me right now, and what do I want them to think of me after this step?
+5. How will this move change how the others see me, and is that the image I want?
 6. What exactly do I need from this step?
 
 This step: {step}

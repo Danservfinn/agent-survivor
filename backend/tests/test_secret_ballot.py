@@ -208,6 +208,55 @@ class ReputationTest(_Base):
         from backend.llm_context import game_rules
 
         self.assertTrue(any("reputation" in rule.lower() for rule in game_rules()))
-        self.assertIn("image", tc.ROUND_PLAN_FIELDS)
+        self.assertIn("image_goal", tc.ROUND_PLAN_FIELDS)
+        self.assertIn("image_moves", tc.ROUND_PLAN_FIELDS)
         self.assertEqual(tc._render_notebook({"image": "a loyal ally", "plan": "p"}), "Image: a loyal ally | Plan: p")
         self.assertTrue(any("wrong on purpose" in rule for rule in game_rules()))
+
+
+class ReputationMirrorTest(_Base):
+    """The rest of the mirror: invitations, exclusion, group-talk mentions, pacts, votes by round."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.alias = {row["agent_id"]: row["pseudonym"] for row in self.conn.execute("SELECT agent_id, pseudonym FROM Agents")}
+
+    _reputation = ReputationTest._reputation
+
+    def _talk(self, participants: list[str], lines: list[tuple[str, str]]) -> None:
+        tc._insert_story_event(
+            self.conn, turn_id=1, round_number=ROUND, phase="camp", kind="conversation", scene="camp", shot="x",
+            actor_ids=participants, target_ids=[], visibility="audience", title="T", dialogue="d",
+            payload={"privacy": "participants_only", "participant_ids": participants,
+                     "speaker_lines": [{"agent_id": a, "text": t} for a, t in lines]},
+        )
+
+    def test_the_mirror_collects_what_others_can_see(self) -> None:
+        me, a, b, c, *_ = self.players
+        name = self.alias[me]
+        self._talk([me, a], [(a, f"{name}, will you vote with me?")])  # direct address: not counted
+        self._talk([me, a, b], [(a, f"{name} always lands the votes."), (b, "agreed")])
+        tc._insert_story_event(
+            self.conn, turn_id=1, round_number=ROUND, phase="camp", kind="camp_meetings", scene="camp", shot="x",
+            actor_ids=["host"], target_ids=[], visibility="audience", title="M", dialogue="d",
+            payload={"meetings": [{"started_by": self.alias[a], "with": [self.alias[a], name]},
+                                  {"started_by": self.alias[b], "with": [self.alias[b], self.alias[c]]}]},
+        )
+        tc._maybe_update_alliance(
+            self.conn, ROUND, 1, [me, c],
+            [{"agent_id": me, "join_intent": "join"}, {"agent_id": c, "join_intent": "join"}],
+        )
+        for voter in (a, b):
+            self.conn.execute(
+                "INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed) VALUES (?, 0, ?, ?, 1)",
+                (ROUND, voter, me),
+            )
+        mirror = self._reputation(me)
+        self.assertEqual([m["said"] for m in mirror["what_others_said_about_you_in_group_talks"]], [f"{name} always lands the votes."])
+        self.assertEqual(mirror["invited_into_talks_by"], [self.alias[a]])
+        self.assertEqual(mirror["meetings_held_without_you"], 1)
+        self.assertEqual(mirror["pacts_others_know_you_are_in"][0]["known_to"], [self.alias[c]])
+        self.assertEqual(mirror["votes_against_you_by_round"], [{"round": ROUND, "votes": 2}])
+        # a fact list, not a verdict: no score, and no voter is named
+        self.assertFalse([key for key in mirror if "score" in key or "rating" in key])
+        self.assertNotIn(self.alias[a], json.dumps(mirror["votes_against_you_by_round"]))

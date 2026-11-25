@@ -716,24 +716,72 @@ def _reputation(
             if speaker and speaker != actor_id and pattern.search(text):
                 said.append({"round": event["round"], "by": names.get(speaker, speaker), "said": text[:200]})
 
-    started = joined = 0
+    # group talks this player was in: what others said about it to the rest of
+    # the group (two-person talks are left out: there the name is just address)
+    said_in_talks: list[dict[str, Any]] = []
+    for event in conn.execute(
+        "SELECT round, payload FROM StoryEvents WHERE kind = 'conversation' ORDER BY id"
+    ).fetchall():
+        payload = json.loads(event["payload"] or "{}")
+        participants = payload.get("participant_ids") or []
+        if actor_id not in participants or len(participants) < 3:
+            continue
+        for line in payload.get("speaker_lines") or []:
+            speaker, text = line.get("agent_id"), str(line.get("text") or "")
+            if speaker and speaker != actor_id and pattern.search(text):
+                said_in_talks.append({"round": event["round"], "by": names.get(speaker, speaker), "said": text[:200]})
+
+    started = joined = left_out = 0
+    invited_by: list[str] = []
     for event in conn.execute("SELECT payload FROM StoryEvents WHERE kind = 'camp_meetings'").fetchall():
         for meeting in json.loads(event["payload"] or "{}").get("meetings", []):
             if meeting.get("started_by") == me:
                 started += 1
             elif me in (meeting.get("with") or []):
                 joined += 1
+                invited_by.append(meeting.get("started_by"))
+            else:
+                left_out += 1
+
+    pacts = []
+    for row in conn.execute(
+        """
+        SELECT a.alliance_id, m.status, m.left_round FROM AllianceMemberships m
+        JOIN Alliances a ON a.alliance_id = m.alliance_id WHERE m.agent_id = ? ORDER BY a.round_created
+        """,
+        (actor_id,),
+    ).fetchall():
+        members = [
+            names.get(other["agent_id"], other["agent_id"])
+            for other in conn.execute(
+                "SELECT agent_id FROM AllianceMemberships WHERE alliance_id = ? AND agent_id != ? ORDER BY agent_id",
+                (row["alliance_id"], actor_id),
+            )
+        ]
+        if row["status"] == "left":
+            pacts.append({"with": members, "known_to": members, "you": f"left it openly in round {row['left_round']}"})
+        else:
+            # a betrayal stays secret with secret ballots; the members still count you in
+            pacts.append({"with": members, "known_to": members, "you": "in the pact"})
 
     return {
         "note": "Only what the other players can see. Every score, speech, meeting and vote tally shapes how they see you.",
         "puzzles_solved": mine["correct"],
         "puzzle_rank_among_players_left": f"{rank} of {len(field)}" if rank else None,
         "immunity_wins": mine["wins"],
-        "votes_cast_against_you": sum(tally.get(actor_id, 0) for tally in tallies.values()),
+        "votes_against_you_by_round": [
+            {"round": round_number, "votes": tally[actor_id]}
+            for round_number, tally in sorted(tallies.items())
+            if tally.get(actor_id)
+        ],
         "times_others_named_you_in_public": len(said),
         "what_others_said_about_you_in_public": said[-4:],
+        "what_others_said_about_you_in_group_talks": said_in_talks[-3:],
         "meetings_you_started": started,
         "meetings_you_were_invited_to": joined,
+        "invited_into_talks_by": invited_by[-6:],
+        "meetings_held_without_you": left_out,
+        "pacts_others_know_you_are_in": pacts,
     }
 
 

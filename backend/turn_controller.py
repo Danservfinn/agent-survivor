@@ -1569,13 +1569,15 @@ ROUND_PLAN_EFFORT = "high"
 
 ROUND_PLAN_TASK = (
     "The challenge is over and immunity is settled. Plan the rest of this round. Name the biggest threats to you and why, the "
-    "players most likely to vote with you, how the others see you now and the image you want them to have, "
+    "players most likely to vote with you, how the others see you now (your_reputation), the image you want "
+    "this round and what you will do to get it, "
     "what you will say in your private talk and to whom, and who you expect to go home tonight and how sure "
     "you are. Keep it short; you will see this plan again in every decision this round."
 )
 ROUND_PLAN_FIELDS = {
     "threats": "who threatens your game and why",
-    "image": "how the others see you now (your_reputation) and the image you want; what you will do this round to shape it",
+    "image_goal": "how you want the others to see you this round: e.g. a threat, harmless, the loyal one, the swing vote",
+    "image_moves": "what you will do this round to get there: e.g. throw part of the challenge, say less at tribal council, call a big group talk",
     "allies": "who is likely to vote with you",
     "talk_plan": "who you will talk to and what you will say",
     "expected_out": "the id of the player you expect to go home tonight",
@@ -1595,7 +1597,8 @@ def _round_plans(conn, round_number: int) -> int:
         provider = "deterministic"
         plan: dict[str, Any] = {
             "threats": "Whoever is gathering votes fastest.",
-            "image": "A steady player who keeps their word.",
+            "image_goal": "A steady player who keeps their word.",
+            "image_moves": "Keep my promises and say little at tribal council.",
             "allies": "Anyone who shared information with me last round.",
             "talk_plan": "Find out where the votes are going before I commit.",
             "expected_out": None,
@@ -1718,7 +1721,7 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> str | N
         ),
         fields={
             "players": "object: each remaining player's name -> one line: trust high/medium/low; threat high/medium/low; their last vote; what they owe you or you owe them",
-            "image": "how you think the others see you now, and how you want to be seen",
+            "image": "how the others see you now and the evidence (votes against you, talks you were left out of, what was said about you in public), and whether this round's image goal worked",
             "lessons": "what you predicted vs what happened, and who lied to you",
             "plan": "your plan for next round",
         },
