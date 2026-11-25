@@ -26,7 +26,7 @@ _CHROME_CANDIDATES = (
     "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
 )
 _HANDLE = re.compile(r"^@?([A-Za-z0-9_]{1,15})$")
-SHARE_NAME = re.compile(r"^[a-z0-9-]{1,40}\.png$")
+SHARE_NAME = re.compile(r"^[a-z0-9-]{1,40}\.(png|mp4)$")
 
 
 def safe_handle(handle: str | None) -> str | None:
@@ -362,8 +362,11 @@ def add_player_tags(models: list[dict[str, Any]], rounds: list[dict[str, Any]], 
 # -------------------------------------------------------------------- thread
 
 
-def build_thread(report: dict[str, Any], *, handle: str | None = None, report_url: str | None = None) -> list[dict[str, str]]:
-    """A draft thread for X: each post under the limit, with the share image that goes with it."""
+def build_thread(
+    report: dict[str, Any], *, handle: str | None = None, report_url: str | None = None, video: bool = False
+) -> list[dict[str, str]]:
+    """A draft thread for X: each post under the limit, with the share image that goes with it.
+    With `video`, the first post carries the season clip instead of the season image."""
     season = report["season"]
     models = report["models"]
     posts: list[dict[str, str]] = []
@@ -372,7 +375,7 @@ def build_thread(report: dict[str, Any], *, handle: str | None = None, report_ur
     if not season.get("finished"):
         left = sum(1 for m in models if m["eliminated_round"] is None)
         lead = f"The season is still running: {left} of {season['players']} players are left after round {season.get('last_round')}."
-    posts.append({"text": _fit(f"{opener}\n\n{lead}"), "image": "season.png"})
+    posts.append({"text": _fit(f"{opener}\n\n{lead}"), "image": "season.mp4" if video else "season.png"})
     for moment in report.get("moments") or []:
         if moment["kind"] == "result" and lead and moment["title"].endswith("topped the index"):
             continue  # the opener already said it
@@ -391,7 +394,7 @@ def build_thread(report: dict[str, Any], *, handle: str | None = None, report_ur
 
 
 def thread_markdown(posts: list[dict[str, str]]) -> str:
-    lines = ["# Draft thread", "", "Nothing here has been posted. Each post is under 280 characters; attach the image named beside it.", ""]
+    lines = ["# Draft thread", "", "Nothing here has been posted. Each post is under 280 characters; attach the file named beside it.", ""]
     for number, post in enumerate(posts, start=1):
         image = f" (image: {post['image']})" if post["image"] else ""
         lines += [f"## {number}/{len(posts)}{image}", "", post["text"], ""]

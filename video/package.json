@@ -1,0 +1,21 @@
+{
+  "name": "llm-survivor-video",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Season clips for sharing: Remotion renders a season report into a short MP4.",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts SeasonClip",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.542",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.542"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5"
+  }
+}

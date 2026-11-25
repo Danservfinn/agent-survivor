@@ -765,12 +765,14 @@ def _report_page(season_id: str | None) -> Response:
 
     season_dir = _report_season_dir(season_id)
     has_cards = (season_dir / "share" / "season.png").is_file()
+    has_video = (season_dir / "share" / "season.mp4").is_file()
     html = render_report_html(
         cached_season_report(season_dir),
         contact_url=os.environ.get("SURVIVOR_REPORT_CONTACT_URL"),
         site_url=os.environ.get("SURVIVOR_PUBLIC_URL"),
         handle=os.environ.get("SURVIVOR_X_HANDLE"),
         share_base=f"/report/{season_dir.name}/share/" if has_cards else None,
+        video=has_video,
     )
     return Response(
         content=html,
@@ -791,7 +793,8 @@ def season_report_page(season_id: str) -> Response:
 
 @app.api_route("/report/{season_id}/share/{name}", methods=["GET", "HEAD"], include_in_schema=False)
 def season_report_share_image(season_id: str, name: str) -> Response:
-    """One share image of a season (season.png, leaderboard.png, moment-1.png, model-<id>.png)."""
+    """One share file of a season: an image (season.png, leaderboard.png, moment-1.png,
+    model-<id>.png) or the season clip (season.mp4)."""
     from .season_story import SHARE_NAME
 
     if not SHARE_NAME.fullmatch(name):
@@ -799,7 +802,8 @@ def season_report_share_image(season_id: str, name: str) -> Response:
     image = _report_season_dir(season_id) / "share" / name
     if not image.is_file():
         raise HTTPException(status_code=404, detail="Not Found")
-    return FileResponse(image, media_type="image/png", headers={"Cache-Control": ROOT_FILE_CACHE_CONTROL})
+    media_type = "video/mp4" if image.suffix == ".mp4" else "image/png"
+    return FileResponse(image, media_type=media_type, headers={"Cache-Control": ROOT_FILE_CACHE_CONTROL})
 
 
 def _resolve_frontend_file(frontend_path: str) -> Path | None:

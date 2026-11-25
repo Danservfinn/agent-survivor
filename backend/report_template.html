@@ -992,6 +992,7 @@ function moments() {
   var thread = (D.thread || []).map(function (p, i) { return (i + 1) + "/" + D.thread.length + "\n" + p.text; }).join("\n\n");
   return add(sec, [
     h("div", { class: "controls" }, copyButton("Copy the draft thread (" + (D.thread || []).length + " posts)", function () { return thread; }),
+      SHARE && LINKS.video ? h("a", { class: "chip chip-x", href: SHARE + "season.mp4", target: "_blank", rel: "noopener", text: "Season video" }) : null,
       SHARE ? h("a", { class: "chip", href: SHARE + "season.png", target: "_blank", rel: "noopener", text: "Season image" }) : null,
       SHARE ? h("a", { class: "chip", href: SHARE + "leaderboard.png", target: "_blank", rel: "noopener", text: "Leaderboard image" }) : null),
     h("div", { class: "moment-grid" }, list.map(function (m) {

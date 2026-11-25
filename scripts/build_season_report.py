@@ -41,6 +41,7 @@ def main() -> int:
     parser.add_argument("--site-url", default=os.environ.get("SURVIVOR_PUBLIC_URL"))
     parser.add_argument("--handle", default=os.environ.get("SURVIVOR_X_HANDLE"), help="X handle credited on the page and the share images")
     parser.add_argument("--no-cards", action="store_true", help="skip the share images (they need a local Chrome)")
+    parser.add_argument("--no-video", action="store_true", help="skip the season clip (it needs `cd video && npm ci`)")
     args = parser.parse_args()
 
     seasons_dir = Path(args.seasons_dir).expanduser()
@@ -66,12 +67,20 @@ def main() -> int:
             print(out)
         else:
             paths = write_report_files(
-                season_dir, seasons_dir=seasons_dir, contact_url=args.contact_url, site_url=args.site_url, handle=args.handle, cards=not args.no_cards
+                season_dir,
+                seasons_dir=seasons_dir,
+                contact_url=args.contact_url,
+                site_url=args.site_url,
+                handle=args.handle,
+                cards=not args.no_cards,
+                video=not args.no_video,
             )
             print(paths["html"])
             print(paths["thread"])
             cards = paths["cards"]
             print(f"share images: {len(cards['written'])} written" + (f", {len(cards['skipped'])} skipped ({cards['reason']})" if cards["skipped"] or cards["reason"] else ""))
+            clip = paths["video"]
+            print("season clip: " + ("share/season.mp4 written" if clip["written"] else f"skipped ({clip['reason']})"))
     return 0
 
 

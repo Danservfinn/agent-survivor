@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { ScoreRow, ScoreTable, seasonDate, usd } from "../score-table";
+import { ScoreRow, ScoreTable, duration, friendlyDate } from "../score-table";
 
 type HistoryRow = ScoreRow;
 
@@ -355,6 +355,7 @@ export default function HistoryPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [narratives, setNarratives] = useState<Record<string, Narrative | "loading" | "error">>({});
   const [openModel, setOpenModel] = useState<string | null>(null);
   const [roundModelFilter, setRoundModelFilter] = useState<Record<string, string | null>>({});
@@ -373,6 +374,7 @@ export default function HistoryPage() {
     fetch("/api/live-season/history")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        setLoaded(true);
         if (!data?.seasons) {
           setFailed(true);
           return;
@@ -384,7 +386,10 @@ export default function HistoryPage() {
           loadNarrative(first.season_id);
         }
       })
-      .catch(() => setFailed(true));
+      .catch(() => {
+        setLoaded(true);
+        setFailed(true);
+      });
   }, [loadNarrative]);
 
   const toggle = (id: string) => {
@@ -405,64 +410,71 @@ export default function HistoryPage() {
   }, []);
 
   return (
-    <main className="bench-shell">
-      <header className="bench-header">
-        <h1>Run History</h1>
-        <p className="bench-sub">
-          Every recorded live season, newest first, rescored to the current index version. Open a
-          season for its scorecard and round-by-round summary; click a model for everything it did.
-        </p>
-        <p className="bench-meta">
-          <Link href="/">back to benchmark console</Link>
-        </p>
+    <main>
+      <header className="hero">
+        <div className="wrap">
+          <p className="kicker">LLM Survivor</p>
+          <h1>Past seasons</h1>
+          <p className="lead">
+            Every season played so far, newest first. Open one to see who finished where, or read its full story.
+          </p>
+          <div className="hero-actions">
+            <Link className="btn-ghost" href="/#run">
+              Start a new season
+            </Link>
+          </div>
+        </div>
       </header>
 
-      {failed && <p className="bench-error">history unavailable</p>}
-      {!failed && seasons.length === 0 && <p className="bench-meta">no live seasons recorded yet</p>}
+      <section className="sec" aria-label="Seasons">
+        <div className="wrap">
+      {failed && <p className="empty">The season history could not be loaded. Reload the page to try again.</p>}
+      {!loaded && <p className="empty">Loading every season...</p>}
+      {loaded && !failed && seasons.length === 0 && <p className="empty">No live season has been recorded yet.</p>}
 
+      <div className="season-list">
       {seasons.map((s) => {
         const open = openId === s.season_id;
         const finished = Boolean(s.game?.winner);
         const narrative = narratives[s.season_id];
         return (
-          <section key={s.season_id} className="bench-section">
-            <button
-              className={finished ? "season-head" : "season-head season-head-unfinished"}
-              onClick={() => toggle(s.season_id)}
-              aria-expanded={open}
-            >
-              <span>{open ? "v" : ">"}</span>
-              <span>{seasonDate(s.season_id)}</span>
-              <strong>
-                {s.error ? "error" : finished ? `${s.game?.winner} won` : s.interrupted ? "interrupted" : "unfinished"}
-              </strong>
-              <span className="season-head-meta">
-                {finished ? "ended in" : "stopped in"} round {s.game?.rounds ?? "-"}
-                {s.cost_cents != null ? ` | ${usd(s.cost_cents)}` : ""}
-                {s.live_calls != null ? ` | ${s.live_calls} calls` : ""}
+          <article key={s.season_id} className="card season" data-open={open}>
+            <button className="season-head" onClick={() => toggle(s.season_id)} aria-expanded={open}>
+              <span className="caret" aria-hidden="true">▸</span>
+              <span className="season-title">
+                <span className={finished ? "result" : "result dim"}>
+                  {s.error
+                    ? "This season could not be scored"
+                    : finished
+                      ? `${s.game?.winner} won`
+                      : s.interrupted
+                        ? "Stopped early: an AI provider went down"
+                        : "Stopped early, no winner"}
+                </span>
+                <span className="season-sub">
+                  {[
+                    friendlyDate(s.season_id),
+                    s.rows ? `${s.rows.length} models` : null,
+                    finished && s.game?.rounds ? `${s.game.rounds} rounds` : null,
+                    duration(s.elapsed_s),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
               </span>
             </button>
 
             {open && !s.error && (
-              <>
-                <p className="bench-meta">
-                  {[
-                    s.roster ? `roster ${s.roster}` : null,
-                    s.season_seed != null ? `seed ${s.season_seed}` : null,
-                    s.index_version != null ? `index v${s.index_version}` : null,
-                    s.elapsed_s != null ? `${Math.round(s.elapsed_s / 60)} min` : null,
-                    s.cap_reached ? `cap reached: ${s.cap_reached}` : null,
-                    s.interrupted
-                      ? `interrupted at ${s.interrupted.step}: provider outage, not a result`
-                      : finished
-                        ? null
-                        : "run stopped before a winner was declared",
-                  ]
-                    .filter(Boolean)
-                    .join(" | ")}
-                  {" | "}
-                  <a href={`/report/${s.season_id}`}>full report</a>
-                </p>
+              <div className="season-body">
+                <div className="row-actions">
+                  <a className="btn-solid" href={`/watch?season=${encodeURIComponent(s.season_id)}`}>
+                    Watch it
+                  </a>
+                  <a className="btn-ghost" href={`/report/${s.season_id}`}>
+                    Read the full story
+                  </a>
+                  <span className="muted">Click a model&apos;s name for everything it said and did.</span>
+                </div>
                 <ScoreTable
                   rows={s.rows ?? []}
                   selectedId={openModel}
@@ -477,8 +489,10 @@ export default function HistoryPage() {
                     return <ModelDetail narrative={n} row={row} onClose={() => setOpenModel(null)} />;
                   })()}
 
-                {narrative === "loading" && <p className="bench-meta">loading season summary...</p>}
-                {narrative === "error" && <p className="bench-meta">no written summary for this season</p>}
+                <details className="more">
+                  <summary>Round by round</summary>
+                {narrative === "loading" && <p className="bench-meta">Loading the round-by-round record...</p>}
+                {narrative === "error" && <p className="bench-meta">This season has no round-by-round record.</p>}
 
                 {narrative && narrative !== "loading" && narrative !== "error" && (
                   <div className="narrative">
@@ -584,12 +598,33 @@ export default function HistoryPage() {
                     )}
                   </div>
                 )}
-              </>
+                </details>
+                <p className="foot">
+                  {[
+                    s.roster ? `roster ${s.roster}` : null,
+                    s.season_seed != null ? `seed ${s.season_seed}` : null,
+                    s.index_version != null ? `score version ${s.index_version}` : null,
+                    s.live_calls != null ? `${s.live_calls} model calls` : null,
+                    s.cost_cents != null ? `about $${(s.cost_cents / 100).toFixed(2)}` : null,
+                    s.cap_reached ? "stopped by its spending limit" : null,
+                    s.interrupted ? `stopped at ${s.interrupted.step}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </div>
             )}
-            {open && s.error && <p className="bench-error">rescore failed: {s.error}</p>}
-          </section>
+            {open && s.error && (
+              <div className="season-body">
+                <p className="bench-error">This season could not be rescored: {s.error}</p>
+              </div>
+            )}
+          </article>
         );
       })}
+      </div>
+        </div>
+      </section>
     </main>
   );
 }

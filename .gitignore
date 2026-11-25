@@ -37,3 +37,7 @@ artifacts/seasons/
 artifacts/demo/
 artifacts/pricing_cache.json
 artifacts/public_live_ledger.json
+
+# Season clip (Remotion)
+video/node_modules/
+video/out/

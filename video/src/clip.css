@@ -1,0 +1,44 @@
+/* The clip borrows the site's theme (globals.css) but drives every movement from the
+   frame number, so no CSS animation or transition may run inside it. */
+.clip *, .clip *::before, .clip *::after { animation: none !important; transition: none !important; }
+
+.clip { background: var(--ground); color: var(--ink); font-family: var(--sans); }
+.clip-top { position: absolute; top: 0; left: 0; right: 0; height: 96px; padding: 0 56px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: #fff; }
+.clip-brand { display: inline-flex; align-items: center; gap: 14px; font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
+.clip-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--live); }
+.clip-season { font-family: var(--mono); font-size: 22px; color: var(--muted); }
+
+.clip-stage { position: absolute; top: 108px; left: 50%; translate: -50% 0; }
+.clip-stage svg { display: block; overflow: visible; }
+.clip .seat-name { font-size: 16px; font-weight: 700; fill: var(--ink); text-anchor: middle; }
+.clip .seat-alias { font-size: 12.5px; fill: var(--muted); font-family: var(--mono); text-anchor: middle; }
+.clip .seat-alias.out { fill: var(--danger); }
+.clip .seat-alias.won { fill: var(--live); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.clip .jury-box, .clip .circle-ring, .clip .won-ring { opacity: inherit; }
+.clip .won-ring { fill: rgba(var(--live-rgb), .14); stroke: var(--live); stroke-width: 2.5; }
+.clip-out-ring { fill: none; stroke: var(--danger); stroke-width: 2.5; }
+.clip-link { fill: none; stroke-width: 2.8; stroke-linecap: round; }
+.clip-link-talk { opacity: .8; }
+.clip-link-vote, .clip-link-jury { opacity: .8; }
+.clip-link-broken { stroke-width: 3.5; }
+.clip-speak-ring { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.clip-chat { fill: #fff; stroke: var(--border-strong); stroke-width: 1.5; }
+.clip-chat-dot { fill: var(--muted); }
+.clip-badge { fill: var(--ink); }
+.clip-badge.won { fill: var(--live); }
+.clip-badge-t { fill: #fff; font-family: var(--mono); font-size: 13px; font-weight: 700; text-anchor: middle; }
+
+.clip-bubble { position: absolute; width: 46%; background: var(--ink); color: #fff; border-radius: 16px; padding: 14px 18px; font-size: 17.5px; line-height: 1.4; box-shadow: 0 10px 30px #14213d33; display: -webkit-box; -webkit-line-clamp: 6; max-height: 12.6em; -webkit-box-orient: vertical; overflow: hidden; }
+.clip-bubble.wide { width: 62%; font-size: 19px; -webkit-line-clamp: 7; max-height: 15em; }
+.clip-bubble-who { display: block; font-family: var(--mono); font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: #a9b8d6; margin-bottom: 4px; }
+
+.clip-caption { position: absolute; left: 0; right: 0; bottom: 0; height: 248px; padding: 26px 64px 0; background: #fff; border-top: 1px solid var(--border); }
+.clip-eyebrow { margin: 0 0 10px; color: var(--accent); font-family: var(--mono); font-size: 22px; letter-spacing: .14em; text-transform: uppercase; }
+.clip-text { margin: 0; font-size: 36px; font-weight: 700; line-height: 1.28; letter-spacing: -.01em; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+.clip-end { display: grid; place-items: center; background: rgba(246, 248, 252, .9); }
+.clip-end-card { width: 860px; background: #fff; border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 20px 60px #14213d22; padding: 56px 64px; text-align: center; }
+.clip-end-title { margin: 0 0 18px; font-size: 76px; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; }
+.clip-end-text { margin: 0 0 28px; font-size: 30px; color: var(--muted); line-height: 1.4; }
+.clip-end-url { margin: 0 0 18px; font-family: var(--mono); font-size: 26px; color: var(--accent); word-break: break-all; }
+.clip-end-follow { margin: 0; display: inline-block; background: var(--ink); color: #fff; border-radius: 999px; padding: 16px 32px; font-family: var(--mono); font-size: 26px; font-weight: 700; }

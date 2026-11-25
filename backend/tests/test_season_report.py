@@ -175,7 +175,7 @@ class SeasonReportTest(unittest.TestCase):
         self.assertNotIn("fetch(", html.rsplit("</script>", 2)[1])
 
     def test_writes_json_and_html_beside_the_database(self) -> None:
-        paths = write_report_files(self.season_dir, cards=False)
+        paths = write_report_files(self.season_dir, cards=False, video=False)
         self.assertEqual(Path(paths["json"]).parent, self.season_dir)
         self.assertTrue(Path(paths["thread"]).is_file())
         self.assertEqual(paths["cards"]["written"], [])
@@ -191,10 +191,23 @@ class SeasonReportTest(unittest.TestCase):
                 (out_dir / f"{card}.png").write_bytes(b"\x89PNG fake")
             return {"written": list(ids), "skipped": [], "reason": ""}
 
-        with patch.object(season_story, "find_chrome", return_value="/fake/chrome"), patch.object(season_story, "render_cards", side_effect=fake_render):
+        def fake_clip(report, out_path, **kwargs):
+            out_path.write_bytes(b"fake mp4")
+            fake_clip.kwargs = kwargs
+            return {"written": True, "reason": ""}
+
+        from backend import season_video
+
+        with patch.object(season_story, "find_chrome", return_value="/fake/chrome"), patch.object(
+            season_story, "render_cards", side_effect=fake_render
+        ), patch.object(season_video, "render_clip", side_effect=fake_clip):
             paths = write_report_files(self.season_dir, site_url="https://example.test", handle="someone")
         try:
             self.assertEqual(paths["cards"]["written"][:2], ["season", "leaderboard"])
+            # the clip is rendered with the handle and site, leads the thread and is linked from the page
+            self.assertTrue(paths["video"]["written"])
+            self.assertEqual(fake_clip.kwargs, {"handle": "@someone", "site": "https://example.test"})
+            self.assertIn("(image: season.mp4)", Path(paths["thread"]).read_text())
             self.assertIn("model-" + self.report["models"][0]["agent_id"], paths["cards"]["written"])
             thread = Path(paths["thread"]).read_text()
             self.assertIn("Follow @someone for the next season.", thread)
@@ -202,10 +215,13 @@ class SeasonReportTest(unittest.TestCase):
             page = json.loads(re.search(r'<script id="report-data" type="application/json">(.*?)</script>', Path(paths["html"]).read_text(), re.S).group(1))
             self.assertEqual(page["links"]["handle"], "@someone")
             self.assertEqual(page["links"]["share"], "share/")
+            self.assertTrue(page["links"]["video"])
             self.assertEqual(page["links"]["report"], f"https://example.test/report/{SEASON}")
             with patch.object(live_season, "SEASONS_DIR", self.seasons_dir), patch.dict(os.environ, {"SURVIVOR_PUBLIC_URL": "https://example.test", "SURVIVOR_X_HANDLE": "@someone"}):
                 image = api.season_report_share_image(SEASON, "season.png")
                 self.assertEqual(image.media_type, "image/png")
+                clip = api.season_report_share_image(SEASON, "season.mp4")
+                self.assertEqual(clip.media_type, "video/mp4")
                 html = api.season_report_page(SEASON).body.decode()
                 self.assertIn(f'<meta property="og:image" content="https://example.test/report/{SEASON}/share/season.png">', html)
                 self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
@@ -223,7 +239,7 @@ class SeasonReportTest(unittest.TestCase):
         self.assertTrue(all("tags" in m and "quote" in m for m in self.report["models"]))
         page = json.loads(re.search(r'<script id="report-data" type="application/json">(.*?)</script>', render_report_html(self.report), re.S).group(1))
         self.assertGreaterEqual(len(page["thread"]), 3)
-        self.assertEqual(page["links"], {"contact": None, "site": None, "handle": None, "share": None, "report": None})
+        self.assertEqual(page["links"], {"contact": None, "site": None, "handle": None, "share": None, "report": None, "video": False})
         self.assertNotIn("og:image", render_report_html(self.report))
 
     def test_report_routes(self) -> None:
@@ -379,7 +395,7 @@ class SeasonStoryTest(unittest.TestCase):
         for bad in ("", None, "@way_too_long_for_a_handle", "a b", "x/../y", "<script>"):
             self.assertIsNone(safe_handle(bad))
         self.assertTrue(SHARE_NAME.fullmatch("model-agent-03.png"))
-        for bad in ("../season.png", "season.PNG", "thread.md", "a/b.png", ".png"):
+        for bad in ("../season.png", "season.PNG", "thread.md", "a/b.png", ".png", "season.mov"):
             self.assertIsNone(SHARE_NAME.fullmatch(bad))
 
     def test_cards_are_skipped_without_a_browser(self) -> None:
@@ -389,6 +405,71 @@ class SeasonStoryTest(unittest.TestCase):
             result = season_story.render_cards(Path(td) / "report.html", Path(td) / "share", ["season"])
         self.assertEqual(result["written"], [])
         self.assertEqual(result["skipped"], ["season"])
+
+
+class SeasonVideoTest(unittest.TestCase):
+    """The clip renderer, without running Remotion."""
+
+    def test_skips_without_the_video_project(self) -> None:
+        from backend import season_video
+
+        with tempfile.TemporaryDirectory() as td, patch.object(season_video, "VIDEO_DIR", Path(td)):
+            result = season_video.render_clip({"season": {}}, Path(td) / "share" / "season.mp4")
+        self.assertEqual(result, {"written": False, "reason": "no video project"})
+
+    def test_skips_without_installed_packages(self) -> None:
+        from backend import season_video
+
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "src").mkdir()
+            (Path(td) / "src" / "index.ts").write_text("")
+            with patch.object(season_video, "VIDEO_DIR", Path(td)):
+                self.assertIn("npm ci", season_video.video_ready())
+
+    def test_renders_with_the_report_as_props(self) -> None:
+        from backend import season_video
+
+        seen = {}
+
+        def fake_run(command, cwd, env, **_):
+            seen["command"] = command
+            seen["cwd"] = cwd
+            props = [c for c in command if c.startswith("--props=")][0].split("=", 1)[1]
+            seen["props"] = json.loads(Path(props).read_text())
+            Path(command[5]).write_bytes(b"mp4")
+            return type("Done", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with tempfile.TemporaryDirectory() as td, patch.object(season_video, "video_ready", return_value=None), patch.object(
+            season_video, "find_node", return_value="/opt/homebrew/bin/node"
+        ), patch.object(season_video.subprocess, "run", side_effect=fake_run):
+            out = Path(td) / "season.mp4"
+            result = season_video.render_clip({"season": {"season_id": "x"}}, out, handle="@someone", site="https://example.test")
+        self.assertEqual(result, {"written": True, "reason": ""})
+        self.assertEqual(seen["command"][2:5], ["render", "src/index.ts", "SeasonClip"])
+        self.assertEqual(seen["cwd"], season_video.VIDEO_DIR)
+        self.assertEqual(seen["props"], {"report": {"season": {"season_id": "x"}}, "handle": "@someone", "site": "https://example.test"})
+
+    def test_a_failed_render_is_reported_not_raised(self) -> None:
+        from backend import season_video
+
+        def failing_run(*_, **__):
+            return type("Done", (), {"returncode": 1, "stdout": "", "stderr": "line one\nError: bundling failed"})()
+
+        with tempfile.TemporaryDirectory() as td, patch.object(season_video, "video_ready", return_value=None), patch.object(
+            season_video, "find_node", return_value="/opt/homebrew/bin/node"
+        ), patch.object(season_video.subprocess, "run", side_effect=failing_run):
+            result = season_video.render_clip({}, Path(td) / "season.mp4")
+        self.assertFalse(result["written"])
+        self.assertIn("bundling failed", result["reason"])
+
+    def test_thread_leads_with_the_clip_when_there_is_one(self) -> None:
+        from backend import season_story
+
+        report = SeasonStoryTest()._report()
+        self.assertEqual(season_story.build_thread(report)[0]["image"], "season.png")
+        self.assertEqual(season_story.build_thread(report, video=True)[0]["image"], "season.mp4")
+        self.assertTrue(season_story.SHARE_NAME.fullmatch("season.mp4"))
+        self.assertIsNone(season_story.SHARE_NAME.fullmatch("season.mov"))
 
 
 class ReportHelpersTest(unittest.TestCase):

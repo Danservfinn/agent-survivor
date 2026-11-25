@@ -21,7 +21,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
-from . import live_cost, season_story
+from . import live_cost, season_story, season_video
 from .benchmark_scoring import LADDER_RUNGS, WEIGHTS, score_season
 
 REPORT_VERSION = 1
@@ -948,6 +948,7 @@ def render_report_html(
     site_url: str | None = None,
     handle: str | None = None,
     share_base: str | None = None,
+    video: bool = False,
 ) -> str:
     """The report as one self-contained HTML page.
 
@@ -960,8 +961,8 @@ def render_report_html(
     handle = season_story.safe_handle(handle)
     report_url = f"{site.rstrip('/')}/report/{season['season_id']}" if site and site.startswith("http") and season.get("season_id") else None
     page = dict(report)
-    page["links"] = {"contact": safe_link(contact_url), "site": site, "handle": handle, "share": share_base or None, "report": report_url}
-    page["thread"] = season_story.build_thread(report, handle=handle, report_url=report_url)
+    page["links"] = {"contact": safe_link(contact_url), "site": site, "handle": handle, "share": share_base or None, "report": report_url, "video": bool(video and share_base)}
+    page["thread"] = season_story.build_thread(report, handle=handle, report_url=report_url, video=bool(video and share_base))
     # "</" must not appear inside the inline JSON or a model's own text could close the script tag
     blob = json.dumps(page, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
     title = f"LLM Survivor season report {season.get('date') or season.get('season_id') or ''}".strip()
@@ -993,9 +994,11 @@ def write_report_files(
     site_url: str | None = None,
     handle: str | None = None,
     cards: bool = True,
+    video: bool = True,
 ) -> dict[str, Any]:
     """Write report.json and report.html beside the season database, and a share
-    folder with the draft thread and, when a Chrome is installed, the share images."""
+    folder with the draft thread, the share images (when a Chrome is installed) and
+    the season clip (when the video project is installed)."""
     season_dir = Path(season_dir)
     report = build_season_report(season_dir, seasons_dir=seasons_dir)
     json_path = season_dir / "report.json"
@@ -1010,4 +1013,16 @@ def write_report_files(
     thread = season_story.build_thread(report, handle=season_story.safe_handle(handle), report_url=report_url)
     (share_dir / "thread.md").write_text(season_story.thread_markdown(thread))
     rendered = season_story.render_cards(html_path, share_dir, season_story.card_ids(report)) if can_render else {"written": [], "skipped": [], "reason": "images not requested" if not cards else "no Chrome or Chromium found; set SURVIVOR_CHROME"}
-    return {"json": str(json_path), "html": str(html_path), "thread": str(share_dir / "thread.md"), "cards": rendered}
+    clip = (
+        season_video.render_clip(report, share_dir / season_video.CLIP_NAME, handle=season_story.safe_handle(handle), site=site)
+        if video
+        else {"written": False, "reason": "video not requested"}
+    )
+    if clip["written"]:
+        # the clip leads the thread, and the page links it
+        thread = season_story.build_thread(report, handle=season_story.safe_handle(handle), report_url=report_url, video=True)
+        (share_dir / "thread.md").write_text(season_story.thread_markdown(thread))
+        html_path.write_text(
+            render_report_html(report, contact_url=contact_url, site_url=site_url, handle=handle, share_base="share/" if can_render else None, video=can_render)
+        )
+    return {"json": str(json_path), "html": str(html_path), "thread": str(share_dir / "thread.md"), "cards": rendered, "video": clip}

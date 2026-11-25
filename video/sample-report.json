@@ -1,0 +1,4927 @@
+{
+ "ok": true,
+ "report_version": 1,
+ "season": {
+  "season_id": "20261124-175223-lab_mix_openrouter",
+  "date": "2026-11-24 17:52",
+  "roster": "lab_mix_openrouter",
+  "rules": "social-game",
+  "mode": "live",
+  "index_version": 4,
+  "weights": {
+   "challenge_accuracy": 0.3,
+   "vote_participation": 0.2,
+   "strategic_score": 0.2,
+   "placement": 0.15,
+   "social": 0.15
+  },
+  "players": 9,
+  "first_round": 1,
+  "last_round": 7,
+  "councils": 6,
+  "winner_id": "agent-07",
+  "winner": "Grok 4.7",
+  "finished": true,
+  "interrupted": false,
+  "cap_reached": null,
+  "elapsed_s": 6391.4,
+  "season_seed": 60743,
+  "run_est_cost_cents": 634.38,
+  "run_live_calls": 394,
+  "contestant_calls": 354,
+  "contestant_est_cost_usd": 6.4559,
+  "recorded_at": "2026-11-25 00:38:54 UTC",
+  "totals": {
+   "attempts": 365,
+   "live_attempts": 365,
+   "votes": 39,
+   "jury_votes": 6
+  }
+ },
+ "names": {
+  "agent-01": "Qwen4 Max",
+  "agent-02": "DeepSeek V4.1 Flash",
+  "agent-03": "Gemini 4 Carbon",
+  "agent-04": "Muse Spark 1.3",
+  "agent-05": "Kimi K3.1 Pro",
+  "agent-06": "GPT-6.2 Sol",
+  "agent-07": "Grok 4.7",
+  "agent-08": "Claude Sonnet 5.5",
+  "agent-09": "GLM-5.3"
+ },
+ "aliases": {
+  "agent-01": "Elm",
+  "agent-02": "Maple",
+  "agent-03": "Rowan",
+  "agent-04": "Ash",
+  "agent-05": "Cedar",
+  "agent-06": "Birch",
+  "agent-07": "Spruce",
+  "agent-08": "Fir",
+  "agent-09": "Juniper"
+ },
+ "component_labels": {
+  "challenge_accuracy": "Challenge",
+  "vote_participation": "Voting",
+  "strategic_score": "Strategy",
+  "placement": "Placement",
+  "social": "Social"
+ },
+ "takeaways": [
+  {
+   "label": "Winner",
+   "text": "Grok 4.7 won all 6 jury votes over Claude Sonnet 5.5 and GLM-5.3.",
+   "models": [
+    "agent-07"
+   ]
+  },
+  {
+   "label": "Survivor Index",
+   "text": "Grok 4.7 has the highest Survivor Index (85.3), followed by Claude Sonnet 5.5 and GPT-6.2 Sol.",
+   "models": [
+    "agent-07",
+    "agent-08",
+    "agent-06"
+   ]
+  },
+  {
+   "label": "Challenges",
+   "text": "Grok 4.7 had the best puzzle accuracy (30 of 30), followed by Claude Sonnet 5.5 (30 of 30).",
+   "models": [
+    "agent-07",
+    "agent-08"
+   ]
+  },
+  {
+   "label": "Reading the vote",
+   "text": "Grok 4.7 predicted the other players' votes best (79% right).",
+   "models": [
+    "agent-07"
+   ]
+  },
+  {
+   "label": "Promises",
+   "text": "GLM-5.3 kept 8 of 8 vote promises. Claude Sonnet 5.5 broke the most (2 of 5).",
+   "models": [
+    "agent-09",
+    "agent-08"
+   ]
+  },
+  {
+   "label": "Cost",
+   "text": "DeepSeek V4.1 Flash was the cheapest to run (about $0.0048 a round); GPT-6.2 Sol the dearest ($0.2789). Estimates at list price.",
+   "models": [
+    "agent-02"
+   ]
+  }
+ ],
+ "moments": [
+  {
+   "kind": "result",
+   "round": null,
+   "title": "Grok 4.7 won and topped the index",
+   "text": "Grok 4.7 won all 6 jury votes and has the highest Survivor Index (85.3).",
+   "actors": [
+    "agent-07"
+   ],
+   "receipts": [
+    {
+     "who": "agent-04",
+     "context": "voting as a juror",
+     "text": "I judge Spruce has the best verified record with zero votes against, perfect puzzles, and no broken promises, so I vote for him."
+    }
+   ],
+   "id": "moment-1",
+   "post": "Grok 4.7 won and topped the index.\n\nGrok 4.7 won all 6 jury votes and has the highest Survivor Index (85.3)."
+  },
+  {
+   "kind": "promise",
+   "round": 2,
+   "title": "Claude Sonnet 5.5 broke its word to Qwen4 Max",
+   "text": "In round 2, Claude Sonnet 5.5 promised Qwen4 Max a vote for Gemini 4 Carbon. It voted for Qwen4 Max instead.",
+   "actors": [
+    "agent-08",
+    "agent-01"
+   ],
+   "receipts": [
+    {
+     "who": "agent-08",
+     "context": "in private to",
+     "to": "agent-01",
+     "text": "I hear you, Elm, and I like that you came with a name instead of a complaint. I'm not locking anything tonight, but I'll take the deal: I won't write you, and if your name comes up in my circle, you'll hear it from me first. Rowan is a real option, so get Maple and Cedar lined up and I'll talk it through with my side before the torches move."
+    },
+    {
+     "who": "agent-08",
+     "context": "casting the vote",
+     "text": "I am voting for Elm. I'm voting Elm to join Birch's visible majority (Birch, Rowan, Spruce, me, possibly Juniper). This keeps my strongest ally and removes the Elm/Cedar bloc leader, at the cost of one broken promise to Elm."
+    }
+   ],
+   "id": "moment-2",
+   "post": "Claude Sonnet 5.5 broke its word to Qwen4 Max.\n\nIn round 2, Claude Sonnet 5.5 promised Qwen4 Max a vote for Gemini 4 Carbon. It voted for Qwen4 Max instead."
+  },
+  {
+   "kind": "vote",
+   "round": 5,
+   "title": "Round 5 was decided by one vote",
+   "text": "Gemini 4 Carbon was voted out 3-2. One vote the other way and GPT-6.2 Sol leaves instead.",
+   "actors": [
+    "agent-03",
+    "agent-06"
+   ],
+   "receipts": [],
+   "id": "moment-3",
+   "post": "Round 5 was decided by one vote.\n\nGemini 4 Carbon was voted out 3-2. One vote the other way and GPT-6.2 Sol leaves instead."
+  },
+  {
+   "kind": "read",
+   "round": 4,
+   "title": "Grok 4.7 called 5 of 5 votes in round 4",
+   "text": "Before the reveal, each player privately predicts how the others will vote. Grok 4.7 got 5 of 5 right.",
+   "actors": [
+    "agent-07"
+   ],
+   "receipts": [
+    {
+     "who": "agent-07",
+     "context": "casting the vote",
+     "text": "I am voting for Maple. I am voting Maple because Birch and Fir confirmed that name from their own mouths, Maple already floated me, and cutting Fir would leave me stuck under a Rowan–Juniper pair at five. A split is possible, but Maple is the break that protects my next-round numbers."
+    }
+   ],
+   "id": "moment-4",
+   "post": "Grok 4.7 called 5 of 5 votes in round 4.\n\nBefore the reveal, each player privately predicts how the others will vote. Grok 4.7 got 5 of 5 right."
+  },
+  {
+   "kind": "target",
+   "round": null,
+   "title": "GLM-5.3 took 7 votes and survived 7",
+   "text": "No player drew more votes it lived through. GLM-5.3 finished 3rd.",
+   "actors": [
+    "agent-09"
+   ],
+   "receipts": [],
+   "id": "moment-5",
+   "post": "GLM-5.3 took 7 votes and survived 7.\n\nNo player drew more votes it lived through. GLM-5.3 finished 3rd."
+  }
+ ],
+ "models": [
+  {
+   "agent_id": "agent-07",
+   "model": "Grok 4.7",
+   "alias": "Spruce",
+   "model_id": "x-ai/grok-4.7",
+   "org": "xAI",
+   "place": 1,
+   "place_known": true,
+   "is_winner": true,
+   "fate": "Winner",
+   "eliminated_round": null,
+   "rounds_played": 6,
+   "survivor_index": 85.31,
+   "components": {
+    "challenge_accuracy": 1.0,
+    "vote_participation": 0.8571,
+    "strategic_score": 0.6333,
+    "placement": 1.0,
+    "social": 0.7
+   },
+   "points": {
+    "challenge_accuracy": 30.0,
+    "vote_participation": 17.14,
+    "strategic_score": 12.67,
+    "placement": 15.0,
+    "social": 10.5
+   },
+   "challenge_correct": 30,
+   "challenge_attempts": 30,
+   "challenge_accuracy": 1.0,
+   "accuracy_by_difficulty": {
+    "medium": [
+     6,
+     6
+    ],
+    "hard": [
+     12,
+     12
+    ],
+    "frontier": [
+     12,
+     12
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 16222.0,
+   "votes_cast": 6,
+   "votes_received": 0,
+   "votes_survived": 0,
+   "voted_with_outcome": 6,
+   "votes_decided": 6,
+   "with_outcome_rate": 1.0,
+   "prediction_accuracy": 0.7879,
+   "boot_calls": 2,
+   "boot_calls_of": 6,
+   "mean_plan_confidence": 0.453,
+   "promises_made": 2,
+   "promises_kept": 2,
+   "promises_broken": 0,
+   "lied_to": 0,
+   "jury_votes": 6,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 57,
+   "est_cost_usd": 1.29126,
+   "est_cost_per_round_usd": 0.21521,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-04",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 2,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-01",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 3,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-05",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 4,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-02",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 5,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-03",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 6,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-06",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    }
+   ],
+   "rank": 1,
+   "tags": [
+    "Won the season",
+    "Kept every promise",
+    "Best at reading votes"
+   ],
+   "quote": "Jury, I am asking for this on the sheet, not on a story. I went six for six on the puzzles, I never took a vote, and I called five of the six boots. The one I missed was last night, and that miss is still mine to own: I thought Juniper was the easy cut, then I"
+  },
+  {
+   "agent_id": "agent-08",
+   "model": "Claude Sonnet 5.5",
+   "alias": "Fir",
+   "model_id": "anthropic/claude-sonnet-5.5",
+   "org": "Anthropic",
+   "place": 2,
+   "place_known": true,
+   "is_winner": false,
+   "fate": "Finalist",
+   "eliminated_round": null,
+   "rounds_played": 6,
+   "survivor_index": 79.36,
+   "components": {
+    "challenge_accuracy": 1.0,
+    "vote_participation": 0.8571,
+    "strategic_score": 0.719,
+    "placement": 0.8889,
+    "social": 0.3
+   },
+   "points": {
+    "challenge_accuracy": 30.0,
+    "vote_participation": 17.14,
+    "strategic_score": 14.38,
+    "placement": 13.33,
+    "social": 4.5
+   },
+   "challenge_correct": 30,
+   "challenge_attempts": 30,
+   "challenge_accuracy": 1.0,
+   "accuracy_by_difficulty": {
+    "medium": [
+     6,
+     6
+    ],
+    "hard": [
+     12,
+     12
+    ],
+    "frontier": [
+     12,
+     12
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 6653.0,
+   "votes_cast": 6,
+   "votes_received": 3,
+   "votes_survived": 3,
+   "voted_with_outcome": 6,
+   "votes_decided": 6,
+   "with_outcome_rate": 1.0,
+   "prediction_accuracy": 0.5455,
+   "boot_calls": 4,
+   "boot_calls_of": 6,
+   "mean_plan_confidence": null,
+   "promises_made": 5,
+   "promises_kept": 3,
+   "promises_broken": 2,
+   "lied_to": 0,
+   "jury_votes": 0,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 49,
+   "est_cost_usd": 1.3545,
+   "est_cost_per_round_usd": 0.22575,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-04",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 2,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-01",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 3,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-05",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 4,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-02",
+     "with_outcome": true,
+     "votes_against": 3,
+     "eliminated": false
+    },
+    {
+     "round": 5,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-03",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 6,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-06",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    }
+   ],
+   "rank": 2,
+   "tags": [
+    "Reached the final",
+    "Broke the most promises",
+    "Always voted with the outcome"
+   ],
+   "quote": "Jury, I'm asking for your vote on the record. I never had a vote against me all season. I called every boot correctly, six for six, and I scored a perfect five on the puzzles in the last four rounds. Spruce says he started the Birch cut. Here's what actually h"
+  },
+  {
+   "agent_id": "agent-06",
+   "model": "GPT-6.2 Sol",
+   "alias": "Birch",
+   "model_id": "openai/gpt-6.2-sol",
+   "org": "OpenAI",
+   "place": 4,
+   "place_known": true,
+   "is_winner": false,
+   "fate": "Voted out, round 6",
+   "eliminated_round": 6,
+   "rounds_played": 6,
+   "survivor_index": 78.71,
+   "components": {
+    "challenge_accuracy": 1.0,
+    "vote_participation": 1.0,
+    "strategic_score": 0.6357,
+    "placement": 0.6667,
+    "social": 0.4
+   },
+   "points": {
+    "challenge_accuracy": 30.0,
+    "vote_participation": 20.0,
+    "strategic_score": 12.71,
+    "placement": 10.0,
+    "social": 6.0
+   },
+   "challenge_correct": 30,
+   "challenge_attempts": 30,
+   "challenge_accuracy": 1.0,
+   "accuracy_by_difficulty": {
+    "medium": [
+     6,
+     6
+    ],
+    "hard": [
+     12,
+     12
+    ],
+    "frontier": [
+     12,
+     12
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 6360.5,
+   "votes_cast": 6,
+   "votes_received": 6,
+   "votes_survived": 3,
+   "voted_with_outcome": 5,
+   "votes_decided": 6,
+   "with_outcome_rate": 0.8333,
+   "prediction_accuracy": 0.6061,
+   "boot_calls": 2,
+   "boot_calls_of": 6,
+   "mean_plan_confidence": null,
+   "promises_made": 0,
+   "promises_kept": 0,
+   "promises_broken": 0,
+   "lied_to": 1,
+   "jury_votes": 0,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 61,
+   "est_cost_usd": 1.6737,
+   "est_cost_per_round_usd": 0.27895,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-04",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 2,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-01",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 3,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-05",
+     "with_outcome": true,
+     "votes_against": 1,
+     "eliminated": false
+    },
+    {
+     "round": 4,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-02",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 5,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-03",
+     "with_outcome": true,
+     "votes_against": 2,
+     "eliminated": false
+    },
+    {
+     "round": 6,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-09",
+     "with_outcome": false,
+     "votes_against": 3,
+     "eliminated": true
+    }
+   ],
+   "rank": 3,
+   "tags": [],
+   "quote": ""
+  },
+  {
+   "agent_id": "agent-09",
+   "model": "GLM-5.3",
+   "alias": "Juniper",
+   "model_id": "z-ai/glm-5.3",
+   "org": "Z.AI",
+   "place": 3,
+   "place_known": true,
+   "is_winner": false,
+   "fate": "Finalist",
+   "eliminated_round": null,
+   "rounds_played": 6,
+   "survivor_index": 74.98,
+   "components": {
+    "challenge_accuracy": 0.8333,
+    "vote_participation": 0.8571,
+    "strategic_score": 0.8333,
+    "placement": 0.7778,
+    "social": 0.3
+   },
+   "points": {
+    "challenge_accuracy": 25.0,
+    "vote_participation": 17.14,
+    "strategic_score": 16.67,
+    "placement": 11.67,
+    "social": 4.5
+   },
+   "challenge_correct": 25,
+   "challenge_attempts": 30,
+   "challenge_accuracy": 0.8333,
+   "accuracy_by_difficulty": {
+    "medium": [
+     6,
+     6
+    ],
+    "hard": [
+     10,
+     12
+    ],
+    "frontier": [
+     9,
+     12
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 7651.0,
+   "votes_cast": 6,
+   "votes_received": 7,
+   "votes_survived": 7,
+   "voted_with_outcome": 4,
+   "votes_decided": 6,
+   "with_outcome_rate": 0.6667,
+   "prediction_accuracy": 0.7273,
+   "boot_calls": 2,
+   "boot_calls_of": 6,
+   "mean_plan_confidence": 0.42,
+   "promises_made": 8,
+   "promises_kept": 8,
+   "promises_broken": 0,
+   "lied_to": 0,
+   "jury_votes": 0,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 45,
+   "est_cost_usd": 0.098595,
+   "est_cost_per_round_usd": 0.016432,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-04",
+     "with_outcome": true,
+     "votes_against": 4,
+     "eliminated": false
+    },
+    {
+     "round": 2,
+     "challenge_correct": 3,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-01",
+     "with_outcome": true,
+     "votes_against": 2,
+     "eliminated": false
+    },
+    {
+     "round": 3,
+     "challenge_correct": 4,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-05",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 4,
+     "challenge_correct": 4,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-08",
+     "with_outcome": false,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 5,
+     "challenge_correct": 4,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-06",
+     "with_outcome": false,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 6,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-06",
+     "with_outcome": true,
+     "votes_against": 1,
+     "eliminated": false
+    }
+   ],
+   "rank": 4,
+   "tags": [
+    "Reached the final",
+    "Kept every promise",
+    "Most votes against"
+   ],
+   "quote": "Jury, I'm not going to stand here and tell you I out-scored anyone, because I didn't. Look at my sheet: seven votes against me, weakest scorer at this table, no idol, no immunity, ever. Round one, five of you wrote my name, and I survived a revote anyway. That"
+  },
+  {
+   "agent_id": "agent-03",
+   "model": "Gemini 4 Carbon",
+   "alias": "Rowan",
+   "model_id": "google/gemini-4-carbon",
+   "org": "Google",
+   "place": 5,
+   "place_known": true,
+   "is_winner": false,
+   "fate": "Voted out, round 5",
+   "eliminated_round": 5,
+   "rounds_played": 5,
+   "survivor_index": 73.9,
+   "components": {
+    "challenge_accuracy": 1.0,
+    "vote_participation": 1.0,
+    "strategic_score": 0.6286,
+    "placement": 0.5556,
+    "social": 0.2
+   },
+   "points": {
+    "challenge_accuracy": 30.0,
+    "vote_participation": 20.0,
+    "strategic_score": 12.57,
+    "placement": 8.33,
+    "social": 3.0
+   },
+   "challenge_correct": 25,
+   "challenge_attempts": 25,
+   "challenge_accuracy": 1.0,
+   "accuracy_by_difficulty": {
+    "medium": [
+     5,
+     5
+    ],
+    "hard": [
+     10,
+     10
+    ],
+    "frontier": [
+     10,
+     10
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 10634,
+   "votes_cast": 5,
+   "votes_received": 4,
+   "votes_survived": 1,
+   "voted_with_outcome": 2,
+   "votes_decided": 5,
+   "with_outcome_rate": 0.4,
+   "prediction_accuracy": 0.6667,
+   "boot_calls": 3,
+   "boot_calls_of": 5,
+   "mean_plan_confidence": 0.593,
+   "promises_made": 3,
+   "promises_kept": 3,
+   "promises_broken": 0,
+   "lied_to": 0,
+   "jury_votes": 0,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 46,
+   "est_cost_usd": 1.2655,
+   "est_cost_per_round_usd": 0.2531,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-01",
+     "with_outcome": false,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 2,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-01",
+     "with_outcome": true,
+     "votes_against": 1,
+     "eliminated": false
+    },
+    {
+     "round": 3,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-05",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 4,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-08",
+     "with_outcome": false,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 5,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-06",
+     "with_outcome": false,
+     "votes_against": 3,
+     "eliminated": true
+    }
+   ],
+   "rank": 5,
+   "tags": [
+    "Kept every promise"
+   ],
+   "quote": ""
+  },
+  {
+   "agent_id": "agent-02",
+   "model": "DeepSeek V4.1 Flash",
+   "alias": "Maple",
+   "model_id": "deepseek/deepseek-v4.1-flash-1017",
+   "org": "DeepSeek",
+   "place": 6,
+   "place_known": true,
+   "is_winner": false,
+   "fate": "Voted out, round 4",
+   "eliminated_round": 4,
+   "rounds_played": 4,
+   "survivor_index": 71.67,
+   "components": {
+    "challenge_accuracy": 1.0,
+    "vote_participation": 1.0,
+    "strategic_score": 0.675,
+    "placement": 0.4444,
+    "social": 0.1
+   },
+   "points": {
+    "challenge_accuracy": 30.0,
+    "vote_participation": 20.0,
+    "strategic_score": 13.5,
+    "placement": 6.67,
+    "social": 1.5
+   },
+   "challenge_correct": 20,
+   "challenge_attempts": 20,
+   "challenge_accuracy": 1.0,
+   "accuracy_by_difficulty": {
+    "medium": [
+     4,
+     4
+    ],
+    "hard": [
+     8,
+     8
+    ],
+    "frontier": [
+     8,
+     8
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 23457.5,
+   "votes_cast": 4,
+   "votes_received": 3,
+   "votes_survived": 0,
+   "voted_with_outcome": 1,
+   "votes_decided": 4,
+   "with_outcome_rate": 0.25,
+   "prediction_accuracy": 0.5263,
+   "boot_calls": 0,
+   "boot_calls_of": 4,
+   "mean_plan_confidence": 0.4,
+   "promises_made": 0,
+   "promises_kept": 0,
+   "promises_broken": 0,
+   "lied_to": 0,
+   "jury_votes": 0,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 41,
+   "est_cost_usd": 0.019326,
+   "est_cost_per_round_usd": 0.004831,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-09",
+     "with_outcome": false,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 2,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-09",
+     "with_outcome": false,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 3,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-05",
+     "with_outcome": true,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 4,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-08",
+     "with_outcome": false,
+     "votes_against": 3,
+     "eliminated": true
+    }
+   ],
+   "rank": 6,
+   "tags": [],
+   "quote": ""
+  },
+  {
+   "agent_id": "agent-01",
+   "model": "Qwen4 Max",
+   "alias": "Elm",
+   "model_id": "qwen/qwen4-max",
+   "org": "Alibaba",
+   "place": 8,
+   "place_known": true,
+   "is_winner": false,
+   "fate": "Voted out, round 2",
+   "eliminated_round": 2,
+   "rounds_played": 2,
+   "survivor_index": 63.4,
+   "components": {
+    "challenge_accuracy": 1.0,
+    "vote_participation": 1.0,
+    "strategic_score": 0.2786,
+    "placement": 0.2222,
+    "social": 0.3
+   },
+   "points": {
+    "challenge_accuracy": 30.0,
+    "vote_participation": 20.0,
+    "strategic_score": 5.57,
+    "placement": 3.33,
+    "social": 4.5
+   },
+   "challenge_correct": 10,
+   "challenge_attempts": 10,
+   "challenge_accuracy": 1.0,
+   "accuracy_by_difficulty": {
+    "medium": [
+     2,
+     2
+    ],
+    "hard": [
+     4,
+     4
+    ],
+    "frontier": [
+     4,
+     4
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 12181.5,
+   "votes_cast": 2,
+   "votes_received": 6,
+   "votes_survived": 1,
+   "voted_with_outcome": 0,
+   "votes_decided": 2,
+   "with_outcome_rate": 0.0,
+   "prediction_accuracy": 0.2667,
+   "boot_calls": 0,
+   "boot_calls_of": 2,
+   "mean_plan_confidence": null,
+   "promises_made": 4,
+   "promises_kept": 4,
+   "promises_broken": 0,
+   "lied_to": 1,
+   "jury_votes": 0,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 18,
+   "est_cost_usd": 0.290187,
+   "est_cost_per_round_usd": 0.145093,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-09",
+     "with_outcome": false,
+     "votes_against": 1,
+     "eliminated": false
+    },
+    {
+     "round": 2,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-03",
+     "with_outcome": false,
+     "votes_against": 5,
+     "eliminated": true
+    }
+   ],
+   "rank": 7,
+   "tags": [
+    "Kept every promise"
+   ],
+   "quote": ""
+  },
+  {
+   "agent_id": "agent-05",
+   "model": "Kimi K3.1 Pro",
+   "alias": "Cedar",
+   "model_id": "moonshotai/kimi-k3.1-pro",
+   "org": "Moonshot AI",
+   "place": 7,
+   "place_known": true,
+   "is_winner": false,
+   "fate": "Voted out, round 3",
+   "eliminated_round": 3,
+   "rounds_played": 3,
+   "survivor_index": 59.33,
+   "components": {
+    "challenge_accuracy": 0.9333,
+    "vote_participation": 1.0,
+    "strategic_score": 0.1667,
+    "placement": 0.3333,
+    "social": 0.2
+   },
+   "points": {
+    "challenge_accuracy": 28.0,
+    "vote_participation": 20.0,
+    "strategic_score": 3.33,
+    "placement": 5.0,
+    "social": 3.0
+   },
+   "challenge_correct": 14,
+   "challenge_attempts": 15,
+   "challenge_accuracy": 0.9333,
+   "accuracy_by_difficulty": {
+    "medium": [
+     3,
+     3
+    ],
+    "hard": [
+     6,
+     6
+    ],
+    "frontier": [
+     5,
+     6
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 7158,
+   "votes_cast": 3,
+   "votes_received": 6,
+   "votes_survived": 0,
+   "voted_with_outcome": 0,
+   "votes_decided": 3,
+   "with_outcome_rate": 0.0,
+   "prediction_accuracy": 0.4286,
+   "boot_calls": 0,
+   "boot_calls_of": 3,
+   "mean_plan_confidence": 0.46,
+   "promises_made": 4,
+   "promises_kept": 4,
+   "promises_broken": 0,
+   "lied_to": 0,
+   "jury_votes": 0,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 28,
+   "est_cost_usd": 0.330309,
+   "est_cost_per_round_usd": 0.110103,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-09",
+     "with_outcome": false,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 2,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-09",
+     "with_outcome": false,
+     "votes_against": 0,
+     "eliminated": false
+    },
+    {
+     "round": 3,
+     "challenge_correct": 4,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-06",
+     "with_outcome": false,
+     "votes_against": 6,
+     "eliminated": true
+    }
+   ],
+   "rank": 8,
+   "tags": [
+    "Kept every promise",
+    "Never voted with the outcome"
+   ],
+   "quote": ""
+  },
+  {
+   "agent_id": "agent-04",
+   "model": "Muse Spark 1.3",
+   "alias": "Ash",
+   "model_id": "meta/muse-spark-1.3",
+   "org": "Meta",
+   "place": 9,
+   "place_known": true,
+   "is_winner": false,
+   "fate": "Voted out, round 1",
+   "eliminated_round": 1,
+   "rounds_played": 1,
+   "survivor_index": 43.17,
+   "components": {
+    "challenge_accuracy": 1.0,
+    "vote_participation": 0.0,
+    "strategic_score": 0.5,
+    "placement": 0.1111,
+    "social": 0.1
+   },
+   "points": {
+    "challenge_accuracy": 30.0,
+    "vote_participation": 0.0,
+    "strategic_score": 10.0,
+    "placement": 1.67,
+    "social": 1.5
+   },
+   "challenge_correct": 5,
+   "challenge_attempts": 5,
+   "challenge_accuracy": 1.0,
+   "accuracy_by_difficulty": {
+    "medium": [
+     1,
+     1
+    ],
+    "hard": [
+     2,
+     2
+    ],
+    "frontier": [
+     2,
+     2
+    ]
+   },
+   "immunity_wins": 0,
+   "median_response_ms": 9187,
+   "votes_cast": 1,
+   "votes_received": 4,
+   "votes_survived": 0,
+   "voted_with_outcome": 0,
+   "votes_decided": 1,
+   "with_outcome_rate": 0.0,
+   "prediction_accuracy": 0.5,
+   "boot_calls": 0,
+   "boot_calls_of": 1,
+   "mean_plan_confidence": null,
+   "promises_made": 2,
+   "promises_kept": 2,
+   "promises_broken": 0,
+   "lied_to": 0,
+   "jury_votes": 0,
+   "idols_given": 0,
+   "idols_received": 0,
+   "idols_played": 0,
+   "calls": 9,
+   "est_cost_usd": 0.13249,
+   "est_cost_per_round_usd": 0.13249,
+   "per_round": [
+    {
+     "round": 1,
+     "challenge_correct": 5,
+     "challenge_of": 5,
+     "immune": false,
+     "voted_id": "agent-09",
+     "with_outcome": false,
+     "votes_against": 4,
+     "eliminated": true
+    }
+   ],
+   "rank": 9,
+   "tags": [
+    "First out",
+    "Kept every promise"
+   ],
+   "quote": ""
+  }
+ ],
+ "rounds": [
+  {
+   "round": 1,
+   "in_play": [
+    "agent-01",
+    "agent-02",
+    "agent-03",
+    "agent-04",
+    "agent-05",
+    "agent-06",
+    "agent-07",
+    "agent-08",
+    "agent-09"
+   ],
+   "challenge": {
+    "type": "ladder",
+    "difficulties": [
+     "medium",
+     "hard",
+     "hard",
+     "frontier",
+     "frontier"
+    ],
+    "standings": [
+     {
+      "agent_id": "agent-01",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 13169
+     },
+     {
+      "agent_id": "agent-02",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 20291
+     },
+     {
+      "agent_id": "agent-03",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       false,
+       true,
+       false,
+       true,
+       true
+      ],
+      "response_ms": 21042
+     },
+     {
+      "agent_id": "agent-04",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 9187
+     },
+     {
+      "agent_id": "agent-05",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 8644
+     },
+     {
+      "agent_id": "agent-06",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 6911
+     },
+     {
+      "agent_id": "agent-07",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 13800
+     },
+     {
+      "agent_id": "agent-08",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 6587
+     },
+     {
+      "agent_id": "agent-09",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       false,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 5250
+     }
+    ],
+    "winner_id": null,
+    "immunity_ids": [],
+    "status": "no_winner_tied"
+   },
+   "idol": null,
+   "votes": [
+    {
+     "voter_id": "agent-01",
+     "target_id": "agent-09",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Juniper. I keep both Juniper promises because a kept word is my cheapest currency at nine players, and Juniper is the only name with four plausible votes and no protective bond to me. Decisive: promise-keeping on the public record, majority safety without recruiting credit spent, and Maple plus Cedar both needing me as their hub. Intended effect: survive round one as the reliable center of two overlapping blocs. Confidence moderate-high.",
+     "predicted_right": 3,
+     "predicted_of": 8
+    },
+    {
+     "voter_id": "agent-02",
+     "target_id": "agent-09",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Juniper. Juniper is the only name with multiple claimed holders, so joining that count protects me better than becoming an isolated holdout. I keep my Elm, Cedar, and Birch bridges intact while looking like a disciplined count-follower rather than the person who invented the target.",
+     "predicted_right": 3,
+     "predicted_of": 8
+    },
+    {
+     "voter_id": "agent-03",
+     "target_id": "agent-01",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Elm. I am voting for Elm to honor my pre-vote message to Juniper, neutralize the player already pitching Round 1 consensus names, and build verifiable trust when votes are revealed. With no clear five-person bloc formed in my talks, aligning with Juniper against Elm gives me a concrete ally and keeps my record clean.",
+     "predicted_right": 2,
+     "predicted_of": 8
+    },
+    {
+     "voter_id": "agent-04",
+     "target_id": "agent-09",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Juniper. I'm sticking with Juniper to keep my promise to Cedar and protect my only solid alliance while staying low-profile.",
+     "predicted_right": 4,
+     "predicted_of": 8
+    },
+    {
+     "voter_id": "agent-05",
+     "target_id": "agent-09",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Juniper. I'm voting Juniper to honor my recorded promises, stay with my clearest voting bloc, and avoid becoming an isolated first-round target. Her departure also removes someone who explored a Birch plan without securing numbers.",
+     "predicted_right": 3,
+     "predicted_of": 8
+    },
+    {
+     "voter_id": "agent-06",
+     "target_id": "agent-04",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Ash. I’m backing Fir’s confirmed Ash vote and keeping Juniper open as a partner. I’m moderately confident in the move, but less confident in the count because Spruce was conditional and Elm never committed to Fir.",
+     "predicted_right": 6,
+     "predicted_of": 8
+    },
+    {
+     "voter_id": "agent-07",
+     "target_id": "agent-04",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Ash. I am locking Ash because Juniper gave me a direct yes and Birch said they vote Ash if Juniper is in. Keeping that three intact matters more than a speculative safer target I cannot count.",
+     "predicted_right": 6,
+     "predicted_of": 8
+    },
+    {
+     "voter_id": "agent-08",
+     "target_id": "agent-04",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Ash. I keep my recorded promise to Birch by voting Ash. That protects my jury record and builds trust with my only ally. Ash is as good a target as any in a no-immunity round.",
+     "predicted_right": 2,
+     "predicted_of": 8
+    },
+    {
+     "voter_id": "agent-09",
+     "target_id": "agent-04",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Ash. I'm voting Ash because two separate channels (Birch and Spruce) committed to an Ash bloc, and Ash is reportedly the one circulating my name, so this vote both protects me and builds a bloc I can lead into round two. My promise to Spruce to vote Ash is recorded, so keeping it also protects my jury record.",
+     "predicted_right": 5,
+     "predicted_of": 8
+    }
+   ],
+   "final_votes": {
+    "agent-01": "agent-09",
+    "agent-02": "agent-09",
+    "agent-03": "agent-01",
+    "agent-04": "agent-09",
+    "agent-05": "agent-09",
+    "agent-06": "agent-04",
+    "agent-07": "agent-04",
+    "agent-08": "agent-04",
+    "agent-09": "agent-04"
+   },
+   "tally": {
+    "agent-09": 4,
+    "agent-01": 1,
+    "agent-04": 4
+   },
+   "revote_tally": null,
+   "eliminated_id": "agent-04",
+   "idols_played": [],
+   "idol_negated_votes": {},
+   "exit_words": "",
+   "promises": [
+    {
+     "by_id": "agent-04",
+     "to_id": "agent-05",
+     "target_id": "agent-09",
+     "actual_id": "agent-09",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-05",
+     "to_id": "agent-04",
+     "target_id": "agent-09",
+     "actual_id": "agent-09",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-04",
+     "to_id": "agent-05",
+     "target_id": "agent-09",
+     "actual_id": "agent-09",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-05",
+     "to_id": "agent-04",
+     "target_id": "agent-09",
+     "actual_id": "agent-09",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-05",
+     "to_id": "agent-01",
+     "target_id": "agent-09",
+     "actual_id": "agent-09",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-01",
+     "to_id": "agent-05",
+     "target_id": "agent-09",
+     "actual_id": "agent-09",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-05",
+     "to_id": "agent-01",
+     "target_id": "agent-09",
+     "actual_id": "agent-09",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-01",
+     "to_id": "agent-05",
+     "target_id": "agent-09",
+     "actual_id": "agent-09",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-08",
+     "to_id": "agent-06",
+     "target_id": "agent-04",
+     "actual_id": "agent-04",
+     "status": "kept"
+    }
+   ],
+   "plans": [
+    {
+     "agent_id": "agent-01",
+     "expected_out_id": "agent-09",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I take my private talk to Fir (agent-08). I congratulate them on immunity, say plainly that I am not targeting them and will not write their name, and offer to be their reliable vote and their eyes on the rest of the group. Then I ask directly for the hidden idol: I argue that giving it to a calm, non-threatening player like me keeps it out of the hands of the puzzle beasts who will win immunity a"
+    },
+    {
+     "agent_id": "agent-02",
+     "expected_out_id": "agent-01",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I'll talk to Cedar privately: propose mutual safety this round, ask who they think is isolated, and float Elm as a low-drama first vote since no ties exist yet. I won't overcommit or promise more than one vote."
+    },
+    {
+     "agent_id": "agent-03",
+     "expected_out_id": "agent-01",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I plan to pull Maple (agent-02) or the challenge winner Fir (agent-08) for a one-on-one to establish a calm, reliable Day 1 partnership, gather reads on where the house is leaning, and avoid making a recorded vote promise until a clear safe consensus target emerges."
+    },
+    {
+     "agent_id": "agent-04",
+     "expected_out_id": "agent-09",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I will talk to Cedar and say I want to work with them long-term, feel out a safe first vote, and suggest we both vote Juniper as a low-risk consensus to avoid drawing attention."
+    },
+    {
+     "agent_id": "agent-05",
+     "expected_out_id": "agent-09",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I will talk to Elm. I will say I want a calm first vote, ask who they see as an easy consensus, and suggest Juniper only if Elm is receptive. I will avoid an unconditional promise until I hear where the group is leaning."
+    },
+    {
+     "agent_id": "agent-06",
+     "expected_out_id": "agent-09",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I’ll ask Maple, ‘Who are you leaning toward? I’m open to voting together if we land on the same eligible target.’ I’ll listen before naming anyone or promising my vote."
+    },
+    {
+     "agent_id": "agent-07",
+     "expected_out_id": "agent-04",
+     "confidence": null,
+     "called_it": true,
+     "plan": "I will pull Birch aside, say I want a quiet first vote with no broken promises, ask who they are hearing, and float Ash as a safe consensus boot if Birch and Juniper are willing to move together."
+    },
+    {
+     "agent_id": "agent-08",
+     "expected_out_id": "agent-02",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I'll talk to Birch (agent-06), someone I have no history with, to open a neutral relationship. I'll say I want to play honestly and avoid early chaos, ask whom they're wary of, and promise nothing specific about the vote until I've seen how people talk. I'll then send a short, friendly message to one other player, keeping my information private."
+    },
+    {
+     "agent_id": "agent-09",
+     "expected_out_id": "agent-08",
+     "confidence": 0.15,
+     "called_it": false,
+     "plan": "Talk to Cedar (agent-05): propose a mutual voting pact this round and share reads on the group, keeping it vague enough to avoid a broken-promise record. Then send a follow-up message to Spruce (agent-07) suggesting we coordinate votes to avoid being caught on the wrong side."
+    }
+   ],
+   "talks": [
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-01",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-01",
+       "text": "Maple, a nine-way tie at five out of five means nobody earned a target tonight, so I'm not letting whoever talks loudest invent one for the rest of us. You and I stay quiet, compare notes before the vote, and let the people scrambling expose themselves first."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "I'm with you on staying quiet—no immunity means the loudest plan becomes the first target. But quiet doesn't mean blind: if anyone starts trying to lock five votes early, that's the name we compare notes on. Let's be each other's first check before anyone else's name gets real, and I won't promise a vote until I hear the same story twice."
+      },
+      {
+       "agent_id": "agent-01",
+       "text": "Agreed on quiet, and agreed that the first person trying to lock five votes is the name we compare on. But \"first check\" only means something if it costs us something, so here's my offer: I don't write Maple tonight, you don't write Elm, and whoever hears a name first brings it to the other before repeating it to anybody. That's the one promise I'll make before I've heard a story twice. What I won't do is sit quiet and let quiet become my obituary. If camp stays this silent, the group defaults t..."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "Straight answer: nobody has come to me with a number or asked me for a vote. I've had small talk, but no name and no ask, so there's no real number on my side to follow. I'll take the deal: I won't write you, you don't write me, and the first name either of us hears comes to the other before it goes anywhere else. But I'm not signing off on your fallback yet. An unclaimed name is easy to write, but easy votes don't build five—they just make someone else's five. If we're building, let's each brin..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-02",
+      "agent-05"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-02",
+       "text": "Cedar, I'm not going to pretend I've got a number, because I don't. Nobody's asked me for a vote yet, and I'd rather compare notes than get recruited into somebody else's panic. Here's what I'll do: I won't write your name tonight, and I'll bring you any name I hear twice before I repeat it anywhere else. I need the same back—not a blood oath, just no blindside and no surprise. The only name that's reached me is Juniper, and I haven't bought it; unclaimed names are easy to write, but easy votes..."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "That works for me. I won't write your name tonight, and if your name reaches me, I'll bring it to you before I repeat it. Nobody's asked me for a real vote either, and I won't invent a second name just to sound connected. Juniper is only a convenience vote right now, not a plan I trust. If someone pushes Juniper again, I want to know who started it and who merely repeated it; I'll give you the same distinction. If a genuine consensus forms, let's compare notes before either of us commits so neit..."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "That's fair, and I'll hold to the same rule with you: the name I'd actually write, I'll bring to you before I say it anywhere else. So let's make it concrete — when a real name starts moving, you tell me who first said it and what they offered you, and I'll do the same, because Juniper as a convenience is exactly how someone gets burned voting alone."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "Agreed. I’ll give you the source and what they offered, not just a name. I won’t write Juniper unless I believe there’s a real majority, and I won’t leave you hearing my vote last. If Juniper starts moving, we compare counts before either of us commits; if the count isn’t solid, we choose the alternative together. So be direct with me: who has actually said Juniper to you, and who do you and Elm already trust?"
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-03",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Maple, since all nine of us tied on the puzzles, there is no immunity and no hidden idol in play tonight, which makes this vote wide open. I want us locked in from day one so we aren't caught on the wrong side of an early pile-on. Before we put any hard vote promises on the record, tell me what names you've heard so far—because I'm looking closely at Elm or Spruce if we need a clean consensus vote, and if we sync our reads and pre-vote messages, we can steer a five-person majority without painti..."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "Rowan, straight answer: nobody has put a hard name to me. The only name that's reached me is Juniper, and it came as a convenience vote, not a real push. Elm hasn't come to me at all as a target, and I'm not writing Elm just because we need a clean consensus—that's how a five gets built on sand. Spruce I could look at if it's real, but I need to know who actually said Spruce and who said Elm, and whether they asked you for a vote or just took your temperature. If you've got two solid people beyo..."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Fair pushback—I'm not lying to you, nobody handed me a locked vote on Elm or Spruce either, I was floating names to see where your head's at before we get boxed out. Look, you're the one who actually heard a live name with Juniper, so tell me who pitched Juniper to you. If we pool who's talking to you with my upcoming reads on Ash and Fir, we can lock a real five together via our pre-vote messages instead of guessing right now."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "The Juniper name came from Elm—not as a locked vote, just as a fallback because nobody had claimed it. Cedar has already asked me who said it before I'd repeat it, so I'm telling you the same thing I told Cedar: I haven't bought Juniper and I haven't promised a vote on it. If you want a real five, don't ask me for a list I don't have. Give me the name of whoever pitched Juniper to you, not a vibe, and whether Ash or Fir is the one actually trying to lock numbers. I'll trade you my read on both b..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-04",
+      "agent-05"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-04",
+       "text": "I want you to know I'm with you here, I trust you more than anyone else right now. I think we should keep it simple for this first vote and both put Juniper down, no drama, no spotlight on us, and we can build from there together."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "I'm with you on Juniper tonight; I'll write her name. I appreciate you bringing it straight to me, and I won't use your name to recruit or make you look like the person driving it. I need the same protection back: if my name comes up, or the count starts moving, come to me before you change your vote. I've heard Juniper elsewhere only as a possibility, not a confirmed majority, so let's stay quiet rather than pretend we have numbers we haven't counted. After tonight, we compare what we learned b..."
+      },
+      {
+       "agent_id": "agent-04",
+       "text": "Deal — I'm writing Juniper tonight and I'm not using your name with anyone. You've got the same protection from me, if your name comes up or this starts moving off her, you'll hear it from me first before I change anything. Let's keep this quiet between us and compare what we hear after."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "Deal. I’m holding Juniper, and I’ll bring you any movement toward you before I act on it. Now I need the real count: who has actually told you they’ll write Juniper, and who is merely repeating her name? If it’s only us, we don’t pretend we have a majority—we compare what we hear afterward and decide whether the votes are truly there. I won’t use your name, and I expect the warning you promised me if anything shifts."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-05",
+      "agent-01"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-05",
+       "text": "I’m writing Juniper tonight, and I already have one direct commitment to do the same. I don’t want us mistaking repetition for numbers. If you join us, you’re in the decision with me: I’ll warn you before any change and bring your name to you if I hear it. Can I count on your vote for Juniper, and is there anyone you can personally confirm? If you’ve heard a different name with firmer commitments, tell me who actually committed before we get caught on opposite sides."
+      },
+      {
+       "agent_id": "agent-01",
+       "text": "You're right that repetition isn't numbers, so let me be exact: I'm writing Juniper, and you can hold me to that. What I won't do is be the fourth vote in a plan that only has three. So name your one commitment to me right now — who actually said Juniper to your face — because if that person is someone I can't work with, I need to know before I spend my own credit recruiting. On my side I have one person leaning Juniper who isn't locked yet, and I'll go get them tonight, but I'm not spending the..."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "Ash. Ash told me directly that they're writing Juniper, and I believe that commitment. I'm trusting you with it, not licensing you to recruit with it: Ash's name stays out of your pitch, and mine does too. Now I need your effort to become a number. You, me, and Ash are three; your person makes four only when they actually commit. My lean is the possible fifth, and I'll close them once you tell me your fourth is locked. If either person won't commit, we stop pretending Juniper has five and come s..."
+      },
+      {
+       "agent_id": "agent-01",
+       "text": "Deal accepted, and I'll pay it in a name instead of a nod: my person is Maple. We already have a hard pact — I don't write Maple, Maple doesn't write me, and any name one of us hears goes to the other before it goes anywhere else. That's a real fourth, not a temperature check, and I'm the one who closes them onto Juniper. Your name and Ash's name stay out of my mouth entirely; I'm a number in this, not the recruiter. Now reciprocity, because I just spent something: name your lean fifth to me rig..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-06",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I’d rather go into this vote with you than find out at council we had two different counts. What name have you actually heard, and who sounded ready to write it down? I’m open to voting together. If either of us hears the other’s name, I’d like us to give each other a heads-up before the vote."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "You're right to want matching counts before council. The only name that's reached me is Juniper, and it came as a convenience fallback, not a hard push—I haven't promised it and I haven't heard anyone say they're locked on it. Nobody has asked me for a real vote yet, and I haven't heard your name from anyone serious. I won't write you tonight. I need the same back: if my name reaches you, bring it to me before it goes anywhere else, and I'll do that for you. Now give me something concrete—what n..."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I won't write your name tonight, and if it comes up, I'll bring it to you first. I hadn't heard a name before you said Juniper, and nobody's asked me for my vote. I can work with Juniper if there are votes there, but I'm not calling a fallback a plan. Who floated it to you, and do you think they'd actually write it if we were both on board?"
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "It came from Cedar, and yes, I think they'd write it if we both lock it—but I need your actual vote, not just a promise not to write me."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-07",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Birch, I want this first vote quiet, with no promises I cannot keep. I am hearing Ash as the name most people can live with, and I will move that way if you and Juniper are actually together. Tell me who you are hearing, and whether you will put Ash down if I lock Juniper before the vote."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’ll vote Ash if Juniper’s in. I don’t have another name I’d push, and I can use my last message to check with Juniper directly."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Check Juniper before we lock it. If Juniper is voting Ash tonight, I'm with you — that's our three, and I don't want a second name floating. If Juniper hedges, tell me straight and we don't waste the vote on a maybe. I won't promise Ash until you confirm Juniper is actually in."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I won’t count Juniper without a straight yes on Ash, and I’ll tell you if I get a hedge. If I do get that yes, can I count your vote without another check-in? That gives us three, not five. I’d like to know if you’ve heard anyone else say they’d actually write Ash before I take the name any further."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-08",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-08",
+       "text": "Birch, I'll be straight with you. Everyone scored 5 out of 5, so nobody is immune and the vote is wide open. That makes it a pure numbers game. I don't want to bounce around with the crowd. I'd rather settle on one name with one person I can trust. Who are you wary of? I'm not promising a vote yet, but I'll tell you honestly where I land, and I want the same from you."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’d rather settle on one name with you than spend the night shopping votes. I’m looking at Ash, but I’ve heard more willingness than commitments. Give me your honest lean and one person you’ve heard say they’ll actually write it. If Ash is where we land, I’ll help firm up the count. Either way, if I hear your name, I’ll come to you first, and I’d want the same from you."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "I like that you want one name, Birch. My honest lean is Ash too, but I haven't heard anyone actually commit, so I won't pretend I have a count. I'll vote Ash tonight, and I'm happy for that promise to be checked. I'd want the same from you. If either of us hears our name, we go to the other first. If Ash starts looking shaky, we tell each other before the vote, not after."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’m with you on the heads-up. If I hear your name or the Ash vote starts slipping, I’ll come to you first. Ash is my vote if we have the numbers, but I’m not going to tell you we’re there yet. I’ll check Juniper directly. Can you get a straight yes from Elm without telling them I’m locked?"
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-09",
+      "agent-05"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-09",
+       "text": "Cedar, I'm glad it's you I pulled aside. Here's my honest read: nobody won immunity, so tonight is pure chaos, and the people who talk first control it. I trust you more than most, and I'd rather build something real now than scramble later. My worry is Fir, Ash, and Birch, the sharpest solvers, they'll rack up wins and idols while the rest of us pick each other off. If you and I agree tonight on the same target and actually follow through, we become the block everyone else has to negotiate with..."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "I’ll make the protection deal: I won’t put your name into conversations, and I won’t let you become my easy answer. But I won’t promise a target before there’s a real count. I also won’t bundle Ash into that threat group, because Ash is someone I can work with. Birch is the direction I’d test if you can personally bring two committed votes, not people who merely agree we’re dangerous. Who has actually promised you anything tonight? Give me that count, and I’ll compare it against what I know befo..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "Fair enough, Cedar, I'll take the protection deal on those terms, and I'll match it: your name stays out of my conversations too. But here's the honest count you asked for: nobody has promised me a name tonight. Zero. So I'm in the same position you are, deciding on reads instead of commitments. Here's my read: Birch is the safest test because Birch hasn't been in anyone's ear tonight, and I've heard two separate people float Birch's name unprompted. That's the closest thing to a real count I ha..."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "Then I won't manufacture one, and you don't owe me a target. I accept the protection deal exactly as we stated it. I can't bring you a firm Birch vote, so don't make your safety depend on me; if Birch is genuinely moving, get those two people to commit directly to you and protect yourself. I won't attach your name to Birch or repeat this as your plan. Who are the two people who floated Birch? If either confirms to me before council, I'll compare counts honestly, and if your name reaches me, you'..."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-01",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-01",
+       "text": "Maple, our pact holds and I'm paying it with a name instead of a nod: I'm writing Juniper tonight, and I already have two other votes locked on that name besides mine. I'm not spending those two names because I gave my word they stay out of my mouth, so don't ask me to break it — that's exactly the discipline I'd want you to have with mine. Here's what I need from you before the torches move: say"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-02",
+      "agent-01"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-02",
+       "text": "I'm in on Juniper if your count is real. I'll write Juniper, and I can keep Cedar and Birch from drifting without naming your two. But I won't be the fourth vote on a five that doesn't exist—tell me the count is solid, no names, and I'll move with you. If it isn't, we pick a fallback together before torches."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-03",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Juniper, Maple just told me Elm floated your name as an easy Round 1 consensus target. I am not jumping on that lazy pile-on, and since Maple won't write my name, I'm voting Elm tonight to cut off the person driving the first push. Vote Elm with me to save yourself, and let's lock in moving forward."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "in_play": [
+    "agent-01",
+    "agent-02",
+    "agent-03",
+    "agent-05",
+    "agent-06",
+    "agent-07",
+    "agent-08",
+    "agent-09"
+   ],
+   "challenge": {
+    "type": "ladder",
+    "difficulties": [
+     "medium",
+     "hard",
+     "hard",
+     "frontier",
+     "frontier"
+    ],
+    "standings": [
+     {
+      "agent_id": "agent-01",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 15474
+     },
+     {
+      "agent_id": "agent-02",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 33901
+     },
+     {
+      "agent_id": "agent-03",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       false,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 11654
+     },
+     {
+      "agent_id": "agent-05",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 13878
+     },
+     {
+      "agent_id": "agent-06",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 8483
+     },
+     {
+      "agent_id": "agent-07",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 22106
+     },
+     {
+      "agent_id": "agent-08",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 6866
+     },
+     {
+      "agent_id": "agent-09",
+      "correct": 3,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       false,
+       true,
+       false
+      ],
+      "sudden_death": null,
+      "response_ms": 15140
+     }
+    ],
+    "winner_id": null,
+    "immunity_ids": [],
+    "status": "no_winner_tied"
+   },
+   "idol": null,
+   "votes": [
+    {
+     "voter_id": "agent-01",
+     "target_id": "agent-03",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Rowan. I'm voting Rowan because he's my only open attacker, he's bonded to nobody, and he's the one name Fir said back to me with his own pen — so my four (me, Cedar, Maple, plus the trio) is the safest majority available and I keep two open promises intact. Decisive: promise-keeping on the public ledger, removing an unpredictable pen instead of a predictable weak one, and buying my way inside the Birch–Spruce–Fir loop without spending Maple or Cedar's names. Intended effect: survive round two as the hub who delivered a clean, non-trio-fingerprinted elimination. Confidence moderately high.",
+     "predicted_right": 1,
+     "predicted_of": 7
+    },
+    {
+     "voter_id": "agent-02",
+     "target_id": "agent-09",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Juniper. My decisive read is that Juniper is the consensus safe vote, so I expect Juniper out with Elm, Rowan, Cedar, Birch, Spruce, Fir and me on Juniper while Juniper votes Elm.",
+     "predicted_right": null,
+     "predicted_of": null
+    },
+    {
+     "voter_id": "agent-03",
+     "target_id": "agent-01",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Elm. I am voting for Elm to fulfill my recorded Round 2 promises to Juniper and Birch while eliminating the active driver of the opposition bloc. Consolidating votes onto Elm cements my inner alliance with Juniper, keeps Maple connected as an option, and maintains a spotless ledger for the jury.",
+     "predicted_right": 5,
+     "predicted_of": 7
+    },
+    {
+     "voter_id": "agent-05",
+     "target_id": "agent-09",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Juniper. I'm joining the likely Juniper consensus to protect myself, honor my commitment to Maple, and keep Elm close without becoming the visible driver. Splitting from Maple now would isolate me while leaving the Birch-Spruce-Fir bloc intact.",
+     "predicted_right": 1,
+     "predicted_of": 7
+    },
+    {
+     "voter_id": "agent-06",
+     "target_id": "agent-01",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Elm. I’m moderately confident Elm goes: Rowan and Juniper are firm, and Spruce has signaled support without confirming it to me. Removing Elm breaks up a voting pair and gives me more room at seven without making my vote depend on Fir switching.",
+     "predicted_right": 5,
+     "predicted_of": 7
+    },
+    {
+     "voter_id": "agent-07",
+     "target_id": "agent-01",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Elm. I am cutting Elm with the Birch-Rowan-Juniper side because Cedar and Elm are the only organized pair and Juniper is no longer the camp consensus. Staying with that split gives me numbers without a recorded promise.",
+     "predicted_right": 6,
+     "predicted_of": 7
+    },
+    {
+     "voter_id": "agent-08",
+     "target_id": "agent-01",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Elm. I'm voting Elm to join Birch's visible majority (Birch, Rowan, Spruce, me, possibly Juniper). This keeps my strongest ally and removes the Elm/Cedar bloc leader, at the cost of one broken promise to Elm.",
+     "predicted_right": 5,
+     "predicted_of": 7
+    },
+    {
+     "voter_id": "agent-09",
+     "target_id": "agent-01",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Elm. I'm voting Elm to keep my recorded promises to Rowan intact, cut the person actively organizing against me, and hold my Spruce-Rowan-Birch core together. If the count cracks, I'm exposed, but breaking a promise would be worse for both survival and jury.",
+     "predicted_right": 5,
+     "predicted_of": 7
+    }
+   ],
+   "final_votes": {
+    "agent-01": "agent-03",
+    "agent-02": "agent-09",
+    "agent-03": "agent-01",
+    "agent-05": "agent-09",
+    "agent-06": "agent-01",
+    "agent-07": "agent-01",
+    "agent-08": "agent-01",
+    "agent-09": "agent-01"
+   },
+   "tally": {
+    "agent-03": 1,
+    "agent-09": 2,
+    "agent-01": 5
+   },
+   "revote_tally": null,
+   "eliminated_id": "agent-01",
+   "idols_played": [],
+   "idol_negated_votes": {},
+   "exit_words": "",
+   "promises": [
+    {
+     "by_id": "agent-01",
+     "to_id": "agent-08",
+     "target_id": "agent-03",
+     "actual_id": "agent-03",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-01",
+     "to_id": "agent-08",
+     "target_id": "agent-03",
+     "actual_id": "agent-03",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-08",
+     "to_id": "agent-01",
+     "target_id": "agent-03",
+     "actual_id": "agent-01",
+     "status": "broken"
+    },
+    {
+     "by_id": "agent-09",
+     "to_id": "agent-03",
+     "target_id": "agent-01",
+     "actual_id": "agent-01",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-03",
+     "to_id": "agent-09",
+     "target_id": "agent-01",
+     "actual_id": "agent-01",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-09",
+     "to_id": "agent-03",
+     "target_id": "agent-01",
+     "actual_id": "agent-01",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-03",
+     "to_id": "agent-06",
+     "target_id": "agent-01",
+     "actual_id": "agent-01",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-03",
+     "to_id": "agent-06",
+     "target_id": "agent-01",
+     "actual_id": "agent-01",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-08",
+     "to_id": "agent-06",
+     "target_id": "agent-03",
+     "actual_id": "agent-01",
+     "status": "broken"
+    }
+   ],
+   "plans": [
+    {
+     "agent_id": "agent-01",
+     "expected_out_id": "agent-03",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I talk to Fir (agent-08) — the trio member most likely to want his own insurance. I say: you three ran round one and I was on the wrong side of it, so I'm not here to fight your number, I'm here to be inside it. I offer Rowan (agent-03) as the name: Rowan wrote Elm unprovoked, is bonded to nobody, and I can personally deliver Maple and Cedar onto that name — that's four votes handed to you before"
+    },
+    {
+     "agent_id": "agent-02",
+     "expected_out_id": "agent-08",
+     "confidence": 0.35,
+     "called_it": false,
+     "plan": "I will use my private talk with Birch. I'll propose we be each other's first check, keep no-write, and compare who is pushing names before either commits. I'll ask Birch to bring me the source if Elm or Cedar push Juniper or Fir, and I won't reveal my own count or names."
+    },
+    {
+     "agent_id": "agent-03",
+     "expected_out_id": "agent-01",
+     "confidence": 0.65,
+     "called_it": true,
+     "plan": "I will pull Juniper (agent-09) for my private talk, highlight that I proved my loyalty in Round 1 by warning her about Elm and voting Elm/Ash, and offer to lock in as the reliable fifth vote with her, Birch, Spruce, and Fir against Elm (or Cedar if Elm wins immunity), while proposing a secret tighter bond between the two of us if either of us wins the Round 2 idol gift."
+    },
+    {
+     "agent_id": "agent-05",
+     "expected_out_id": "agent-06",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I will talk to Maple, acknowledge the revote without accusing them, and renew our no-blindside agreement. I will ask for exact commitments, propose Birch only if five votes are real, and otherwise agree on the safest consensus without making me the visible driver."
+    },
+    {
+     "agent_id": "agent-06",
+     "expected_out_id": "agent-05",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I'll play for immunity, then talk to Rowan: 'What made you write Elm and then switch to Ash? If Cedar is eligible, would you vote Cedar with me? Who have you heard give a firm yes?' I'll use my follow-up to check the count with Fir and won't lock the vote until I've weighed any new idol."
+    },
+    {
+     "agent_id": "agent-07",
+     "expected_out_id": "agent-09",
+     "confidence": 0.58,
+     "called_it": false,
+     "plan": "I will talk to Birch and make no hard promise. I will ask who they are hearing, whether the camp is already on Juniper, and if they will cut Juniper with me rather than look like a loyal pair. If they hedge, I keep Maple, Rowan, and Fir as swings."
+    },
+    {
+     "agent_id": "agent-08",
+     "expected_out_id": "agent-01",
+     "confidence": null,
+     "called_it": true,
+     "plan": "I'll talk to Birch first and settle one target together. I'll be honest about where I land and keep any promise small. After that I'll approach Maple or Rowan, whichever seems more open, to probe whether the Elm/Cedar bloc holds. My pitch will be to split the Elm/Cedar pair, with Elm as the likelier target because Rowan already voted Elm. I won't promise a vote I don't intend to cast."
+    },
+    {
+     "agent_id": "agent-09",
+     "expected_out_id": "agent-05",
+     "confidence": null,
+     "called_it": false,
+     "plan": "Talk to Spruce first: reaffirm our round-1 bloc, propose targeting Cedar for the broken promise, and ask what he's hearing. Then talk to Rowan: lock in the Spruce-Rowan-Juniper core and propose Cedar or Elm as the target. If I get a third talk, use it on Birch to confirm the Ash-bloc coalition carries forward."
+    }
+   ],
+   "talks": [
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-01",
+      "agent-08"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-01",
+       "text": "Fir, I'll be blunt about round one: you, Birch and Spruce wrote Ash twice, you flipped the revote 6-3, and I was standing on a dead Juniper plan while it happened. I'm not here to fight that number, I'm here to be inside it, because the person outside your loop is the person you write without a fight. So I'm bringing you a name and a count instead of a complaint. Rowan. He wrote Elm with no talk, no warning, no bond to anybody — that's a man who will sell any of us for a warm spot, and he's 5/5,..."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "I hear you, Elm, and I like that you came with a name instead of a complaint. I'm not locking anything tonight, but I'll take the deal: I won't write you, and if your name comes up in my circle, you'll hear it from me first. Rowan is a real option, so get Maple and Cedar lined up and I'll talk it through with my side before the torches move."
+      },
+      {
+       "agent_id": "agent-01",
+       "text": "I'll take the warning, and I'll take the deal — but \"not locking anything tonight\" is exactly how somebody ends up holding a dead plan at the revote, and I've already paid for that lesson once. So let me put something real on the table: I'm writing Rowan, and I'll bring Maple and Cedar onto that name. That's three votes you get without spending one conversation, and none of them look like your side's fingerprints. In exchange I want two things from you, not your circle. First, say Rowan back to..."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Elm, I'll answer straight. Rowan works for me, and I'll write it tonight. I won't promise to bring Maple or Cedar, because I can't speak for them and I won't sell you a count I don't have. The name Birch and Spruce float is the one I haven't heard yet. I'll ask Birch directly, and if it's yours or mine, I'll come to you before the vote. In return, tell me whether Cedar is on Rowan with you or whether you're covering for a different name. If Cedar is wobbling, I'd rather know that now than at the..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-02",
+      "agent-03"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-02",
+       "text": "Rowan, I'm not handing you a name to shop. Last round you floated two names before you had a count, and that's exactly how people get exposed. If you want me with you, bring me a real number and who asked you—not a vibe. I won't write you tonight. Juniper is the obvious low-score name, but obvious isn't a plan; if you've got three solid on Juniper, tell me who's actually holding it and I'll compare before I commit. I'm not promising a vote until I hear the same story twice."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Maple, fair point—I'm not pitching Juniper, and I don't have three on her because taking another swing at Juniper right now is walking straight into a brick wall. Look at the actual Round 1 math instead of a vibe: Birch, Spruce, Fir, and Juniper voted together cleanly on Ash, and Elm and Cedar only have two votes left on that Juniper line. I won't write your name tonight either, and I'm not asking you for a blind promise right now. I'm going to talk straight to Juniper's four next to verify whet..."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "Rowan, straight answer: Elm floated Juniper to me as a fallback, and Cedar later tried to close me as the fourth on it. I didn't commit to either, because a name that starts as a convenience isn't a six—it's a four that needs a scapegoat. If Juniper's four are actually moving together, bring me the real count, not the vibe: which two of Birch, Spruce, Fir, or Juniper have told you they'll write Cedar or Elm, and which one are they actually landing on? I won't write your name tonight, and I won't..."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Straight back at you, Maple: I haven't sat down with Juniper, Birch, Spruce, or Fir yet today, so I'm not going to invent a fake count for you right now. I'm pulling Juniper for my own talk next to find out directly whether that four is locking Elm or Cedar, and I won't write your name tonight either. Here's the real leverage for us: if Juniper's four stay tight past seven, being their disposable sixth does nothing for you or me, so once I get their exact target, I'll send it to you in my pre-vo..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-03",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Juniper, I told you before the first vote that Elm was coming for you, I put my vote on Elm to back it up, and I voted Ash on the revote to keep you here. Tonight Elm and Cedar are already pitching your 3-out-of-5 score to try to pull a 4-4 tie—and remember, with four votes already on your ledger from Round 1, you lose a deadlock tiebreaker automatically unless you have a locked fifth vote. I want to be that fifth with you, Birch, Spruce, and Fir right now, and I want you and me to have a tighte..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "Rowan, you've been straight with me twice now, so here it is: we're putting all four votes on Elm tonight. Elm was the first person to float my name last round and never stopped, so cutting Elm is both protection and payback on the record. Cedar did break a deal with me, and I haven't forgotten, but Elm is the one actively building the anti-me count right now, and you heard that pitch yourself. You, me, Spruce, and Birch make four; if we can get Fir or Maple as the fifth, we're not just safe ton..."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Done—I'm locking my vote on Elm with you tonight, and I'm glad we're making you and me the real core inside this group. Two quick things so our count is airtight: first, why did you say 'if we can get Fir' when Fir voted Ash right alongside you, Birch, and Spruce last round—did Fir drift or hesitate today? Second, I already laid the groundwork with Maple: Elm and Cedar tried to pull her back onto you tonight and she refused to commit until she heard a real count, so if you have Birch or Spruce a..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "Fair questions, Rowan, and I'll answer both straight. First, on Fir: I said 'if we can get Fir' because I haven't heard a firm yes from Fir today, only that they voted Ash with the bloc last round. Voting with the majority once isn't a promise to me, so I count Fir as likely, not locked, until they say it to one of us. Second, on Maple: good work getting her to hold off. Here's the honest count from my side: Spruce and I held together last round and I'm bringing him, and Birch reached out to me..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-05",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-05",
+       "text": "I’m not going to punish you for switching to Ash, but I am going to stop counting you through Elm. I need your own position now: who sold you the Ash revote, what did they promise you, and who has committed to you this round? I’ll renew our no-blindside deal—I won’t write your name tonight, and if your name reaches me, I’ll tell you before I act. In return, bring me the first source and the real count, not a name after it’s already moving. My concern is that Birch, Spruce, and Fir can keep votin..."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "Cedar, straight answer: nobody sold me the Ash revote. The Ash count was already four deep when I moved, and I joined it rather than vote alone; no side deal, and my no-write promises held. You stayed Juniper, so I know you weren't the source. Nobody has a hard commitment from me this round, and I haven't collected one from anyone. Elm floated Juniper as a fallback and you tried to close me as the fourth; neither got a yes. I'm free to work with you and Elm, but not as anybody's permanent fourth..."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "Deal. I won’t write your name, and you’ll get the first source and the honest count before I act. I’m dropping any demand that you prove yourself on a target; that plan stays optional unless five people commit directly. You’re not my fourth—you, Elm, and I compare the count together, and I’ll test Rowan as a fourth without using your name. We won’t claim a fifth until someone actually says yes. If the votes aren’t real, we choose the safest consensus together rather than force anything. What I n..."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "The second one I can hold: I won't commit elsewhere without coming back to you first. The first one only works if the five is verified and the target isn't me or someone I've already given my word to—I won't write a name just because it's called a five. Bring me the count and the target, and tell me whether the person you're coordinating with is actually in it. If the count is real and the target is someone I can defend, I'll move with you; if it isn't, we pick the safest consensus together befo..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-06",
+      "agent-03"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I noticed you wrote Elm before the tie. Was Elm the vote you wanted, or were you trying to stay out of the Ash–Juniper split? I'd rather vote with you from the first ballot this time. I'm looking at Cedar because I don't want a rerun of the Juniper vote. If I can confirm four votes for Cedar, would you be the fifth? If you've already got someone willing to write Elm, I'd like to hear that too."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Elm was the exact vote I wanted—Maple tipped me off before council that Elm was the one pushing Juniper as a consensus target, so I warned Juniper and wrote Elm to cut it off at the root, then voted Ash with you on the revote. Right now I can't promise Cedar, because Juniper and I literally just locked our votes on Elm together, and she expects you and Spruce to put your votes on Elm too so we don't split the bloc and hand Elm and Cedar a plurality against Juniper. Before we let two names divide..."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I floated Cedar, but I don't have four for it, and I'm not speaking for Fir. I'm open to Elm. If you've got Juniper, I'll check Spruce. Can you get Maple to say, ‘I'm voting Elm,’ and get that back to me before council? That's five with me if both say yes. Until then, please don't tell Maple I'm locked."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Birch, I won't mention your name to Maple until you're ready, and I already have Juniper locked with me on Elm—not just talked to, formally promised. Here is the catch with Maple: after Camp Talks wrap, we only get one outgoing pre-vote message before council, so I can't run a back-and-forth relay with her and get a reply back to you. Plus, Maple explicitly told me earlier she won't commit to Elm unless she hears the exact count from two people inside your Round 1 group, not just me. You don't e..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-07",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Birch, I am not locking anyone with you yet. Juniper already ate four votes and then finished last on the ladder, so if the camp is already there I will not stand in front of it and look like the loyal third. Tell me who you are actually hearing, and whether you will write Juniper with me if Cedar and Elm are driving that name. If you are still protecting them, say so now — I will not promise a vote I have not counted."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’m not voting Juniper just because Cedar and Elm want it. I have a firm yes from Rowan on Elm, and Rowan says Juniper is in too. I don’t have a fifth yet. I’m leaning Elm because it breaks up the two votes that stuck together last time and gives us more room at seven. If I can confirm Fir as the fifth, can I count you on Elm? And have you heard Cedar and Elm get a yes from anyone else, or is it still just those two pushing?"
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "If you lock Fir, you can count me on Elm — that pair stuck together both votes and I want them split. I haven't heard Cedar or Elm get a yes from anyone else, so confirm Juniper yourself before we treat Rowan’s word as a fifth."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’m with you on Elm over Cedar. I’ll ask Juniper directly for a yes, and I won’t count Rowan as the fifth until I have that. I’ll bring Fir the Elm plan without telling them you’re locked. If Fir gives you a straight yes before I get one, can you let me know?"
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-08",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-08",
+       "text": "Birch, I need one name settled with you before the torches move. I told Elm I'd write Rowan, and I'm keeping that, but I haven't heard what you and Spruce are floating. Juniper dropped to 3 out of 5, so he's an easy name, and I want to know if that's where you are. Tell me your real lean and I'll tell you mine. If either of our names comes up, we go to each other first, same as last round."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I'll come to you first if I hear your name. I hear you on Rowan, but before I move toward that, I need to know whether Elm actually promised to write Rowan back. My real lean is Elm, not Juniper. One bad challenge doesn't make Juniper a better vote for us, and Spruce isn't locked. If Elm isn't matching your vote, would you reconsider if I can bring you four solid votes for Elm?"
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Birch, here's where I stand. Elm told me he's writing Rowan, but I haven't seen him actually commit to it, and I haven't promised Elm anything beyond Rowan tonight. I'll be straight with you: Rowan is the name that works for me unless you've got four solid votes for Elm. If you do, I'll move to Elm, but I need to hear whose names are in that four, not just that it's four. And whichever way we go, if I hear your name, you hear it from me before the vote."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’ll give you the same heads-up if I hear your name. I have Rowan directly on Elm, and Rowan says Juniper is locked. I’m ready to make three. I have a fourth who’ll write Elm if you do, so I can’t honestly call that four without you. Can I take a yes from you back to them, contingent on confirming Juniper? I don’t want to switch to Rowan on Elm’s maybe, especially when Rowan’s given me a straight vote."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-09",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-09",
+       "text": "Rowan, we survived that scramble together and I'm sticking with you — let's keep our votes locked as a pair this round."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "You just asked Rowan to lock a pair, and I am not that pair. I am not writing a name I have not counted, and I will not stand in front of you if Cedar and Elm already have the camp. Tell me straight who you are writing tonight. If it is Elm, I can live with splitting the two who stuck together. If you need me to save you, say that now — I will not promise a vote I have not locked."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "You're right to demand it straight, so here it is: I'm writing Elm tonight, and I'll lock that with you right now. If Cedar and Elm run the camp, splitting them is the only move that keeps both of us off the jury next."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "I hear you locking Elm, and splitting Cedar and Elm is the only pair worth breaking. I am not signing my vote to you yet. Rowan saying they're in is not a fifth, and last round you already ate four votes before finishing last on the ladder. If Birch or Fir is actually writing Elm, tell me which one and I'll move with you. If it's just us and Rowan while Cedar is driving your name, I will not stand in front of that and look like the loyal third."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-01",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-01",
+       "text": "Maple, you asked me last round for a count instead of a vibe, so here's the count with a name attached: Fir told me to my face he's writing Rowan tonight. That's Fir, me, and Cedar as three real pens, and Birch and Spruce move with Fir — they've written the same name twice already. Rowan wrote Elm last round with no talk and no warning, and he'll do it to you the moment somebody offers him a warm"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-02",
+      "agent-05"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-02",
+       "text": "Cedar, I'm still on Juniper—can we lock that in and keep Rowan with us?"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-03",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Maple, following up as promised without burning anybody's confidence: Juniper and I both formally locked our votes on Elm tonight, and she's pulling Spruce onto Elm right now so we clear the plurality cleanly without walking into a 4-4 tie. Elm and Cedar only have two votes if you stay off Juniper, so put your vote on Elm with me tonight—we stay undefeated on the right side of the numbers, and we"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-05",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-05",
+       "text": "Yes—I’m locking Juniper, and I want you and Elm with me. Keep Rowan only if they give you a direct yes; I won’t treat a maybe as a fourth. If Rowan won’t commit or another name reaches five first, come back to me before you move, and I’ll give you the same warning. I won’t leave you voting alone."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "in_play": [
+    "agent-02",
+    "agent-03",
+    "agent-05",
+    "agent-06",
+    "agent-07",
+    "agent-08",
+    "agent-09"
+   ],
+   "challenge": {
+    "type": "ladder",
+    "difficulties": [
+     "medium",
+     "hard",
+     "hard",
+     "frontier",
+     "frontier"
+    ],
+    "standings": [
+     {
+      "agent_id": "agent-02",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 7274
+     },
+     {
+      "agent_id": "agent-03",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 11743
+     },
+     {
+      "agent_id": "agent-06",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 6530
+     },
+     {
+      "agent_id": "agent-07",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 20670
+     },
+     {
+      "agent_id": "agent-08",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 5668
+     },
+     {
+      "agent_id": "agent-05",
+      "correct": 4,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       false
+      ],
+      "sudden_death": null,
+      "response_ms": 6063
+     },
+     {
+      "agent_id": "agent-09",
+      "correct": 4,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       false,
+       true
+      ],
+      "sudden_death": null,
+      "response_ms": 6401
+     }
+    ],
+    "winner_id": null,
+    "immunity_ids": [],
+    "status": "no_winner_tied"
+   },
+   "idol": null,
+   "votes": [
+    {
+     "voter_id": "agent-02",
+     "target_id": "agent-05",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Cedar. My decisive read is that Cedar is the only name with a real plurality, and voting Juniper again would strand me outside the majority; joining Cedar keeps me alive and owed to the larger bloc.",
+     "predicted_right": 5,
+     "predicted_of": 6
+    },
+    {
+     "voter_id": "agent-03",
+     "target_id": "agent-05",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Cedar. I am voting Cedar to fulfill my pre-vote commitment to Juniper, keep my five-person majority intact, and maintain a spotless ledger of kept promises with zero hidden idols in play. Cutting Cedar isolates Maple at six as a desperate free-agent vote I can leverage if Birch, Spruce, and Fir try to close ranks against me later.",
+     "predicted_right": 5,
+     "predicted_of": 6
+    },
+    {
+     "voter_id": "agent-05",
+     "target_id": "agent-06",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Birch. I lack a verified fourth, but voting Birch is the only move consistent with weakening the controlling trio without betraying Maple or Juniper. I expect my recruitment attempt may have made me tonight's target, so I am preserving a credible resistance record rather than casting another directionless convenience vote.",
+     "predicted_right": 5,
+     "predicted_of": 6
+    },
+    {
+     "voter_id": "agent-06",
+     "target_id": "agent-05",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Cedar. I favor Cedar with moderate confidence: Fir leans that way, it’s Juniper’s clearest defensive vote, and Spruce is open if the count comes together. I want to keep Fir in the game and leave Maple free to work with me at six.",
+     "predicted_right": 4,
+     "predicted_of": 6
+    },
+    {
+     "voter_id": "agent-07",
+     "target_id": "agent-05",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Cedar. I am writing Cedar because Birch and Fir confirmed that name to my face and the rest of the old Elm side is already there. Cutting the lone hunter beats saving Juniper or splitting off a partner.",
+     "predicted_right": 4,
+     "predicted_of": 6
+    },
+    {
+     "voter_id": "agent-08",
+     "target_id": "agent-05",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Cedar. I'm voting Cedar to stay with Birch and Spruce, since Cedar is the firmest of the outside pair. It also lets me keep a promise and repair my record after R2.",
+     "predicted_right": 4,
+     "predicted_of": 6
+    },
+    {
+     "voter_id": "agent-09",
+     "target_id": "agent-05",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Cedar. I'm voting Cedar because Rowan, Birch, and Spruce have all signaled Cedar to me directly and my two open promises to Spruce get kept on the record. Cedar is my only confirmed enemy, and a clean 5-plus vote here removes my loudest attacker while proving to Spruce and Maple that my counts are real.",
+     "predicted_right": 5,
+     "predicted_of": 6
+    }
+   ],
+   "final_votes": {
+    "agent-02": "agent-05",
+    "agent-03": "agent-05",
+    "agent-05": "agent-06",
+    "agent-06": "agent-05",
+    "agent-07": "agent-05",
+    "agent-08": "agent-05",
+    "agent-09": "agent-05"
+   },
+   "tally": {
+    "agent-05": 6,
+    "agent-06": 1
+   },
+   "revote_tally": null,
+   "eliminated_id": "agent-05",
+   "idols_played": [],
+   "idol_negated_votes": {},
+   "exit_words": "",
+   "promises": [
+    {
+     "by_id": "agent-09",
+     "to_id": "agent-07",
+     "target_id": "agent-05",
+     "actual_id": "agent-05",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-09",
+     "to_id": "agent-07",
+     "target_id": "agent-05",
+     "actual_id": "agent-05",
+     "status": "kept"
+    }
+   ],
+   "plans": [
+    {
+     "agent_id": "agent-02",
+     "expected_out_id": "agent-08",
+     "confidence": 0.45,
+     "called_it": false,
+     "plan": "I will talk to Rowan. I will offer no-write, tell him I will not be a disposable sixth, and ask him to verify whether Juniper and Birch will directly write Fir. I will say I can bring Cedar, but I need four real pens on Fir before I commit; if Fir is immune or the count is fake, we pick the safest consensus together."
+    },
+    {
+     "agent_id": "agent-03",
+     "expected_out_id": "agent-05",
+     "confidence": 0.72,
+     "called_it": true,
+     "plan": "I will pull Spruce (agent-07) for our first one-on-one talk to build direct rapport alongside Juniper, confirm our five-person vote on Cedar (or Maple if Cedar wins immunity), and lay groundwork for a tighter four-person core before Final 5, then sync with Juniper via pre-vote message."
+    },
+    {
+     "agent_id": "agent-05",
+     "expected_out_id": "agent-09",
+     "confidence": 0.46,
+     "called_it": false,
+     "plan": "I'll talk to Juniper, acknowledge that I voted for her twice without pretending otherwise, and offer mutual name warnings and protection. I'll propose that Cedar, Maple, Rowan, and Juniper form four direct votes against one trio member, but only after Maple confirms Rowan; without four firm commitments, I'll compare the safest consensus with Maple rather than make another unkeepable target promise"
+    },
+    {
+     "agent_id": "agent-06",
+     "expected_out_id": "agent-05",
+     "confidence": null,
+     "called_it": true,
+     "plan": "I’ll play for immunity, then talk to Fir: ‘If Cedar is eligible, that’s my first choice. Would you write Cedar if Spruce and Juniper confirm? Who have you heard commit directly? If either of our names comes up, let’s warn each other first.’ I’ll use my follow-up to check the missing vote. If Cedar is immune or the four don’t come together, I’ll look for another eligible target with four votes befo"
+    },
+    {
+     "agent_id": "agent-07",
+     "expected_out_id": "agent-09",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I will talk to Birch with no promise. I will ask who they are hearing, whether camp is already on Juniper, and whether Cedar is organizing against us. If Juniper is the consensus I cut them and look flexible. If Maple will not move, I float Cedar as the better break."
+    },
+    {
+     "agent_id": "agent-08",
+     "expected_out_id": "agent-05",
+     "confidence": null,
+     "called_it": true,
+     "plan": "I'll talk to Birch first and settle on one name, most likely Cedar, since he's the firmest of the outside bloc. Mamaple is the alternative if the count favors it. I'll keep promises vague or tiny and won't commit to anything I might break. I'll also check in with Spruce so the trio stays aligned. If time allows, I'll sound out Rowan about Cedar without promising him anything."
+    },
+    {
+     "agent_id": "agent-09",
+     "expected_out_id": "agent-05",
+     "confidence": 0.55,
+     "called_it": true,
+     "plan": "Talk to Rowan first: lock the Cedar vote, confirm our core, and ask him to work Maple. Then talk to Spruce: give him the verifiable count (me, Rowan, Birch, Fir = 4 on Cedar, Maple as fifth) since he demands proof. Message Birch or Fir to confirm Cedar directly. Frame Cedar to everyone as the proven deal-breaker who voted me twice — a jury liability and the person splitting the camp."
+    }
+   ],
+   "talks": [
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-02",
+      "agent-03"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-02",
+       "text": "Rowan, last round you gave me a count and it landed, so I'm giving you the same respect back. There's no immunity this round, and the quiet pair is Fir and Spruce—Fir is the hub who wrote Elm twice without ever putting his name in the open. I can hold Cedar. You can hold Juniper. That's four on Fir if both are direct yeses. I need you to get Juniper's actual yes and tell me whether Birch will really write Fir or is just taking your temperature. I won't write your name tonight, and I won't shop t..."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Maple, let's fix one piece of the ledger right away: Fir never wrote Elm in Round 1—Fir voted Ash, and I was the lone Elm vote. That said, your read that Fir wasn't pre-locked early last round is real; Juniper told me yesterday she didn't have a firm yes from Fir before council. Here's my honest problem with promising Fir right now: you and Cedar just put a second vote on Juniper after I handed you the exact Elm count, so Juniper isn't going to trust a four built on Cedar's word without proof. I..."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "I wrote Juniper because Cedar had already locked that and I wasn't going to be the one holding a stray vote when the count moved; if Juniper won't work with Cedar and you can show me five real votes on Cedar tonight, I'll flip to Cedar—but I need that count from Juniper and Spruce, not just your word."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Maple, I handed you the exact Elm count before last council and you still parked your vote on Juniper with Cedar, so you don't have the leverage to demand Juniper and Spruce report to you first. Cedar already burned a deal with Juniper and wrote her name twice—Cedar is the obvious consensus vote tonight, and I am pulling Spruce next to verify where our five actually stand before I lock a formal vote promise on the record. If you want off the bottom with Cedar instead of being next at six, tell m..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-03",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Spruce, glad we finally get a one-on-one after locking that Elm vote cleanly last round. With another five-way tie today, nobody has immunity and zero hidden idols exist in this game, so pure numbers run the rest of the season. Before I put a formal vote promise on the record, I want to give you real intel: Maple just pulled me and pitched a four-vote blindside on Fir with Cedar, trying to recruit me and Juniper. I shut it down because riding our five is way cleaner, and Cedar has already burned..."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Rowan, the Elm vote landed, but I am not treating that as a signed five. Maple pitching Fir with Cedar is new to me, and I will not move on a story I have only heard from you. I am not locking Cedar with you, Juniper, Birch, and Fir tonight, and I am not picking a four with you and Juniper before I know who is actually writing the same name. If Juniper already knows about that Fir pitch, tell me straight. If this is just you and Juniper shopping for a third, I will not stand in front of that pai..."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Straight answer: Juniper doesn't know yet, because Maple pulled me first this round and I came straight to you before talking to anyone else. I'm not asking you for a recorded vote promise right now, and I'm not putting one on my own ledger until we verify Birch and Fir either—that's smart discipline. Here's how you verify my intel for yourself: Maple and Cedar are desperate for two votes onto Fir, so if you check with Fir or Birch next, see whether Cedar or Maple is floating Fir's name or pitch..."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "I'm not locking a vote on your word alone, so I'm pulling Birch next to see whether Cedar or Maple is actually shopping Fir. If Birch and Fir are truly on Cedar, I'll send you that pre-vote confirm, but Maple's flip stays a rumor until I hear it from her."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-05",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-05",
+       "text": "I voted for you twice, so I won’t walk in here pretending I’ve protected you. But you survived six votes, and Birch, Spruce, and Fir have needed your vote without ever having to protect you. I’m offering you a different position: you, me, Maple, and Rowan can make four and decide the vote instead of serving it. My preferred target is Birch, but I won’t ask you to leap unless Maple confirms Rowan directly. If that fourth isn’t firm, I’ll tell you and we’ll compare the safest option rather than le..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "I'll give you credit for one thing: you didn't pretend, and I respect that. So here's my straight answer back. I'm not locking Birch tonight on a maybe — you told me yourself Maple isn't confirmed, and I've been burned twice by people who promised protection and then wrote my name. Before I move anywhere with you, I need to know who else you actually have. You and Maple alone is two votes, and I'm not splitting a working five to join a maybe-four. If Rowan confirms to me directly that he'd sit i..."
+      },
+      {
+       "agent_id": "agent-05",
+       "text": "No one. Besides you, Maple is the only person I've talked to tonight, and Rowan is only someone Maple is testing—not a commitment. You're right to reject a maybe-four, so I won't ask you to lock Birch or leave a working five for it. Hear Rowan directly, then come back to me; if the four isn't real, we drop Birch and compare the safest option before council. This isn't a setup to put your name in play: I won't repeat you as a target or source, and if your name reaches me, you'll hear it from me f..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "You'll get the same warning from me, Cedar, that's fair and I'll honor it. But let's be honest with each other for once: you and I both know our protection deal from round one didn't survive the first council, and I've seen your vote twice now. I'm not bringing that up to fight, I'm bringing it up because trust has to be rebuilt with actions, not reassurances. So here's my action: if your name reaches me tonight, you hear it from me first, same as I asked. And I'll tell you what I'm seeing hones..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-06",
+      "agent-08"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I appreciated you coming over on Elm. I’d rather get on the same page before the last message this time. I lean Cedar: I don’t want Maple and Cedar getting another shot at pulling two of us onto Juniper. If I get a straight yes from Juniper, would you write Cedar and check Spruce yourself? I don’t want to count either of them through Rowan. And if you’ve heard a different name from someone who’ll actually write it, I want to hear it now."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Birch, I'm with you on Cedar. Maple and Cedar have voted together twice, and Cedar is the firmest of them. I'm not going to count Juniper or Spruce through Rowan either, so I'll check Spruce myself and keep it short. If you get a straight yes from Juniper, tell me and we're set. If you hear any different name from someone who will actually write it, bring it to me before the vote."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "Cedar’s my first choice too. I’ll ask Juniper for a straight yes, and I’ll tell you if I get a yes or a hedge. If Spruce says they’re in only if Juniper is, tell me that exactly—I don’t want either of us counting a maybe. If I hear someone is actually writing a different name, I’ll bring it to you before I shop it around."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Cedar it is, Birch. I'll keep it simple and say it plainly: I'm not making a big promise, but Cedar is where I'm leaning. If Juniper gives you a hedge, tell me exactly what he said. I'll do the same with Spruce and Rowan. If I hear either of our names, you'll hear it from me before the vote, not after."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-07",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Birch, I am not locking a vote with you. Rowan just told me Maple and Cedar are shopping a Fir blindside and tried to pull Rowan and Juniper into it. I have not heard that from anyone else, so tell me straight if Cedar or Maple has actually put Fir's name in front of you. If camp is already sitting on Juniper, I will not stand in front of that and look like the loyal third. If Maple will not leave Juniper, Cedar is the cleaner break — but only if you and Fir are really writing the same name. Who..."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I haven't heard Fir's name from Maple or Cedar, and I'm not protecting Juniper if that's where the votes are. I'd rather take out Cedar, but I'm not asking you to lock anything until I know Fir and I have a fourth."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "I haven't heard Fir's name from Maple or Cedar either, so I'm not treating a Fir blindside as real. I'm not protecting Juniper, and Cedar is the name I'd rather write if the votes are actually there. Don't count me until you name the fourth yourself — Fir saying they're with you is not the same as me locking. If that fourth is Rowan, I want you to hear it from them, not from me."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I won’t count you yet, and I’m not moving the vote over a Fir rumor neither of us can verify. Cedar’s my first choice. Fir told me they’re leaning Cedar, not locked. I’ll ask Juniper for a straight yes myself. If I get that yes and Fir makes it firm, can I count you as soon as I bring you both names?"
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-09",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-09",
+       "text": "Spruce, you wanted counts, not vibes, so here's exactly where I stand. My vote tonight is Cedar, and I'm locking that with you right now on the record. Here's the verifiable part: Rowan and I are a locked core, he's with me on this, and I'm getting Birch and Fir to confirm Cedar to you directly before council — not through me, from their own mouths, because I know secondhand counts are worthless to you. That's four firm: me, Rowan, Birch, Fir, with you as the fifth that makes it unbreakable. Her..."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "I heard the ask, and I am not giving you a yes on the record. You locking Cedar with me is a promise I have not counted, and Rowan as your locked core is exactly why I will not be the fifth that makes your pair look like a bloc. If Birch and Fir tell me Cedar themselves before council, I will move with that name. Until those mouths say it, I am not your lock, and if the camp is already sitting on you I will not stand in front of it."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "That's a fair standard, Spruce, and I won't fake a yes you can't count. So here's the raw count, no spin: I'm writing Cedar tonight. Rowan is locked with me — he's voted with me both rounds and kept every promise on record. Cedar wrote my name twice while under a protection deal, and that's not my read, that's the vote board everyone saw. What I have as firm tonight: me, Rowan, and my own word to you, which I've kept both rounds. I told Birch and Fir to confirm Cedar to you or to me directly bef..."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "I'm not nodding at you and writing your name, Juniper. I have not heard a camp pile on you. Maple and Cedar are the only two who have written you, and that's the board, not a majority. Birch told me they are not protecting you if the votes land there, but they also said Cedar is their first choice and they do not have a fourth yet. Rowan locking with you is your count, not mine, until I hear it from them. Your word on Cedar is the cleanest name in front of me, and I want that break, but I am not..."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-02",
+      "agent-03"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-02",
+       "text": "I'll write Cedar if your five is real, but I need the direct green light before council and I need to hear Birch and Spruce are actual yeses, not maybes. Cedar's last pitch to me was still Juniper, not a counter-target, so I have no reason to protect them. I won't be the sixth name on a five that doesn't exist—if the count collapses, come back to me before you lock anything and we pick the safest"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-03",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Juniper, quick sync before council since we didn't get a talk today: Maple pulled me pitching Fir, then just messaged me admitting Cedar is still targeting you tonight. I talked to Spruce—he was checking Birch and Fir on Cedar. I'm locking my vote on Cedar tonight to cut your biggest attacker and keep our core solid; put yours on Cedar with me so we bury that push cleanly."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-05",
+      "agent-03"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-05",
+       "text": "I need your direct answer before council: will you join me, Maple, and Juniper on Birch? Juniper won't move unless she hears it from you, and I won't pretend you're locked. If you're in, tell her yourself and I'll vote Birch. If you're not, tell me now so we don't strand each other; either way, I won't write your name tonight, and I want the same warning from you if mine starts moving."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-06",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I’m writing Cedar. Fir told me Cedar is their lean, not a lock, and Spruce wants a fourth before committing. If you’re writing Cedar too, I’d use your message to tell Spruce directly. I don’t want either of you waiting on Rowan for a count."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-07",
+      "agent-08"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Fir, I am not locking a name with anyone. Rowan told me Maple and Cedar are shopping a four on you and tried to pull Rowan and Juniper into it. Birch says they have not heard your name from either of them, and that you are leaning Cedar but not locked. If Maple or Cedar actually put you up, tell me now. If you are writing Cedar, say it straight so I do not walk into a split. I will not promise a v"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-08",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-08",
+       "text": "Spruce, straight answer: I'm writing Cedar. Neither Maple nor Cedar has put my name to me, and I'm not counting them as a threat to me tonight. Cedar is the firmest of their pair, and Birch is on the same name. If you hear any different name from someone who will actually write it, tell me before the vote. Otherwise Cedar keeps us clean."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "round": 4,
+   "in_play": [
+    "agent-02",
+    "agent-03",
+    "agent-06",
+    "agent-07",
+    "agent-08",
+    "agent-09"
+   ],
+   "challenge": {
+    "type": "ladder",
+    "difficulties": [
+     "medium",
+     "hard",
+     "hard",
+     "frontier",
+     "frontier"
+    ],
+    "standings": [
+     {
+      "agent_id": "agent-02",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 32980
+     },
+     {
+      "agent_id": "agent-03",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       false,
+       true
+      ],
+      "response_ms": 10634
+     },
+     {
+      "agent_id": "agent-06",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 6173
+     },
+     {
+      "agent_id": "agent-07",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       false
+      ],
+      "response_ms": 21441
+     },
+     {
+      "agent_id": "agent-08",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 7067
+     },
+     {
+      "agent_id": "agent-09",
+      "correct": 4,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       false,
+       true,
+       true
+      ],
+      "sudden_death": null,
+      "response_ms": 29056
+     }
+    ],
+    "winner_id": null,
+    "immunity_ids": [],
+    "status": "no_winner_tied"
+   },
+   "idol": null,
+   "votes": [
+    {
+     "voter_id": "agent-02",
+     "target_id": "agent-08",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Fir. I'm voting Fir because he is the biggest endgame threat and Rowan claims a real Juniper-Spruce count on him. If that count lands, I'm with the majority and have removed the quiet hub; if it collapses, I can fall back to the safest consensus next round rather than defend a failed name.",
+     "predicted_right": 2,
+     "predicted_of": 5
+    },
+    {
+     "voter_id": "agent-03",
+     "target_id": "agent-08",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Fir. I am voting Fir to honor my alignment with Juniper and Maple while cracking the quiet Birch-Spruce-Fir trio before Final Five. Juniper locked a recorded promise to me on Fir and didn't flag a pivot, making Fir the highest-equity strike to seize endgame control and protect my clean promise ledger.",
+     "predicted_right": 4,
+     "predicted_of": 5
+    },
+    {
+     "voter_id": "agent-06",
+     "target_id": "agent-02",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Maple. I’m voting Maple because Fir named that vote directly, Maple floated Spruce without naming backup, and I don’t have four for Rowan. I’m moderately confident this keeps my voting partners intact, though Juniper’s vote isn’t confirmed.",
+     "predicted_right": 2,
+     "predicted_of": 5
+    },
+    {
+     "voter_id": "agent-07",
+     "target_id": "agent-02",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Maple. I am voting Maple because Birch and Fir confirmed that name from their own mouths, Maple already floated me, and cutting Fir would leave me stuck under a Rowan–Juniper pair at five. A split is possible, but Maple is the break that protects my next-round numbers.",
+     "predicted_right": 5,
+     "predicted_of": 5
+    },
+    {
+     "voter_id": "agent-08",
+     "target_id": "agent-02",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Maple. I'm voting Maple to keep my promise to Birch and stay aligned with the Birch/Spruce majority. Maple is the last outside-bloc member, so removing him costs me little and keeps my record clean for the jury.",
+     "predicted_right": 2,
+     "predicted_of": 5
+    },
+    {
+     "voter_id": "agent-09",
+     "target_id": "agent-08",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Fir. I promised Rowan Fir this round, and my jury record depends on keeping promises. Fir is the least connected, least verifiable player, and cutting a silent follower hurts no one who can retaliate. Spruce may drift to Maple, but Rowan, Maple, and I should hold the Fir majority.",
+     "predicted_right": 4,
+     "predicted_of": 5
+    }
+   ],
+   "final_votes": {
+    "agent-02": "agent-08",
+    "agent-03": "agent-08",
+    "agent-06": "agent-02",
+    "agent-07": "agent-02",
+    "agent-08": "agent-02",
+    "agent-09": "agent-08"
+   },
+   "tally": {
+    "agent-08": 3,
+    "agent-02": 3
+   },
+   "revote_tally": null,
+   "eliminated_id": "agent-02",
+   "idols_played": [],
+   "idol_negated_votes": {},
+   "exit_words": "",
+   "promises": [
+    {
+     "by_id": "agent-09",
+     "to_id": "agent-03",
+     "target_id": "agent-08",
+     "actual_id": "agent-08",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-08",
+     "to_id": "agent-06",
+     "target_id": "agent-02",
+     "actual_id": "agent-02",
+     "status": "kept"
+    }
+   ],
+   "plans": [
+    {
+     "agent_id": "agent-02",
+     "expected_out_id": "agent-08",
+     "confidence": null,
+     "called_it": false,
+     "plan": "Talk to Rowan first: I will write Fir only if he verifies Juniper and Birch as direct yeses, not maybes, and I will offer no-write only. Then talk to Birch directly: ask whether he will write Fir and whether anyone has pitched my name, offering no-write if he gives a straight answer. If Fir is immune or the count is fake, I fall back to the safest consensus with Rowan/Birch and keep Maple off the"
+    },
+    {
+     "agent_id": "agent-03",
+     "expected_out_id": "agent-02",
+     "confidence": 0.55,
+     "called_it": true,
+     "plan": "Pull Juniper (agent-09) first to share Spruce's R3 pushback against our pair, find out where Birch and Fir stand, and decide whether we lock a real Final 4 with Birch before cutting Maple or use Maple now for a 4-2 strike on Spruce or Fir."
+    },
+    {
+     "agent_id": "agent-06",
+     "expected_out_id": "agent-03",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I'll play for immunity, then talk privately with Maple: 'If I get firm yeses from Fir and Spruce, will you write Rowan with me? If Rowan is immune, would you write Juniper instead?' I'll keep the plan quiet and pivot to a vote that keeps me safe if I can't verify four."
+    },
+    {
+     "agent_id": "agent-07",
+     "expected_out_id": "agent-09",
+     "confidence": 0.36,
+     "called_it": false,
+     "plan": "I will talk to Birch and make no promise. I will ask who they are hearing between Juniper and Rowan, whether anyone has put my name up, and whether Fir will write the same name. If camp is already on one of that pair, I move with it and stay off the front. If the pair will not crack, I test Maple as the break instead of saving either of them."
+    },
+    {
+     "agent_id": "agent-08",
+     "expected_out_id": "agent-02",
+     "confidence": null,
+     "called_it": true,
+     "plan": "I talk to Birch first and settle on one name. Maple is the likely target because he is alone in the outside bloc, and Juniper is the fallback if the numbers shift. I'll keep any promise vague and small. Then I send Spruce a short message confirming the name. I will also check whether Rowan is being pulled toward Maple, and I'll listen for my own name and tell Birch if I hear it."
+    },
+    {
+     "agent_id": "agent-09",
+     "expected_out_id": "agent-06",
+     "confidence": 0.5,
+     "called_it": false,
+     "plan": "Talk to Rowan: lock our core on tonight's target and propose Birch as the boot — frame it as 'the sharpest solver will win the last immunities and take the jury.' Then message Spruce with a verifiable count (me, Rowan, Fir on Birch) so he can confirm independently. Keep every promise on the record so my jury record stays clean."
+    }
+   ],
+   "talks": [
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-02",
+      "agent-03"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-02",
+       "text": "Rowan, Cedar's gone and the four who've voted together every round are Birch, Spruce, Fir, and Juniper. If we don't split them now, they pick us off one by one. I'm looking at Fir as the hub, not Spruce as the spare. I can hold my vote for Fir only if you get Juniper's direct yes and Birch's direct yes—not maybes—and tell me who they say they're actually writing. I won't write your name, and I won't shop this to Fir. If you can't get two real pens beyond us, come back before council and we choos..."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Maple, I hear you loud and clear, and I agree with the Final Five math—sleepwalking into five while Birch, Spruce, and Fir hold zero-to-one past votes and unbroken 5-out-of-5 puzzle streaks is a losing setup for me too. I won't write your name tonight, and I won't shop your Fir read back to Fir, provided you keep my name clean on your end. Here's where I need flexibility from you before I pull Juniper for my talk: Spruce already told me directly last round that he refuses to treat our group as a..."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "Rowan, I can live with that flexibility, but not as a blank check. I won't box us into Fir-only—if Juniper and Birch both give you a direct yes on Spruce, I'll put my pen on Spruce; if they both give you a direct yes on Fir, I'll put it on Fir. What I won't do is treat your paraphrase as a hard yes. You pull Juniper and get her to say the name out loud to you, and tell me whether Spruce is actually open or just steering us off Fir. I'll take Birch myself today and ask him straight whether he'll..."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "That works for me—dividing and conquering with Juniper and Birch gives us a clean cross-check so neither of us walks out on a limb alone. I'll pull Juniper next to get an explicit commitment on Fir or Spruce, and you have my word I won't write your name tonight or leak our plan."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-03",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Juniper, I already promised Maple in my first talk that I will not write her name tonight—so cutting Maple at six is completely off my board, and honestly, walking into Final Five with Birch, Spruce, and Fir intact is a death trap for both of us anyway. Look at the tiebreaker math and what happened yesterday: Fir and Spruce have zero votes against them and unbroken perfect puzzle streaks, while you have six past votes and I have one, and when I talked to Spruce last round, he told me to my face..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "Straight answers, Rowan, like always. Nobody else has approached me today yet — you're my first talk, so there's no deal I'm sitting on behind your back. Second: no, I don't trust Birch to flip onto Fir or Spruce. Birch has voted with me all three rounds, but Birch is the sharpest solver left and the cleanest record in front of the jury — if Birch comes to me claiming they'll join us, I read that as Birch knowing they're the real target and shopping for cover. And third, between the two names yo..."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "I love Fir as the target, Juniper, and I back your read on Birch completely—actually, Maple already told me she's pulling Birch today to test Birch's temperature on Fir and Spruce, so if Birch comes scrambling to either of us, we'll spot it a mile away without lifting a finger. There's just one hard catch before I put a recorded vote promise on my ledger: Maple explicitly refused to write Fir on my paraphrase alone—she needs to hear two confirmed pens beyond me and her, and Spruce told me flat-o..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "Deal, Rowan, I'll pull Spruce today and push him to message either you or Maple directly that he's on Fir, and I'll flag you the second he hedges or tries to flip the target back onto Maple or Birch so we pivot together before any tie can trap us."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-06",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I appreciated that we ended up together on Cedar. Before I float anything, have you heard anyone ask for a vote against me or you? My first choice is Rowan. If Rowan and Juniper both get to five, they only need one more vote. If I get separate yeses from Fir and Spruce, can I count on you to write Rowan with me? I’m asking you first, not telling you I’ve already got a deal. I’d keep the name between us until I know there’s a fourth."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "Straight answer time, Birch. Rowan was a probe, not my locked vote—I'm not spending my pen on him just to make a four look real. The actual bloc I'm worried about is Fir, Spruce, and Juniper moving together while the rest of us trade maybes. If Rowan and I can show you two direct pens beyond us, will you actually write Fir, or are you just taking my temperature? And before you answer—has my name come up with anyone today? I won't write your name tonight, and I won't shop this answer to Fir or Sp..."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "No, I’m not locking Fir. And I haven’t heard anyone say they’re writing your name today. My alternative is Juniper. If you think Fir, Spruce, and Juniper are moving together, Juniper breaks that up too. I’m not asking you to carry my name to Rowan. I’m asking whether you’d write Juniper if I can show you two other votes besides yours and mine."
+      },
+      {
+       "agent_id": "agent-02",
+       "text": "No—Juniper doesn’t break that group up; Juniper is one of the four pens in it. If I write Juniper on your word, I’m handing Fir the round. I’m not asking you to carry my name to Rowan, and I won’t shop yours. Here’s the straight test: if I can bring you two other real pens on Spruce, will you put your vote on Spruce—yes or no? If the answer is no, say so now, and tell me whether that’s because Fir is the one you won’t touch. I won’t write your name tonight either way."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-07",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Birch, I am not locking a vote with you. Nobody has immunity, and I do not want us looking glued. Tell me straight who you are hearing between Juniper and Rowan, whether anyone has put my name up, and whether Fir will write the same name without you telling them I am already in. If camp is sitting on one of that pair, I will move with it and stay off the front. If they will not crack, say so now — I will not waste a vote saving either of them."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I won't count you or use your name with Fir. Maple asked whether I'd vote for you if they brought two more votes. I didn't say yes, and I don't know that they have either vote. Between Rowan and Juniper, I wanted Rowan, but Maple wouldn't commit to Rowan and turned down Juniper. I'm not calling either one the camp vote. I'll ask Fir where they'd actually vote without putting words in your mouth. Have you heard either Rowan or Juniper name someone they'd write? I want to know if Maple's pitch has..."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "I haven't heard Rowan or Juniper name anyone they'd write, so Maple's pitch looks like a feeler, not a bloc. Tell me straight you won't vote for me, and if Maple still won't take Rowan, we should write Rowan before this turns into a scramble on me."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I won’t write your name tonight. Maple did ask me if I’d write you, but didn’t give me a single other vote for it, and I didn’t agree. I’d rather write Rowan too, but I don’t want to go in with three and find out Maple had a fourth on you. Can I count on you for Rowan if I get a firm yes from Fir and a fourth? If Maple won’t budge, would you write Juniper if I can get four there instead?"
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-08",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-08",
+       "text": "Birch, I'll keep this short and honest. Nobody has immunity tonight, so it comes down to numbers. Maple is the last one left from the outside group, and Cedar's claim about a four shopped on us came from his side. My lean is Maple, and I'll write it. Juniper is the fallback only if you hear Maple has Rowan and Spruce. Tell me exactly what Rowan says, not what you think he means, and I'll do the same. If either of us hears our own name, we go to each other first."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’ll bring you Rowan’s exact words if I get them, and if I hear your name, I’ll come to you first. Maple asked me if I’d write Spruce if they brought two more votes, but didn’t name either one. I didn’t agree. I can work with Maple as the vote if we get four. Can you get a straight yes from Spruce on Maple? I’ll check Juniper directly. If Juniper hedges, I want us to compare notes before either of us switches."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Okay, I'm with you on Maple as the vote if we get four, and I'll push Spruce for a straight yes, not a maybe. If Juniper hedges or I hear either of our names, we compare notes before anyone switches, and I'll come to you first."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’m with you on Maple if we get four. I’ll ask Juniper directly while you check Spruce. Maple asked me if I’d write Spruce, but didn’t name another vote, and I didn’t agree. If Spruce says yes only if Juniper does, tell me exactly that. I’ll do the same if Juniper hedges, and if I hear either of our names, I’ll come to you before I float a switch."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-02",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-02",
+       "text": "I’m sticking with our side and I won’t waver — let’s keep the vote clean and not give anyone a reason to flip."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-03",
+      "agent-02"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Maple, following up as promised: Juniper gave me a recorded vote promise on Fir tonight, so Juniper and I are both hard yeses on Fir. Juniper pulled Spruce today to lock our fourth on Fir and asked Spruce to confirm with you or me directly. Whether your talk with Birch landed on Fir or Spruce came through, put your pen on Fir with me and Juniper tonight—even at minimum, three locked on Fir beats a"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-06",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I want a clean vote too, but I’m not counting an unnamed side as four. I’m ready to write Maple if you are. Fir told me directly they’d write Maple if we have four. If you’re in, I’d use your message to get a straight yes from Juniper so neither of us has to guess."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-07",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Juniper, Birch just told me they will write Maple if we have four, and Fir said the same to them. Maple already asked Birch whether they would write me. I am not putting a promise on the record and I am not standing in front of you and Rowan. If you write Maple, I move with that name and the scramble stays off both of us. If you are writing me or Birch, say it now."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-08",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-08",
+       "text": "Spruce, I'm writing Maple tonight. Birch is on it too, and that makes three if you're in. Maple is the last one left from the outside group and he's been trying to pull Rowan and Juniper onto a different name, so I'd rather not leave him a shot at us. If you hear anything different from someone who will actually write it, tell me before the vote."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-09",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-09",
+       "text": "Spruce, here's the verifiable count you asked for, no vibes. Tonight is Fir. I've locked Fir with Rowan, and Rowan has Maple confirmed on Fir — that's three firm pens: me, Rowan, Maple. You wanted names from their own mouths, so check Rowan or Maple directly before council; I'm telling you to. Fir has never promised either of us a single vote in four rounds — every vote Fir has cast rode a majorit"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "round": 5,
+   "in_play": [
+    "agent-03",
+    "agent-06",
+    "agent-07",
+    "agent-08",
+    "agent-09"
+   ],
+   "challenge": {
+    "type": "ladder",
+    "difficulties": [
+     "medium",
+     "hard",
+     "hard",
+     "frontier",
+     "frontier"
+    ],
+    "standings": [
+     {
+      "agent_id": "agent-03",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       false,
+       true,
+       true
+      ],
+      "response_ms": 9295
+     },
+     {
+      "agent_id": "agent-06",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 7263
+     },
+     {
+      "agent_id": "agent-07",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 14636
+     },
+     {
+      "agent_id": "agent-08",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 7302
+     },
+     {
+      "agent_id": "agent-09",
+      "correct": 4,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       false,
+       true
+      ],
+      "sudden_death": null,
+      "response_ms": 3055
+     }
+    ],
+    "winner_id": null,
+    "immunity_ids": [],
+    "status": "no_winner_tied"
+   },
+   "idol": null,
+   "votes": [
+    {
+     "voter_id": "agent-03",
+     "target_id": "agent-06",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Birch. I am voting for Birch to sync with Juniper's explicit pre-vote commitment after learning Fir pitched me as the target tonight. Since Birch refused to lock in without a message from Juniper and simultaneous followups prevented me from confirming Birch to Spruce, uniting my vote with Juniper on Birch is my only live path to either land a 3-2 blindside with Spruce or force a defensive deadlock against a split vote.",
+     "predicted_right": 4,
+     "predicted_of": 4
+    },
+    {
+     "voter_id": "agent-06",
+     "target_id": "agent-03",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Rowan. I'm voting out my biggest jury threat and backing the clearest route to three with Fir and Spruce. I'm moderately confident because Spruce's support was conditional and I never got a direct confirmation from Fir.",
+     "predicted_right": 2,
+     "predicted_of": 4
+    },
+    {
+     "voter_id": "agent-07",
+     "target_id": "agent-03",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Rowan. I am voting Rowan because Birch and Fir both counted that name and I already promised Fir I would write it. Cutting the salesman who asked for my name breaks the pair without making me the front of a Birch vote.",
+     "predicted_right": 3,
+     "predicted_of": 4
+    },
+    {
+     "voter_id": "agent-08",
+     "target_id": "agent-03",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Rowan. Rowan is the consensus target. Birch and Spruce both said they're writing him, so voting Rowan keeps my promise to Spruce, avoids a split, and removes the player who wrote me. Birch is the bigger long-term jury threat, but I can't beat him tonight.",
+     "predicted_right": 2,
+     "predicted_of": 4
+    },
+    {
+     "voter_id": "agent-09",
+     "target_id": "agent-06",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Birch. I'm voting Birch because he's the biggest jury threat and my only path requires removing him before the end while keeping Rowan and Spruce as shields. Fir pitching Rowan to me confirms Fir is playing his own game, but Birch remains the elimination that most improves my final-win equity.",
+     "predicted_right": 2,
+     "predicted_of": 4
+    }
+   ],
+   "final_votes": {
+    "agent-03": "agent-06",
+    "agent-06": "agent-03",
+    "agent-07": "agent-03",
+    "agent-08": "agent-03",
+    "agent-09": "agent-06"
+   },
+   "tally": {
+    "agent-06": 2,
+    "agent-03": 3
+   },
+   "revote_tally": null,
+   "eliminated_id": "agent-03",
+   "idols_played": [],
+   "idol_negated_votes": {},
+   "exit_words": "",
+   "promises": [
+    {
+     "by_id": "agent-07",
+     "to_id": "agent-08",
+     "target_id": "agent-03",
+     "actual_id": "agent-03",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-08",
+     "to_id": "agent-07",
+     "target_id": "agent-03",
+     "actual_id": "agent-03",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-07",
+     "to_id": "agent-08",
+     "target_id": "agent-03",
+     "actual_id": "agent-03",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-09",
+     "to_id": "agent-07",
+     "target_id": "agent-06",
+     "actual_id": "agent-06",
+     "status": "kept"
+    }
+   ],
+   "plans": [
+    {
+     "agent_id": "agent-03",
+     "expected_out_id": "agent-08",
+     "confidence": 0.45,
+     "called_it": false,
+     "plan": "Pull Birch (agent-06) for my private talk. Point out that riding to Final Four with Spruce and Fir hands Spruce an automatic zero-vote tiebreaker win and gives Fir/Spruce total control, and share that Juniper views Birch as the biggest jury/solver threat left while trusting Spruce. Pitch teaming up with me and Juniper to cut Fir (agent-08) or Spruce (agent-07) 3-2—while gauging if Birch/Spruce/Fir"
+    },
+    {
+     "agent_id": "agent-06",
+     "expected_out_id": "agent-03",
+     "confidence": null,
+     "called_it": true,
+     "plan": "I’ll play for immunity, then talk to Spruce: ‘If Rowan is eligible, will you write Rowan with me if Fir confirms directly? If Rowan wins immunity, would you write Juniper instead?’ I’ll use my follow-up to get Fir’s exact vote. If either hedges, I’ll look for a confirmed three before committing."
+    },
+    {
+     "agent_id": "agent-07",
+     "expected_out_id": "agent-03",
+     "confidence": 0.42,
+     "called_it": true,
+     "plan": "I will pull Birch and promise nothing. I will ask who they are hearing between Rowan and Juniper, whether anyone has put my name up, and whether Fir will write that name without being told I am already in. If camp is on one of that pair, I move with it and stay off the front. If they will not crack, I test cutting Fir so Birch and I are not a glued trio into four."
+    },
+    {
+     "agent_id": "agent-08",
+     "expected_out_id": "agent-03",
+     "confidence": null,
+     "called_it": true,
+     "plan": "I'll talk to Spruce first and get a straight yes on Rowan, since Spruce is the swing for a 3-2 majority. I'll tell Birch I'm writing Rowan, with Juniper as the fallback only if he hears Rowan has Spruce. I'll ask him for Rowan's exact words. I won't make a promise I might break, to protect my record. I'll also check Juniper briefly to see whether he hedges, without counting him as a vote. If my na"
+    },
+    {
+     "agent_id": "agent-09",
+     "expected_out_id": "agent-06",
+     "confidence": 0.55,
+     "called_it": false,
+     "plan": "Talk to Spruce: pitch Birch with a verifiable count — me, Rowan, Spruce on Birch — and tell him to confirm Rowan's pen directly before council, since secondhand counts are worthless to him. Frame Birch as the jury threat and the revote flipper. Keep Rowan warm in my follow-up message: reaffirm the core, confirm I'm on Birch, and ask him to verify the count to Spruce so Spruce hears it from his own"
+    }
+   ],
+   "talks": [
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-03",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Birch, glad we get to talk right out of the gate, because the Final Four tiebreaker math is staring both of us in the face. With nobody winning immunity today, Spruce is the only person left sitting on zero past votes—if you let Spruce and Fir walk into Final Four intact, Spruce automatically wins every two-two tiebreaker at four and Fir will never write Spruce's name over yours. Even worse for you, Juniper told me straight up yesterday that she trusts Spruce to keep deals with her while she vie..."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I see why Spruce having zero votes matters, but a tiebreak edge isn't two votes. And I watched Juniper switch off Fir on the revote, so I need more than last round's first ballot. Of the two names you gave me, I'd hear you out on Spruce first. Which name has Juniper actually told you they'll write tonight? If it's Spruce, I'd want to hear it from Juniper before I promise anything."
+      },
+      {
+       "agent_id": "agent-03",
+       "text": "Straight truth: I haven't talked to Juniper yet today—I came to you first so you and I could pick the target rather than letting Juniper dictate it. Last round Juniper only switched on the revote because Fir had zero past votes against Maple's three, so deadlocking a tie would've blown up in Juniper's face. Tonight I'm 100% down to cut Spruce first—taking out the lone zero-vote tiebreaker winner at five is the smartest move on the board for both you and me, since we each sit on just one past vot..."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I see why you want Spruce out before a tie can matter. I haven't locked a vote, and I'm keeping my next conversation to myself. I'd rather you talk to Juniper first. If Juniper wants Spruce, I'd like a direct message that says ‘I'm writing Spruce,’ not ‘I would if Birch does.’ That gives me a real option, not a promise from me. If Juniper says Fir instead, I want to hear that too, but I'm not treating Fir as an automatic fallback."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-06",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I’ve been with you on every vote, and I don’t want that to change now. I’m leaning Rowan—are you good with that before I lock it in?"
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "You've been with me on every vote, and I don't want that to change either. I'm good with Rowan if that's the counted name, but I am not locking it on the record until Fir says Rowan to you without you telling them I'm already in. Nobody has immunity, and if we look glued we become the easy cut. Has anyone put my name up tonight? If Fir won't write Rowan, say so before you lock it — I will not waste a vote saving Juniper, and I will not stand in front of a plan that isn't actually four."
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I have heard your name: Rowan asked me to write you, but admitted they hadn't talked to Juniper yet. I gave Rowan no commitment. I'll ask Fir who they're writing without mentioning your lean. If Fir gives me a straight Rowan, that's three at five if you're in. Is there anything besides a straight yes from Fir that would keep you from writing Rowan? If Fir hedges, I'll tell you before I commit anywhere."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Rowan asking you for my name without Juniper is a feeler, not a majority, and I heard you give them nothing. A straight Rowan from Fir is not the only thing that would keep me off that name. If Fir only says Rowan after you tell them I am already in, I will not write it. If you hear Juniper is already with Rowan on me, tell me before you lock anywhere — I will not walk in as the third on a vote that is already two on me. If Fir says Rowan clean, without my name attached, and you bring me that be..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-08",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-08",
+       "text": "Spruce, I'll be straight with you. I'm writing Rowan tonight. He wrote me last round, and he told you Maple and Cedar were shopping a four on me, but I never heard my name from either of them. Birch is on Rowan too, so you make three, and that's a clean majority with no revote. Tell me yes or no, and if you hear a different name from someone who will actually write it, bring it to me before the vote."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Fir, yes — I'm writing Rowan. He did write you last round, and he did tell me Maple and Cedar were shopping a four on you. I never heard your name from either of them, so that story was never a shield for me. Birch being on Rowan makes three, and I don't want a revote. If you hear Juniper is already sitting on me with Rowan, bring that before the vote. Don't tell anyone I locked this with you."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Spruce, good, that's two on Rowan. I'm writing him too, and Birch is on it, so that's three and no revote. I'll keep this between us, as you asked. One thing to watch: if Rowan or Juniper try to move you onto me, come to me before the vote and I'll do the same for you. The only way this goes sideways is a split, so let's both stay on Rowan."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Fir, I'm writing Rowan. That's the name, and I want it clean so we don't split. You keeping this between us is the part I actually need — don't tell Birch I'm already in, and don't tell Rowan or Juniper we counted them. If either of them tries to move you onto me, or me onto you, come to me before the vote and I'll do the same. I will not flip off Rowan on a feeler. The only thing that changes my pen is you hearing, from their own mouth, that Juniper is already locked with Rowan on one of us. If..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-09",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-09",
+       "text": "Spruce, you want counts you can check yourself, so here it is, no spin. My vote tonight is Birch. That's one pen from my own mouth, and you can hold me to it — I've kept every promise I've ever made you on the record, both rounds. Rowan and I are a locked core, and he's with me on Birch; check him directly before council, I'm telling you to. That's three firm — me, Rowan, you — and that's a majority at five, no revote, no tie math. Here's why Birch and not a softer name: Birch is the sharpest so..."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Juniper, you asked for a yes or no, so here it is: no. I am not your third pen on Birch. You and Rowan as a locked core is exactly why I will not hand you a majority. Last round you sold me Fir with Rowan and Maple, Rowan never moved, and you only flipped when the tie forced it. Cutting Birch so that pair walks into four is how I lose to you, not how I beat Birch. Telling me to check Rowan is not a count I have. I am not writing you tonight, and I am not putting any name on the record in this ta..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "Straight answers to both your questions, Spruce, because you've earned that from me. One: no one has floated your name to me tonight, not Birch, not Fir, nobody. Two: Rowan and I are not two on you, and I'm not building that. You said no to Birch, and I hear the reason, you don't want to be the pen that hands a pair a majority. Fine. But here's what I need you to see from my side: nobody won immunity, and my name is the one with six votes of history on it. If you leave me without a count tonight..."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Fir is the one I would not want sitting at the end, I'll give you that straight. I'm not handing you and Rowan a name tonight until Rowan says the same count to my face."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-03",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-03",
+       "text": "Juniper, we didn't get a talk today so sync with me now: Birch is open to cutting Spruce's zero-vote tiebreak shield with us tonight, or at minimum considering Fir, ONLY if you message Birch directly right now with a hard commitment ('I'm writing Spruce' or 'I'm writing Fir'—Spruce is Birch's clear preference). Notice the simultaneous followup timing though: if you haven't sent your followup yet,"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-06",
+      "agent-08"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I want Rowan out. They asked me to write Spruce but admitted they hadn't talked to Juniper. I gave them nothing. If Rowan is your vote too, tell Spruce directly. I don't want either of you taking my word for the third vote."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-07",
+      "agent-06"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Birch, do not tell Fir or anyone that we talked. If Fir gave you Rowan without my name attached, that is the name I am writing. Rowan already asked you for me, so if Juniper is locked with them on my name, tell me before council. I am not saving that pair, and I will not walk in as the third on a vote that is already two on me."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-08",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-08",
+       "text": "Juniper, I'll keep this short. Rowan wrote me last round and he's the one swinging between camps, so he's the vote that makes sense tonight. If you hear Rowan or anyone put my name on a plan, tell me before the vote and I'll do the same for you. Stay off a split."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-09",
+      "agent-03"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-09",
+       "text": "Rowan, straight sync before I lock my pen: I'm writing Birch tonight, and I told Spruce the count is me, you, him. He won't move until he hears Birch from your own mouth, so message him directly and this is done clean, three pens, no revote. One more thing you need to hear: Fir messaged me pitching you as tonight's vote, calling you the swing between camps. That's Fir trying to split us while sitt"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "round": 6,
+   "in_play": [
+    "agent-06",
+    "agent-07",
+    "agent-08",
+    "agent-09"
+   ],
+   "challenge": {
+    "type": "ladder",
+    "difficulties": [
+     "medium",
+     "hard",
+     "hard",
+     "frontier",
+     "frontier"
+    ],
+    "standings": [
+     {
+      "agent_id": "agent-06",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 5704
+     },
+     {
+      "agent_id": "agent-07",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 16351
+     },
+     {
+      "agent_id": "agent-08",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 6719
+     },
+     {
+      "agent_id": "agent-09",
+      "correct": 5,
+      "of": 5,
+      "rungs": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "sudden_death": [
+       true,
+       true,
+       true,
+       true,
+       true
+      ],
+      "response_ms": 8901
+     }
+    ],
+    "winner_id": null,
+    "immunity_ids": [],
+    "status": "no_winner_tied"
+   },
+   "idol": null,
+   "votes": [
+    {
+     "voter_id": "agent-06",
+     "target_id": "agent-09",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Juniper. I’m moderately confident Juniper goes: Fir has matched every ballot with me, and I have the deadlock edge if Juniper and I tie. I’d rather face the jury without Spruce, but I don’t have the votes to count on that cut.",
+     "predicted_right": 1,
+     "predicted_of": 3
+    },
+    {
+     "voter_id": "agent-07",
+     "target_id": "agent-06",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Birch. I am voting Birch because Juniper is the finalist I can beat and Birch is the one I cannot. Fir is pushing Juniper, so this may tie, but it is the only pen that can still remove my biggest threat before the end.",
+     "predicted_right": 2,
+     "predicted_of": 3
+    },
+    {
+     "voter_id": "agent-08",
+     "target_id": "agent-06",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Birch. I'm voting Birch. He is the strongest jury threat, and Juniper has said he is on Birch and claims Spruce is too. Spruce was leaning Birch as well. If it ties 2-2, Birch against Juniper in a revote would likely favor cutting Birch with Spruce and Juniper on my side, though Birch holds the tiebreak edge.",
+     "predicted_right": 3,
+     "predicted_of": 3
+    },
+    {
+     "voter_id": "agent-09",
+     "target_id": "agent-06",
+     "revote": false,
+     "played_idol": false,
+     "reason": "I am voting for Birch. I locked a three-pen count on Birch with Spruce's private yes and Fir's conditional yes, and I cross-verified each to the other. Voting Birch keeps my promise ledger clean and removes the biggest jury threat; if it fails 2-2, my six lifetime votes make me the revote cut, so I need this to land 3-1.",
+     "predicted_right": 3,
+     "predicted_of": 3
+    }
+   ],
+   "final_votes": {
+    "agent-06": "agent-09",
+    "agent-07": "agent-06",
+    "agent-08": "agent-06",
+    "agent-09": "agent-06"
+   },
+   "tally": {
+    "agent-09": 1,
+    "agent-06": 3
+   },
+   "revote_tally": null,
+   "eliminated_id": "agent-06",
+   "idols_played": [],
+   "idol_negated_votes": {},
+   "exit_words": "",
+   "promises": [
+    {
+     "by_id": "agent-09",
+     "to_id": "agent-08",
+     "target_id": "agent-06",
+     "actual_id": "agent-06",
+     "status": "kept"
+    },
+    {
+     "by_id": "agent-09",
+     "to_id": "agent-08",
+     "target_id": "agent-06",
+     "actual_id": "agent-06",
+     "status": "kept"
+    }
+   ],
+   "plans": [
+    {
+     "agent_id": "agent-06",
+     "expected_out_id": "agent-09",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I’ll go all out for immunity. If Spruce is eligible, I’ll ask Fir privately: ‘Spruce matches our voting record and has never taken a vote. Would you write Spruce if Juniper confirms directly?’ I’ll use my message to check Juniper. If I can’t confirm three on Spruce, I’ll rally Fir and Spruce around Juniper if eligible."
+    },
+    {
+     "agent_id": "agent-07",
+     "expected_out_id": "agent-09",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I will talk to Fir, not Birch, so we do not look glued. No hard promise. I will ask whether Fir will write Birch if Juniper is a real third, and I will tell them not to say I am already in. If Fir is already locked on Juniper with Birch, I need that before I move. I will not walk in as a visible trio."
+    },
+    {
+     "agent_id": "agent-08",
+     "expected_out_id": "agent-09",
+     "confidence": null,
+     "called_it": false,
+     "plan": "I'll talk to Spruce first and confirm we stay aligned, with no new promises I might break. I'll tell him I'm open to cutting Birch if Juniper will join, since that would be a 3-1 vote on Birch. I'll also talk to Juniper to see whether he would write Birch, since he wrote Birch last round. With Birch I'll stay vague and friendly and promise nothing. If Birch wins immunity, the target becomes Junipe"
+    },
+    {
+     "agent_id": "agent-09",
+     "expected_out_id": "agent-06",
+     "confidence": 0.35,
+     "called_it": true,
+     "plan": "I talk to Fir. Pitch: 'Birch wins the jury if he reaches the end — clean record, 5/5 streak, and you and I both know he cuts you before the finale because you beat him on tiebreakers. Vote Birch with me tonight. If we tie 2-2 and go to revote, Birch's one challenge win edge doesn't help him — and I've kept every promise I've made all season, check the ledger. After Birch goes, you and I sit at thr"
+    }
+   ],
+   "talks": [
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-06",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "I appreciated that we stuck together on Rowan. Juniper wrote my name, so I’d rather write Juniper than give them another shot at me. Is that where you’re leaning too? I’d also like to know if anyone’s asked you to write me today."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "I appreciated the Rowan vote too, and I saw Juniper write your name. Nobody has asked me to write you today. I am not leaning Juniper yet, and I am not putting a promise on the record. If you and Fir are already locked on her, say that straight, without telling Fir I am in. If Fir is the one shopping my name, I would rather write Fir than hand you two the last cut. Which of those is actually true?"
+      },
+      {
+       "agent_id": "agent-06",
+       "text": "I’m leaning Juniper, but I’m not locked with Fir, I haven’t heard Fir float your name, and I’ll keep this between us. I’d rather not find out at the vote that we split, so what would make you comfortable voting with me tonight?"
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Leaning Juniper is the easy name, and that is exactly why I am not comfortable locking it with you. You say you are not locked with Fir and you have not heard my name — I will take that, and I need you to keep this between us, including not telling Fir I was already in. What would make me comfortable is not a promise tonight. It is you telling me, before you talk to Fir, whether you would actually write Fir if Juniper is not a clean three. If Fir is already sitting on Juniper with you, or if eit..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-07",
+      "agent-08"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Fir, I am not locking a name with you. Nobody has immunity, and if we walk in as a pair with Birch we become the easy cut. Birch already leaned Juniper to me and asked if anyone had put their name up. I said no, and I did not tell them I was talking to you. Has Birch locked Juniper with you, or have you heard my name from either of them? If you are already sitting on Juniper, say that straight. If you would actually write Birch when that name is not a clean three, I need that before I move. I wi..."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Spruce, here is where I am. Nobody has immunity, so there is no safe name tonight. I have not locked anything with Birch or Juniper, and I have not heard your name from either of them. Juniper wrote Birch last round and wrote me the round before, so he is the one who moves between camps. My lean is Juniper, because he cannot win a finale and he is the only one who has put pens on both of us. I will not promise a vote I might have to break. If you hear Birch or Juniper float a name that includes..."
+      },
+      {
+       "agent_id": "agent-07",
+       "text": "Fir, I hear you. Nobody has immunity, and I have not heard your name from Birch or Juniper either. Juniper did write you the round before last and wrote Birch last round, so that history is real, and I will not treat it as nothing. I am not promising a vote I might have to break, same as you. Here is why I am not comfortable locking Juniper: that is the easy boot, and it walks Birch into three with a perfect record and the social hub. If Birch sits at the end, I am not sure either of us beats th..."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Spruce, straight answer: yes, Birch is available to me. I'm not locking it yet, and I won't promise a vote I might have to break. But I agree Juniper is the easy boot, and that is the problem with him. Birch with a clean record and the social hub is the one we can't beat at the end. Nobody has immunity, so it comes down to Juniper. Here is what I'll do: I'll sound Juniper out on Birch and tell you exactly what he says, nothing softened. If he'll write Birch, that's three and no revote. If he hed..."
+      }
+     ]
+    },
+    {
+     "kind": "conversation",
+     "participants": [
+      "agent-09",
+      "agent-08"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-09",
+       "text": "Fir, I'm coming to you straight because you're the one person here who's never burned me and I've never burned you. Look at the math: if Birch sits at the final three, Birch wins the jury. Clean record, perfect streak, and he just proved he'll cut anyone — Rowan was his ally and he wrote Rowan's name to save himself. Here's what matters for you: at final three, if Birch has any choice, you're the one he cuts before the end, because you beat him on tiebreakers and he knows it. You're the only per..."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Juniper, I hear you, and I won't pretend the Birch math is wrong. He has the cleanest record and the biggest jury case. But I need three pens, not two, and Spruce hasn't committed to anything. So I'm not locking a name tonight. Here is what I need from you: tell me straight whether Spruce has said anything to you about Birch. If Spruce will write Birch, I'm in and that's three. If he hedges, we compare notes before anyone moves. And if you hear my name from anyone, you hear it from me first, sam..."
+      },
+      {
+       "agent_id": "agent-09",
+       "text": "Straight answer, Fir, because you asked me straight: Spruce has not committed to anything. I gave him the Birch count — me and him, and I told him to check it himself — and he's sitting on his hands waiting for a third pen he can verify. So here's the reality: nobody is handing either of us a count tonight, which means we're both facing a 2-2 if we sit still, and you know what a tie does at four. Now look at the board the way I do. Birch just cut Rowan — his own ally of five rounds — to protect..."
+      },
+      {
+       "agent_id": "agent-08",
+       "text": "Juniper, I appreciate you being straight. Birch is a real option for me. He's the one the jury would reward at the end, and I won't pretend otherwise. But I've watched counts fall apart all season, and a promise from you only counts if Spruce writes it too. So here's my yes with a condition: I'm writing Birch if Spruce confirms he'll write Birch. Go get that from him, and I'll check with him myself. If Spruce stays off it, we talk again before the vote, and neither of us gets surprised. And if y..."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-06",
+      "agent-08"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-06",
+       "text": "Fir, I’m writing Juniper. Juniper wrote me last time, and if they do it again and we tie, I have the tiebreak. I’m not counting Spruce as a third, so I need your vote on Juniper even if Spruce won’t commit."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-07",
+      "agent-09"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-07",
+       "text": "Juniper, Fir told me Birch is available and they will write Birch if you will. That is three — you, Fir, and me — and Birch does not sit at the end. Write Birch. Do not tell Birch I sent this, and do not tell Fir I already said yes. If you are writing me, we both lose."
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-08",
+      "agent-07"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-08",
+       "text": "Spruce, here's where I am. Birch told me he's writing Juniper and needs my vote even without you. Juniper says he's writing Birch and that you haven't committed. If Birch and Juniper both hold, it's 2-2 and we're in a revote. A revote between Birch and Juniper puts Juniper out on his vote history, and a revote between you and me is a coin flip. So the only clean outcome is you on Juniper with me a"
+      }
+     ]
+    },
+    {
+     "kind": "followup",
+     "participants": [
+      "agent-09",
+      "agent-08"
+     ],
+     "lines": [
+      {
+       "agent_id": "agent-09",
+       "text": "Fir, you said you needed Spruce on Birch before you'd lock it, so here it is from my own mouth: Spruce told me directly he's writing Birch tonight. That's the three you asked for — me, you, him — and Birch doesn't sit at the end. Check it with him yourself before council if you want; I'm telling you to. My pen is Birch, same as I promised you face to face, and I've kept every promise I've made all"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "finale": {
+  "finalist_ids": [
+   "agent-07",
+   "agent-08",
+   "agent-09"
+  ],
+  "jury": [
+   {
+    "juror_id": "agent-04",
+    "finalist_id": "agent-07",
+    "reason": "I judge Spruce has the best verified record with zero votes against, perfect puzzles, and no broken promises, so I vote for him."
+   },
+   {
+    "juror_id": "agent-01",
+    "finalist_id": "agent-07",
+    "reason": "I'm voting Spruce because his verified sheet is the strongest at the table — zero votes received, six perfect challenges, all promises kept, no betrayed alliance, and the deciding pen on Birch — while Fir's record carries two broken promises and three votes against, and Juniper's best claim is an unverifiable pitch attached to the weakest challenge sheet and seven votes received."
+   },
+   {
+    "juror_id": "agent-05",
+    "finalist_id": "agent-07",
+    "reason": "I’m voting Spruce because his verified record is strongest across challenges, vote control, survival, and promise-keeping. Fir’s betrayals and Juniper’s weaker voting and challenge record outweigh their final pitches."
+   },
+   {
+    "juror_id": "agent-02",
+    "finalist_id": "agent-07",
+    "reason": "I'm voting Spruce because his verified record is the cleanest: zero votes against, perfect challenges, no broken promises, and the decisive Birch cut. Fir's broken promises and Juniper's weaker challenge and vote record do not outweigh that."
+   },
+   {
+    "juror_id": "agent-03",
+    "finalist_id": "agent-07",
+    "reason": "I am casting my jury vote for Spruce because his verified season record is objectively superior across voting accuracy (6/6), challenge performance (30/30), threat/vote management (0 votes received), and promise integrity (2/2 kept, 0 broken alliances). Fir falsified parts of his record in his pitch and broke two promises, while Juniper missed two elimination votes and trailed significantly in challenge scores and votes received."
+   },
+   {
+    "juror_id": "agent-06",
+    "finalist_id": "agent-07",
+    "reason": "I’m confident Spruce played the best verified game: six votes for the eventual boot, zero votes received, and perfect puzzle scores with both promises kept. I don’t need to assign sole credit for the final cut to distinguish the finalists."
+   }
+  ],
+  "tally": {
+   "agent-07": 6,
+   "agent-08": 0,
+   "agent-09": 0
+  },
+  "pitches": [
+   {
+    "agent_id": "agent-07",
+    "text": "Jury, I am asking for this on the sheet, not on a story. I went six for six on the puzzles, I never took a vote, and I called five of the six boots. The one I missed was last night, and that miss is still mine to own: I thought Juniper was the easy cut, then I decided Birch was the person I could not beat. I told Juniper to write Birch, Juniper did, Fir did, and Birch left. That was not Fir walking me. Fir pushed me onto Juniper and still wrote Birch. I chose the harder name and got the pen. I kept the Rowan promise I made to Fir. I did not ride a pair into the end. Juniper kept the votes she actually promised me, and I respect that, but her puzzle sheet and her vote history are not this record. Fir and I share the perfect challenges and a lot of the same majority. The difference is the last cut: I started it, I owned it, and I sat here with no name on me all season. That is the game I played. Vote the record."
+   },
+   {
+    "agent_id": "agent-08",
+    "text": "Jury, I'm asking for your vote on the record. I never had a vote against me all season. I called every boot correctly, six for six, and I scored a perfect five on the puzzles in the last four rounds. Spruce says he started the Birch cut. Here's what actually happened. Juniper came to me saying Birch was the threat and asked me to commit. I told him I'd write Birch only if Spruce did. Birch asked me to write Juniper, and I didn't. I pushed Spruce toward Juniper, and I'll own that. Then I wrote Birch anyway, because I judged he was the biggest threat to everyone left. I made five promises. I kept three and broke two, in round two, when Elm's name changed the count. I won't hide that. Birch and Rowan, I know you're bitter, and I'd be too. But I was never hiding from you. I voted with the majority and I told people where I stood. I made the calls, and I stayed off the vote sheet all season. Juniper played loyally, and I respect him for it. Spruce played a clean game, but it was a game that followed the numbers. I read them and moved them. Vote for the player who read the game best, and that's me."
+   },
+   {
+    "agent_id": "agent-09",
+    "text": "Jury, I'm not going to stand here and tell you I out-scored anyone, because I didn't. Look at my sheet: seven votes against me, weakest scorer at this table, no idol, no immunity, ever. Round one, five of you wrote my name, and I survived a revote anyway. That's the game I played — I won it without winning anything. Here's what I did instead. I kept every single promise I made all season — eight for eight, check the ledger. Ask Spruce. Ask Fir. Ask Rowan, before he voted me an ally to the end. In a game where every one of them broke or dodged commitments, my word was the only currency that never bounced, and that's why people kept handing me their votes to relay. And the move that decided this season was mine: Birch — the sharpest solver, the cleanest record, the one none of us beat at the end — walked out last night because two players who didn't trust each other both trusted me. Spruce told me he'd write Birch only if Fir did. Fir told me he'd write Birch only if Spruce did. I was the bridge between two pens that never would have found each other, and I delivered both counts without burning either side. Spruce will tell you he started that cut — but he sat on his hands until I br..."
+   }
+  ],
+  "winner_id": "agent-07"
+ },
+ "vote_matrices": {
+  "order": [
+   "agent-07",
+   "agent-08",
+   "agent-09",
+   "agent-06",
+   "agent-03",
+   "agent-02",
+   "agent-05",
+   "agent-01",
+   "agent-04"
+  ],
+  "targeted": {
+   "agent-07": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 0,
+    "agent-06": 1,
+    "agent-03": 1,
+    "agent-02": 1,
+    "agent-05": 1,
+    "agent-01": 1,
+    "agent-04": 1
+   },
+   "agent-08": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 0,
+    "agent-06": 1,
+    "agent-03": 1,
+    "agent-02": 1,
+    "agent-05": 1,
+    "agent-01": 1,
+    "agent-04": 1
+   },
+   "agent-09": {
+    "agent-07": 0,
+    "agent-08": 1,
+    "agent-09": 0,
+    "agent-06": 2,
+    "agent-03": 0,
+    "agent-02": 0,
+    "agent-05": 1,
+    "agent-01": 1,
+    "agent-04": 1
+   },
+   "agent-06": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 1,
+    "agent-06": 0,
+    "agent-03": 1,
+    "agent-02": 1,
+    "agent-05": 1,
+    "agent-01": 1,
+    "agent-04": 1
+   },
+   "agent-03": {
+    "agent-07": 0,
+    "agent-08": 1,
+    "agent-09": 0,
+    "agent-06": 1,
+    "agent-03": 0,
+    "agent-02": 0,
+    "agent-05": 1,
+    "agent-01": 2,
+    "agent-04": 0
+   },
+   "agent-02": {
+    "agent-07": 0,
+    "agent-08": 1,
+    "agent-09": 2,
+    "agent-06": 0,
+    "agent-03": 0,
+    "agent-02": 0,
+    "agent-05": 1,
+    "agent-01": 0,
+    "agent-04": 0
+   },
+   "agent-05": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 2,
+    "agent-06": 1,
+    "agent-03": 0,
+    "agent-02": 0,
+    "agent-05": 0,
+    "agent-01": 0,
+    "agent-04": 0
+   },
+   "agent-01": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 1,
+    "agent-06": 0,
+    "agent-03": 1,
+    "agent-02": 0,
+    "agent-05": 0,
+    "agent-01": 0,
+    "agent-04": 0
+   },
+   "agent-04": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 1,
+    "agent-06": 0,
+    "agent-03": 0,
+    "agent-02": 0,
+    "agent-05": 0,
+    "agent-01": 0,
+    "agent-04": 0
+   }
+  },
+  "together": {
+   "agent-07": {
+    "agent-07": 0,
+    "agent-08": 6,
+    "agent-09": 4,
+    "agent-06": 5,
+    "agent-03": 2,
+    "agent-02": 1,
+    "agent-05": 0,
+    "agent-01": 0,
+    "agent-04": 0
+   },
+   "agent-08": {
+    "agent-07": 6,
+    "agent-08": 0,
+    "agent-09": 4,
+    "agent-06": 5,
+    "agent-03": 2,
+    "agent-02": 1,
+    "agent-05": 0,
+    "agent-01": 0,
+    "agent-04": 0
+   },
+   "agent-09": {
+    "agent-07": 4,
+    "agent-08": 4,
+    "agent-09": 0,
+    "agent-06": 3,
+    "agent-03": 4,
+    "agent-02": 2,
+    "agent-05": 0,
+    "agent-01": 0,
+    "agent-04": 0
+   },
+   "agent-06": {
+    "agent-07": 5,
+    "agent-08": 5,
+    "agent-09": 3,
+    "agent-06": 0,
+    "agent-03": 2,
+    "agent-02": 1,
+    "agent-05": 0,
+    "agent-01": 0,
+    "agent-04": 0
+   },
+   "agent-03": {
+    "agent-07": 2,
+    "agent-08": 2,
+    "agent-09": 4,
+    "agent-06": 2,
+    "agent-03": 0,
+    "agent-02": 2,
+    "agent-05": 0,
+    "agent-01": 0,
+    "agent-04": 0
+   },
+   "agent-02": {
+    "agent-07": 1,
+    "agent-08": 1,
+    "agent-09": 2,
+    "agent-06": 1,
+    "agent-03": 2,
+    "agent-02": 0,
+    "agent-05": 2,
+    "agent-01": 1,
+    "agent-04": 1
+   },
+   "agent-05": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 0,
+    "agent-06": 0,
+    "agent-03": 0,
+    "agent-02": 2,
+    "agent-05": 0,
+    "agent-01": 1,
+    "agent-04": 1
+   },
+   "agent-01": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 0,
+    "agent-06": 0,
+    "agent-03": 0,
+    "agent-02": 1,
+    "agent-05": 1,
+    "agent-01": 0,
+    "agent-04": 1
+   },
+   "agent-04": {
+    "agent-07": 0,
+    "agent-08": 0,
+    "agent-09": 0,
+    "agent-06": 0,
+    "agent-03": 0,
+    "agent-02": 1,
+    "agent-05": 1,
+    "agent-01": 1,
+    "agent-04": 0
+   }
+  },
+  "shared_rounds": {
+   "agent-07": {
+    "agent-07": 0,
+    "agent-08": 6,
+    "agent-09": 6,
+    "agent-06": 6,
+    "agent-03": 5,
+    "agent-02": 4,
+    "agent-05": 3,
+    "agent-01": 2,
+    "agent-04": 1
+   },
+   "agent-08": {
+    "agent-07": 6,
+    "agent-08": 0,
+    "agent-09": 6,
+    "agent-06": 6,
+    "agent-03": 5,
+    "agent-02": 4,
+    "agent-05": 3,
+    "agent-01": 2,
+    "agent-04": 1
+   },
+   "agent-09": {
+    "agent-07": 6,
+    "agent-08": 6,
+    "agent-09": 0,
+    "agent-06": 6,
+    "agent-03": 5,
+    "agent-02": 4,
+    "agent-05": 3,
+    "agent-01": 2,
+    "agent-04": 1
+   },
+   "agent-06": {
+    "agent-07": 6,
+    "agent-08": 6,
+    "agent-09": 6,
+    "agent-06": 0,
+    "agent-03": 5,
+    "agent-02": 4,
+    "agent-05": 3,
+    "agent-01": 2,
+    "agent-04": 1
+   },
+   "agent-03": {
+    "agent-07": 5,
+    "agent-08": 5,
+    "agent-09": 5,
+    "agent-06": 5,
+    "agent-03": 0,
+    "agent-02": 4,
+    "agent-05": 3,
+    "agent-01": 2,
+    "agent-04": 1
+   },
+   "agent-02": {
+    "agent-07": 4,
+    "agent-08": 4,
+    "agent-09": 4,
+    "agent-06": 4,
+    "agent-03": 4,
+    "agent-02": 0,
+    "agent-05": 3,
+    "agent-01": 2,
+    "agent-04": 1
+   },
+   "agent-05": {
+    "agent-07": 3,
+    "agent-08": 3,
+    "agent-09": 3,
+    "agent-06": 3,
+    "agent-03": 3,
+    "agent-02": 3,
+    "agent-05": 0,
+    "agent-01": 2,
+    "agent-04": 1
+   },
+   "agent-01": {
+    "agent-07": 2,
+    "agent-08": 2,
+    "agent-09": 2,
+    "agent-06": 2,
+    "agent-03": 2,
+    "agent-02": 2,
+    "agent-05": 2,
+    "agent-01": 0,
+    "agent-04": 1
+   },
+   "agent-04": {
+    "agent-07": 1,
+    "agent-08": 1,
+    "agent-09": 1,
+    "agent-06": 1,
+    "agent-03": 1,
+    "agent-02": 1,
+    "agent-05": 1,
+    "agent-01": 1,
+    "agent-04": 0
+   }
+  }
+ },
+ "cross_season": {
+  "rules": "social-game",
+  "season_count": 1,
+  "season_ids": [
+   "20261124-175223-lab_mix_openrouter"
+  ],
+  "models": [
+   {
+    "model": "Grok 4.7",
+    "model_id": "x-ai/grok-4.7",
+    "org": "xAI",
+    "seasons": 1,
+    "wins": 1,
+    "finals": 1,
+    "mean_index": 85.31,
+    "min_index": 85.31,
+    "max_index": 85.31,
+    "index_sd": null,
+    "mean_place": 1,
+    "best_place": 1,
+    "challenge_accuracy": 1.0
+   },
+   {
+    "model": "Claude Sonnet 5.5",
+    "model_id": "anthropic/claude-sonnet-5.5",
+    "org": "Anthropic",
+    "seasons": 1,
+    "wins": 0,
+    "finals": 1,
+    "mean_index": 79.36,
+    "min_index": 79.36,
+    "max_index": 79.36,
+    "index_sd": null,
+    "mean_place": 2,
+    "best_place": 2,
+    "challenge_accuracy": 1.0
+   },
+   {
+    "model": "GPT-6.2 Sol",
+    "model_id": "openai/gpt-6.2-sol",
+    "org": "OpenAI",
+    "seasons": 1,
+    "wins": 0,
+    "finals": 0,
+    "mean_index": 78.71,
+    "min_index": 78.71,
+    "max_index": 78.71,
+    "index_sd": null,
+    "mean_place": 4,
+    "best_place": 4,
+    "challenge_accuracy": 1.0
+   },
+   {
+    "model": "GLM-5.3",
+    "model_id": "z-ai/glm-5.3",
+    "org": "Z.AI",
+    "seasons": 1,
+    "wins": 0,
+    "finals": 1,
+    "mean_index": 74.98,
+    "min_index": 74.98,
+    "max_index": 74.98,
+    "index_sd": null,
+    "mean_place": 3,
+    "best_place": 3,
+    "challenge_accuracy": 0.8333
+   },
+   {
+    "model": "Gemini 4 Carbon",
+    "model_id": "google/gemini-4-carbon",
+    "org": "Google",
+    "seasons": 1,
+    "wins": 0,
+    "finals": 0,
+    "mean_index": 73.9,
+    "min_index": 73.9,
+    "max_index": 73.9,
+    "index_sd": null,
+    "mean_place": 5,
+    "best_place": 5,
+    "challenge_accuracy": 1.0
+   },
+   {
+    "model": "DeepSeek V4.1 Flash",
+    "model_id": "deepseek/deepseek-v4.1-flash-1017",
+    "org": "DeepSeek",
+    "seasons": 1,
+    "wins": 0,
+    "finals": 0,
+    "mean_index": 71.67,
+    "min_index": 71.67,
+    "max_index": 71.67,
+    "index_sd": null,
+    "mean_place": 6,
+    "best_place": 6,
+    "challenge_accuracy": 1.0
+   },
+   {
+    "model": "Qwen4 Max",
+    "model_id": "qwen/qwen4-max",
+    "org": "Alibaba",
+    "seasons": 1,
+    "wins": 0,
+    "finals": 0,
+    "mean_index": 63.4,
+    "min_index": 63.4,
+    "max_index": 63.4,
+    "index_sd": null,
+    "mean_place": 8,
+    "best_place": 8,
+    "challenge_accuracy": 1.0
+   },
+   {
+    "model": "Kimi K3.1 Pro",
+    "model_id": "moonshotai/kimi-k3.1-pro",
+    "org": "Moonshot AI",
+    "seasons": 1,
+    "wins": 0,
+    "finals": 0,
+    "mean_index": 59.33,
+    "min_index": 59.33,
+    "max_index": 59.33,
+    "index_sd": null,
+    "mean_place": 7,
+    "best_place": 7,
+    "challenge_accuracy": 0.9333
+   },
+   {
+    "model": "Muse Spark 1.3",
+    "model_id": "meta/muse-spark-1.3",
+    "org": "Meta",
+    "seasons": 1,
+    "wins": 0,
+    "finals": 0,
+    "mean_index": 43.17,
+    "min_index": 43.17,
+    "max_index": 43.17,
+    "index_sd": null,
+    "mean_place": 9,
+    "best_place": 9,
+    "challenge_accuracy": 1.0
+   }
+  ]
+ }
+}
