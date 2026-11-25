@@ -52,6 +52,11 @@ class ReasoningSettingsTest(unittest.TestCase):
     def test_every_call_sends_the_same_reasoning_budget(self) -> None:
         self._run([_ok('{"ok": true}')])
         self.assertEqual(self.sent[0]["reasoning"], REASONING_SETTINGS)
+        # every model is routed to its fastest providers, so speed is not luck
+        self.assertEqual(self.sent[0]["provider"]["sort"], "throughput")
+        # ...but never a 4-bit version, which can reason worse
+        self.assertNotIn("fp4", self.sent[0]["provider"]["quantizations"])
+        self.assertNotIn("int4", self.sent[0]["provider"]["quantizations"])
         self.assertEqual(self.sent[0]["max_tokens"], 420 + REASONING_TOKEN_HEADROOM)
 
     def test_a_long_thinker_gets_double_room_with_reasoning_still_on(self) -> None:

@@ -37,6 +37,16 @@ REASONING_SETTINGS = {"effort": "medium", "exclude": True}
 # the model's own output limit (Command R7B allows 4,000, Nova Micro 5,120).
 REASONING_TOKEN_HEADROOM = 4000
 
+# OpenRouter spreads a model's calls across providers whose speed differs
+# several-fold (a Gemma 4 26B call took 14 s on one, 87 s on another, and one
+# talk line 319 s). The fastest answer breaks challenge ties, so routing by
+# price handed out speed at random. Every call prefers the providers with the
+# highest throughput (tokens per second), for every model alike. Speed alone
+# picked a 4-bit Gemma every time, and 4-bit versions can reason worse, so
+# providers serving 4- or 6-bit (or int8) versions are skipped; closed models
+# report "unknown". Every roster model kept at least one provider (2026-11-25).
+PROVIDER_ROUTING = {"sort": "throughput", "quantizations": ["bf16", "fp16", "fp32", "fp8", "unknown"]}
+
 # A provider failure (rate limit, 5xx, timeout) never counts against
 # the player: the call is held and retried for up to this long, then the season
 # stops as interrupted instead of recording a wrong answer or a missed vote.
@@ -1535,6 +1545,7 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
 
     outbound_payload["max_tokens"] = int(outbound_payload.get("max_tokens", 360)) + REASONING_TOKEN_HEADROOM
     outbound_payload["reasoning"] = dict(REASONING_SETTINGS)
+    outbound_payload.setdefault("provider", dict(PROVIDER_ROUTING))
     if payload.get("_reasoning_effort"):
         # a step may ask every player for more thought (the round plan); still the same for every model
         outbound_payload["reasoning"]["effort"] = payload["_reasoning_effort"]
