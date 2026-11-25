@@ -23,6 +23,8 @@ TABLE["anthropic/claude-opus-5.5"] = {"prompt_per_m": 1.0, "completion_per_m": 4
 class ValidateTest(unittest.TestCase):
     def test_names_and_ids(self) -> None:
         self.assertEqual(validate_entry({"name": " Rook ", "model_id": "acme/big-model", "entry_id": "e1"})["name"], "Rook")
+        self.assertEqual(validate_entry({"name": "Night  Owl 2", "model_id": "acme/x"})["name"], "Night Owl 2")
+        self.assertEqual(validate_entry({"name": "Claude Fan", "model_id": "acme/x"})["name"], "Claude Fan")  # a model family is fine
         for bad in (
             {"name": "", "model_id": "acme/x"},
             {"name": "x" * 21, "model_id": "acme/x"},
@@ -31,6 +33,14 @@ class ValidateTest(unittest.TestCase):
             {"name": "Rook<script>", "model_id": "acme/x"},
             {"name": "Rook", "model_id": "no-slash"},
             {"name": "Rook", "model_id": "https://evil/x"},
+            # names that could be read as a template slot, a link, a mention, the host or a lab
+            {"name": "__REPORT_DATA__", "model_id": "acme/x"},
+            {"name": "scam.io", "model_id": "acme/x"},
+            {"name": "@someone", "model_id": "acme/x"},
+            {"name": "The Host", "model_id": "acme/x"},
+            {"name": "OpenAI Official", "model_id": "acme/x"},
+            {"name": "anthropic-bot", "model_id": "acme/x"},
+            {"name": "Rook-", "model_id": "acme/x"},
         ):
             with self.assertRaises(EntryError, msg=bad):
                 validate_entry(bad)
