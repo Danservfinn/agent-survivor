@@ -722,6 +722,22 @@ def _agent_prompt_v3(
     context = dict(episode_context or {})
     brief = context.pop("situation_brief", None)
     told = context.pop("what_others_told_you", None)
+    feel = context.pop("how_you_feel", None)
+    happened = context.pop("what_happened_to_you", None)
+    feelings_section = ""
+    if feel or happened:
+        # right after the facts and before the record: feelings buried deep in
+        # the context were ignored
+        feelings_section = (
+            "\nHow you feel right now (your own feelings):\n"
+            + _context_for_prompt({"how_you_feel": feel, "what_happened_to_you": happened or []}, ordered=True)
+            + "\n"
+        )
+    feelings_question = (
+        "\n8. What do I feel about the people this decision touches, and should I act on it or set it aside?"
+        if feel is not None or happened is not None
+        else ""
+    )
     fields = [("think", "your private reasoning, up to 300 words; never shown to other players or kept in the game record")]
     fields.append(("summary", "one private sentence: what you decided and why"))
     step_fields = V3_REPLY_FIELDS.get(response_kind, [("target_id", "an allowed target id if your action names one, otherwise null")])
@@ -753,7 +769,7 @@ Before you decide, think like a strategist:
 4. If I reach the final three, who beats me with this jury, and who do I beat?
 5. How will this move change how the others see me, and is that the image I want?
 6. Is there anyone I should cut before they cut me, and when is the last safe moment?
-7. What exactly do I need from this step?
+7. What exactly do I need from this step?{feelings_question}
 
 This step: {step}
 {strategic_priorities}
@@ -761,7 +777,7 @@ Scene: {scene_context}
 
 Your situation, computed by the game (accurate):
 {_context_for_prompt(brief or {}, ordered=True)}
-
+{feelings_section}
 What other players told you in private, with their promise records:
 {_context_for_prompt({"claims": told or []}, ordered=True)}
 

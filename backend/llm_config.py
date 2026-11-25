@@ -96,6 +96,13 @@ def secret_ballot() -> bool:
     return os.environ.get("SURVIVOR_SECRET_BALLOT", "1").strip() != "0"
 
 
+def feelings_enabled() -> bool:
+    """Players record their own feelings after each council and carry them
+    forward (default since 2026-11-25). SURVIVOR_FEELINGS=0 turns it off, to
+    compare seasons with and without feelings."""
+    return os.environ.get("SURVIVOR_FEELINGS", "1").strip() != "0"
+
+
 def jury_rule() -> str:
     value = os.environ.get("SURVIVOR_JURY_RULE", "own_judgment").strip().lower()
     return value if value in JURY_RULES else "own_judgment"

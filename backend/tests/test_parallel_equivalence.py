@@ -115,6 +115,13 @@ class _Stub:
             "players": {"x": f"n{h % 89}"},
             "plan": "q",
             "notebook": f"nb{h % 83}",
+            "confessional": f"conf {h % 71}",
+            # feelings are stored and read back next round: compared too
+            "feelings": {
+                f"agent-0{1 + (h >> k) % 9}": {"feeling": ("trust", "resentment", "fear")[(h >> k) % 3], "strength": "strong", "because": "x"}
+                for k in (0, 4)
+            },
+            "mood": ("confident", "cornered")[h % 2],
         }
 
     def host_text(self, **kwargs) -> HostEventText:
@@ -190,6 +197,8 @@ class ParallelEquivalenceTest(unittest.TestCase):
         self.assertTrue(sequential_dump["PrivatePlans"])
         self.assertTrue(sequential_dump["GroupDiscussions"])
         self.assertTrue(sequential_dump["SpoiledVotes"])
+        self.assertTrue(sequential_dump["Feelings"])
+        self.assertTrue(sequential_dump["Confessionals"])
         # group talks of three or more happened (column 5 is target_size, the talk's size)
         self.assertTrue(any(row[5] > 2 for row in sequential_dump["GroupDiscussions"]))
         self.assertIn("(says nothing)", json.dumps(sequential_dump["StoryEvents"]))

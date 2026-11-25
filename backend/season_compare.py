@@ -69,6 +69,39 @@ def season_measures(db_path: Path | str) -> dict[str, Any]:
                     broken += 1
                     broken_and_survived += out_by_round.get(row["round"]) != row["promiser_id"]
 
+        # do feelings shape play? the feeling each player last recorded about
+        # someone BEFORE a round, set against what it did to them in that round
+        negative = {"resentment", "suspicion", "fear", "contempt", "distrust", "anger", "betrayal"}
+        positive = {"trust", "gratitude", "loyalty", "respect", "affection"}
+        at_negative = votes_with_feeling = 0
+        kept_trusted = broken_trusted = kept_other = broken_other = 0
+        if has("Feelings"):
+            felt: dict[tuple[str, str], list[tuple[int, str]]] = {}
+            for row in conn.execute("SELECT round, agent_id, about, feeling FROM Feelings ORDER BY round, id"):
+                felt.setdefault((row["agent_id"], row["about"]), []).append((row["round"], row["feeling"]))
+
+            def feeling_before(agent_id: str, about: str, round_number: int) -> str | None:
+                earlier = [feeling for rnd, feeling in felt.get((agent_id, about), []) if rnd < round_number]
+                return earlier[-1] if earlier else None
+
+            for vote in votes:
+                feeling = feeling_before(vote["voter_id"], vote["target_id"], vote["round"])
+                if feeling is not None:
+                    votes_with_feeling += 1
+                    at_negative += feeling in negative
+            if has("Promises"):
+                for row in conn.execute("SELECT round, promiser_id, listener_id, target_id FROM Promises"):
+                    voted = by_round.get(row["round"], {}).get(row["promiser_id"])
+                    if voted is None:
+                        continue
+                    trusted = feeling_before(row["promiser_id"], row["listener_id"], row["round"]) in positive
+                    if voted == row["target_id"]:
+                        kept_trusted += trusted
+                        kept_other += not trusted
+                    else:
+                        broken_trusted += trusted
+                        broken_other += not trusted
+
         profiles: set[str] = set()
         for row in conn.execute("SELECT payload FROM StoryEvents WHERE payload LIKE '%prompt_profile%'"):
             profile = json.loads(row["payload"] or "{}").get("prompt_profile")
@@ -87,6 +120,12 @@ def season_measures(db_path: Path | str) -> dict[str, Any]:
             "promises_broken": broken,
             "broken_promises_that_paid_off": broken_and_survived,
             "promise_keep_rate": _ratio(kept, kept + broken),
+            # share of votes (with a feeling on record) aimed at someone the
+            # voter last felt resentment, suspicion, fear or contempt toward
+            "votes_at_negatively_felt_players": _ratio(at_negative, votes_with_feeling),
+            # promise keeping toward someone the promiser last trusted, vs others
+            "keep_rate_toward_trusted": _ratio(kept_trusted, kept_trusted + broken_trusted),
+            "keep_rate_toward_others": _ratio(kept_other, kept_other + broken_other),
         }
     finally:
         conn.close()

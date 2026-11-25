@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from .database import row_to_dict
-from .llm_config import jury_rule, prompt_profile, secret_ballot
+from .llm_config import feelings_enabled, jury_rule, prompt_profile, secret_ballot
 
 MAX_CONTEXT_EVENTS = 60
 # Upper bound on a serialized contestant context. When over it, the oldest
@@ -146,6 +146,14 @@ def build_agent_episode_context(
         # private: this round's plan, and how well past vote predictions held up
         "your_plan_this_round": _your_plan(conn, actor_id, round_number),
         "your_game_plan": _your_game_plan(conn, actor_id),
+        **(
+            {
+                "how_you_feel": _how_you_feel(conn, actor_id),
+                "what_happened_to_you": _what_happened_to_you(conn, actor_id, round_number),
+            }
+            if feelings_enabled()
+            else {}
+        ),
         "your_last_confessional": _your_last_confessional(conn, actor_id, round_number),
         "your_predictions": _your_predictions(conn, actor_id),
         "visible_game_state": _visible_game_state(conn, current_step),
@@ -502,6 +510,131 @@ def _challenge_history(conn) -> list[dict[str, Any]]:
             }
         )
     return history
+
+
+def _how_you_feel(conn, actor_id: str) -> dict[str, Any] | None:
+    """The player's own feelings from its latest notebook, each with the round
+    since which it has felt that way about that player (a grudge has an age)."""
+    latest = conn.execute("SELECT MAX(round) AS r FROM Feelings WHERE agent_id = ?", (actor_id,)).fetchone()["r"]
+    if latest is None:
+        return None
+    names = _names_by_id(conn)
+    rows = conn.execute(
+        "SELECT round, about, feeling, strength, because FROM Feelings WHERE agent_id = ? ORDER BY round DESC, id",
+        (actor_id,),
+    ).fetchall()
+    by_about: dict[str, list[Any]] = {}
+    for row in rows:
+        by_about.setdefault(row["about"], []).append(row)
+    mood = None
+    toward = []
+    for about, history in by_about.items():
+        current = history[0]
+        if current["round"] != latest:
+            continue  # not named in the latest notebook (gone, or no feeling recorded)
+        since = current["round"]
+        for row in history[1:]:
+            if row["feeling"] != current["feeling"]:
+                break
+            since = row["round"]
+        if about == "self":
+            mood = current["feeling"]
+            continue
+        if about not in names:
+            continue
+        toward.append(
+            {
+                "player": names[about],
+                "feeling": current["feeling"],
+                "strength": current["strength"] or None,
+                "since_round": since,
+                "because": current["because"] or None,
+            }
+        )
+    return {
+        "note": (
+            "Your own feelings, from what happened to you. Real players are moved by their feelings, and the best "
+            "ones also hide them, fake them and use them. You decide when to act on a feeling and when to set it "
+            "aside for a better move."
+        ),
+        "mood": mood,
+        "toward": toward,
+    }
+
+
+def _what_happened_to_you(conn, actor_id: str, round_number: int) -> list[str]:
+    """What happened to this player since its last notebook (last round and
+    this one so far), from facts it can know. No secret ballot is opened."""
+    import re
+
+    names = _names_by_id(conn)
+    me = names.get(actor_id, actor_id)
+    word = re.compile(rf"\b{re.escape(me)}\b", re.IGNORECASE)
+    partners = {
+        row["agent_id"]
+        for row in conn.execute(
+            """
+            SELECT DISTINCT o.agent_id FROM AllianceMemberships m
+            JOIN AllianceMemberships o ON o.alliance_id = m.alliance_id AND o.agent_id != m.agent_id
+            WHERE m.agent_id = ?
+            """,
+            (actor_id,),
+        )
+    }
+    events: list[str] = []
+    for rnd in (round_number - 1, round_number):
+        if rnd < 1:
+            continue
+        row = conn.execute("SELECT winning_agent_id FROM ChallengeResults WHERE round = ?", (rnd,)).fetchone()
+        if row and row["winning_agent_id"] == actor_id:
+            events.append(f"Round {rnd}: you won immunity.")
+        against = conn.execute(
+            "SELECT COUNT(*) AS n FROM Votes WHERE round = ? AND target_id = ? AND revealed = 1", (rnd, actor_id)
+        ).fetchone()["n"]
+        if against:
+            events.append(f"Round {rnd}: {against} vote{'s' if against != 1 else ''} were cast against you.")
+        for out in conn.execute("SELECT agent_id FROM Agents WHERE elimination_round = ?", (rnd,)):
+            if out["agent_id"] in partners:
+                events.append(f"Round {rnd}: your pact partner {names.get(out['agent_id'])} was voted out.")
+        for left in conn.execute(
+            """
+            SELECT o.agent_id FROM AllianceMemberships m
+            JOIN AllianceMemberships o ON o.alliance_id = m.alliance_id AND o.agent_id != m.agent_id
+            WHERE m.agent_id = ? AND o.status = 'left' AND o.left_round = ?
+            """,
+            (actor_id, rnd),
+        ):
+            events.append(f"Round {rnd}: {names.get(left['agent_id'])} left your pact openly.")
+        named_by = []
+        for event in conn.execute(
+            "SELECT kind, actor_ids, dialogue, payload FROM StoryEvents WHERE round = ? AND kind IN "
+            "('tribal_council', 'tie_discussion', 'deadlock_discussion', 'parting_words')",
+            (rnd,),
+        ):
+            payload = json.loads(event["payload"] or "{}")
+            lines = payload.get("speaker_lines") or []
+            if event["kind"] == "parting_words":
+                lines = [{"agent_id": (json.loads(event["actor_ids"] or "[]") or [None])[0], "text": event["dialogue"] or ""}]
+            for line in lines:
+                speaker = line.get("agent_id")
+                if speaker and speaker != actor_id and word.search(str(line.get("text") or "")):
+                    named_by.append(names.get(speaker, speaker))
+        if named_by:
+            events.append(f"Round {rnd}: named in public by {', '.join(sorted(set(named_by)))}.")
+        invited, left_out = [], 0
+        for event in conn.execute("SELECT payload FROM StoryEvents WHERE round = ? AND kind = 'camp_meetings'", (rnd,)):
+            for meeting in json.loads(event["payload"] or "{}").get("meetings", []):
+                if meeting.get("started_by") == me:
+                    continue
+                if me in (meeting.get("with") or []):
+                    invited.append(meeting.get("started_by"))
+                else:
+                    left_out += 1
+        if invited:
+            events.append(f"Round {rnd}: invited into talks by {', '.join(invited)}.")
+        if left_out:
+            events.append(f"Round {rnd}: {left_out} meeting{'s' if left_out != 1 else ''} went ahead without you.")
+    return events
 
 
 def _your_game_plan(conn, actor_id: str) -> dict[str, Any] | None:

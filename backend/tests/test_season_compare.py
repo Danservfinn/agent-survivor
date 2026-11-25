@@ -39,6 +39,11 @@ class SeasonMeasuresTest(unittest.TestCase):
         conn.execute("INSERT INTO PrivatePlans (round, agent_id, plan) VALUES (1, ?, ?)", (b, json.dumps({"expected_out": c})))
         conn.execute("INSERT INTO Promises (round, promiser_id, listener_id, target_id, discussion_step) VALUES (1, ?, ?, ?, 't')", (a, b, d))
         conn.execute("INSERT INTO Promises (round, promiser_id, listener_id, target_id, discussion_step) VALUES (1, ?, ?, ?, 't')", (b, a, c))
+        # feelings recorded before round 1: a resents d and trusts b; b trusts d
+        for agent_id, about, feeling in ((a, d, "resentment"), (a, b, "trust"), (b, d, "trust")):
+            conn.execute(
+                "INSERT INTO Feelings (round, agent_id, about, feeling) VALUES (0, ?, ?, ?)", (agent_id, about, feeling)
+            )
         conn.commit()
         conn.close()
 
@@ -48,6 +53,11 @@ class SeasonMeasuresTest(unittest.TestCase):
         self.assertEqual(measures["votes_following_own_plan"], 0.5)
         self.assertEqual((measures["promises_kept"], measures["promises_broken"]), (1, 1))
         self.assertEqual(measures["broken_promises_that_paid_off"], 1)
+        # of the two votes with a feeling on record, one went at a resented player
+        self.assertEqual(measures["votes_at_negatively_felt_players"], 0.5)
+        # a kept its promise to b, whom it trusted; b broke its promise to a (no feeling)
+        self.assertEqual(measures["keep_rate_toward_trusted"], 1.0)
+        self.assertEqual(measures["keep_rate_toward_others"], 0.0)
 
 
 if __name__ == "__main__":

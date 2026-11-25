@@ -39,14 +39,19 @@ def main(argv: list[str]) -> int:
     os.environ["LLM_PROVIDER"] = "openrouter"
     os.environ["LLM_SURVIVOR_FAST_BENCHMARK"] = "1"
     from backend.live_season import run_live_season
-    from backend.llm_config import jury_rule, prompt_profile
+    from backend.llm_config import feelings_enabled, jury_rule, prompt_profile, secret_ballot
 
-    print(f"roster={roster} seed={seed} cap={cap}c prompt={prompt_profile()} jury={jury_rule()}", flush=True)
+    print(
+        f"roster={roster} seed={seed} cap={cap}c prompt={prompt_profile()} jury={jury_rule()} "
+        f"feelings={feelings_enabled()} secret_ballot={secret_ballot()}",
+        flush=True,
+    )
     started = time.time()
     report = run_live_season(roster=roster, season_seed=seed, max_cost_cents=cap)
     print(json.dumps({
         "prompt": prompt_profile(),
         "jury_rule": jury_rule(),
+        "feelings": feelings_enabled(),
         "ok": report.get("ok"),
         "error": report.get("error"),
         "winner": (report.get("game") or {}).get("winner"),

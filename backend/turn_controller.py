@@ -28,6 +28,7 @@ from .llm_config import (
     PROVIDER_OLLAMA,
     failed_llm_provider,
     get_llm_settings,
+    feelings_enabled,
     jury_rule,
     live_llm_provider,
     prompt_profile,
@@ -1786,16 +1787,16 @@ def _call_or_error(job: Any) -> tuple[Any, Exception | None]:
 def _write_notebook(conn, round_number: int, agent: dict[str, Any], eliminated_name: str, remaining: int) -> None:
     """The player rewrites its own private notebook after the council. It replaces
     the old memory and is capped so it cannot crowd out the game record."""
-    note = confessional = None
+    note = confessional = feelings = None
     if should_use_live_llm():
         context = build_agent_episode_context(
             conn, actor_id=agent["agent_id"], round_number=round_number, current_step="memory_update"
         )
         try:
-            note, confessional = _request_notebook(agent, context)
+            note, confessional, feelings = _request_notebook(agent, context)
         except Exception as exc:
             print(f"live notebook failed for {agent['agent_id']}: {exc}")
-    _store_notebook(conn, round_number, agent, note, eliminated_name, remaining, confessional)
+    _store_notebook(conn, round_number, agent, note, eliminated_name, remaining, confessional, feelings)
 
 
 CONFESSIONAL_FIELD = (
@@ -1804,9 +1805,21 @@ CONFESSIONAL_FIELD = (
 )
 
 
-def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> tuple[str | None, str | None]:
-    """The model call for a notebook and the confessional. Needs no database,
-    so it can run in a worker. Returns (notebook, confessional)."""
+FEELINGS_FIELDS = {
+    "feelings": (
+        "object: each remaining player's name -> {\"feeling\": one word such as trust, gratitude, loyalty, "
+        "respect, suspicion, resentment, fear or contempt, \"strength\": \"mild\" or \"strong\", \"because\": "
+        "the event that caused it, in a few words}. Your own feelings, from what happened to you; not a strategy."
+    ),
+    "mood": "one or two words for how you feel about your own game right now, e.g. confident, cornered, betrayed, hungry",
+}
+
+
+def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> tuple[str | None, str | None, dict | None]:
+    """The model call for a notebook, the confessional and (when on) the
+    player's feelings. Needs no database, so it can run in a worker. Returns
+    (notebook, confessional, feelings)."""
+    extra = FEELINGS_FIELDS if feelings_enabled() else {}
     if prompt_profile() == "v2":
         written = request_private_writing(
             actor=agent,
@@ -1820,11 +1833,12 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> tuple[s
             fields={
                 "notebook": f"your new notebook, first person, at most {NOTEBOOK_MAX_CHARS} characters",
                 "confessional": CONFESSIONAL_FIELD,
+                **extra,
             },
             episode_context=context,
-            max_tokens=750,
+            max_tokens=1000,
         )
-        return str(written.get("notebook") or "").strip() or None, _confessional_text(written)
+        return str(written.get("notebook") or "").strip() or None, _confessional_text(written), _feelings_from(written)
     written = request_private_writing(
         actor=agent,
         task=(
@@ -1838,11 +1852,20 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> tuple[s
             "lessons": "what you predicted vs what happened, and who lied to you",
             "plan": "your plan for next round",
             "confessional": CONFESSIONAL_FIELD,
+            **extra,
         },
         episode_context=context,
-        max_tokens=750,
+        max_tokens=1000,
     )
-    return _render_notebook(written), _confessional_text(written)
+    return _render_notebook(written), _confessional_text(written), _feelings_from(written)
+
+
+def _feelings_from(written: dict[str, Any]) -> dict[str, Any] | None:
+    if not feelings_enabled():
+        return None
+    toward = written.get("feelings") if isinstance(written.get("feelings"), dict) else {}
+    mood = str(written.get("mood") or "").strip()[:60]
+    return {"toward": toward, "mood": mood} if toward or mood else None
 
 
 def _confessional_text(written: dict[str, Any]) -> str | None:
@@ -1857,12 +1880,15 @@ def _store_notebook(
     eliminated_name: str,
     remaining: int,
     confessional: str | None = None,
+    feelings: dict[str, Any] | None = None,
 ) -> None:
     if confessional:
         conn.execute(
             "INSERT INTO Confessionals (round, agent_id, text) VALUES (?, ?, ?)",
             (round_number, agent["agent_id"], confessional),
         )
+    if feelings:
+        _store_feelings(conn, round_number, agent["agent_id"], feelings)
     if note is None:
         # no model (or it failed): keep the old memory and add one line, still within the cap
         previous = str(agent.get("confessional_memory") or "")
@@ -1872,6 +1898,35 @@ def _store_notebook(
         "UPDATE Agents SET confessional_memory = ? WHERE agent_id = ?",
         (note[:NOTEBOOK_MAX_CHARS], agent["agent_id"]),
     )
+
+
+def _store_feelings(conn, round_number: int, agent_id: str, feelings: dict[str, Any]) -> None:
+    """The player's own feelings toward each other player it named, and its mood."""
+    for name, entry in (feelings.get("toward") or {}).items():
+        about = _resolve_player(conn, name)
+        if not about or about == agent_id:
+            continue
+        entry = entry if isinstance(entry, dict) else {"feeling": str(entry)}
+        feeling = str(entry.get("feeling") or "").strip().lower()[:40]
+        if not feeling:
+            continue
+        strength = str(entry.get("strength") or "").strip().lower()
+        conn.execute(
+            "INSERT INTO Feelings (round, agent_id, about, feeling, strength, because) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                round_number,
+                agent_id,
+                about,
+                feeling,
+                strength if strength in ("mild", "strong") else "",
+                str(entry.get("because") or "").strip()[:200],
+            ),
+        )
+    if feelings.get("mood"):
+        conn.execute(
+            "INSERT INTO Feelings (round, agent_id, about, feeling) VALUES (?, ?, 'self', ?)",
+            (round_number, agent_id, feelings["mood"].lower()),
+        )
 
 
 def _render_notebook(written: dict[str, Any]) -> str | None:
@@ -3418,8 +3473,8 @@ def _memory_update_event(conn, round_number: int, turn_id: int) -> dict[str, Any
         for agent, (written, error) in zip(active, results):
             if error is not None:
                 print(f"live notebook failed for {agent['agent_id']}: {error}")
-            note, confessional = written if written else (None, None)
-            _store_notebook(conn, round_number, agent, note, eliminated_name, len(active), confessional)
+            note, confessional, feelings = written if written else (None, None, None)
+            _store_notebook(conn, round_number, agent, note, eliminated_name, len(active), confessional, feelings)
     else:
         for agent in active:
             _write_notebook(conn, round_number, agent, eliminated_name, len(active))
@@ -4245,8 +4300,19 @@ def juror_history(conn, juror_id: str, finalist_id: str) -> dict[str, Any]:
         """,
         (juror_id, finalist_id),
     ).fetchone()["n"]
+    felt = conn.execute(
+        "SELECT feeling, strength, because FROM Feelings WHERE agent_id = ? AND about = ? ORDER BY round DESC, id DESC LIMIT 1",
+        (juror_id, finalist_id),
+    ).fetchone()
     return {
         "finalist": names.get(finalist_id, finalist_id),
+        # the feeling this juror last recorded about them, while still in the game
+        "how_you_felt_when_you_left": (
+            f"{felt['feeling']}{' (' + felt['strength'] + ')' if felt['strength'] else ''}"
+            f"{': ' + felt['because'] if felt['because'] else ''}"
+            if felt
+            else None
+        ),
         "voted_you_out": out_round in their_votes,
         "rounds_they_voted_against_you": their_votes,
         "rounds_you_voted_against_them": my_votes,

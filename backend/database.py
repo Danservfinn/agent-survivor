@@ -197,6 +197,19 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- how a player feels toward each other player (and its own mood,
+            -- about = 'self') after a council; written by the player, private
+            CREATE TABLE IF NOT EXISTS Feelings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                about TEXT NOT NULL,
+                feeling TEXT NOT NULL,
+                strength TEXT NOT NULL DEFAULT '',
+                because TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- each player's private plan for a round, written before the challenge
             CREATE TABLE IF NOT EXISTS PrivatePlans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -520,6 +533,7 @@ def seed_demo(
         conn.execute("DELETE FROM SpoiledVotes")
         conn.execute("DELETE FROM GamePlans")
         conn.execute("DELETE FROM Confessionals")
+        conn.execute("DELETE FROM Feelings")
         conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
         conn.execute("DELETE FROM Alliances")
@@ -604,6 +618,7 @@ def _database_ready() -> bool:
             "SpoiledVotes",
             "GamePlans",
             "Confessionals",
+            "Feelings",
         }
         tables = {
             row["name"]
