@@ -921,7 +921,10 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
     models = _build_models(data, scorecard, rounds, finale, table, prompt_entries, stopped)
     season_story.add_player_tags(models, rounds, finale)
     # evil index, emotionality, and feelings round by round (season_character)
-    character = build_character(db, names)
+    try:
+        character = build_character(db, names)
+    except sqlite3.OperationalError:
+        character = {}  # a season from before the tables the character section reads
     for model in models:
         model["character"] = character.get(model["agent_id"])
     rules = _rules_of(data["agents"])
