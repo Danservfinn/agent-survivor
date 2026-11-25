@@ -573,6 +573,10 @@ def _database_ready() -> bool:
             "ChallengeAttempts",
             "ChallengeResults",
             "JuryVotes",
+            # newer tables: an older database gets them (CREATE IF NOT EXISTS) without a reseed
+            "Promises",
+            "PrivatePlans",
+            "SpoiledVotes",
         }
         tables = {
             row["name"]
