@@ -31,7 +31,9 @@ class ReasoningSettingsTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.sent: list[dict] = []
         openrouter_client._RUNAWAY_REASONING_MODELS.clear()
+        openrouter_client._RUNAWAY_STREAKS.clear()
         self.addCleanup(openrouter_client._RUNAWAY_REASONING_MODELS.clear)
+        self.addCleanup(openrouter_client._RUNAWAY_STREAKS.clear)
 
     def _run(self, responses: list) -> dict:
         def fake_urlopen(request, timeout=None, context=None):
@@ -60,14 +62,34 @@ class ReasoningSettingsTest(unittest.TestCase):
         self.assertEqual(retry["reasoning"], REASONING_SETTINGS)
         self.assertFalse(openrouter_client._RUNAWAY_REASONING_MODELS)
 
-    def test_a_model_that_ignores_the_budget_answers_with_hidden_reasoning_off(self) -> None:
-        result = self._run([_ok("", finish="length"), _ok("", finish="length"), _ok('{"ok": true}')])
+    def test_a_runaway_call_answers_with_hidden_reasoning_off_without_marking_the_model(self) -> None:
+        empty = lambda: _ok("", finish="length")  # noqa: E731
+        result = self._run([empty(), empty(), _ok('{"ok": true}')])
         self.assertEqual(result["choices"][0]["message"]["content"], '{"ok": true}')
+        self.assertEqual(self.sent[1]["max_tokens"], 2 * (420 + REASONING_TOKEN_HEADROOM))
         self.assertEqual(self.sent[2]["reasoning"], {"enabled": False})
-        # remembered: the next call goes straight to it
+        # one runaway call does not cost the model its reasoning: the next call has it
         self._run([_ok('{"ok": 2}')])
-        self.assertEqual(self.sent[3]["reasoning"], {"enabled": False})
-        self.assertEqual(len(self.sent), 4)
+        self.assertEqual(self.sent[3]["reasoning"], REASONING_SETTINGS)
+        self.assertFalse(openrouter_client._RUNAWAY_REASONING_MODELS)
+
+    def test_three_runaway_calls_in_a_row_mark_the_model(self) -> None:
+        empty = lambda: _ok("", finish="length")  # noqa: E731
+        for _ in range(3):
+            self._run([empty(), empty(), _ok('{"ok": true}')])
+        self.assertIn("org/model", openrouter_client._RUNAWAY_REASONING_MODELS)
+        sent = len(self.sent)
+        self._run([_ok('{"ok": 2}')])
+        self.assertEqual(self.sent[sent]["reasoning"], {"enabled": False})
+        self.assertEqual(len(self.sent), sent + 1)
+
+    def test_an_answer_with_reasoning_resets_the_streak(self) -> None:
+        empty = lambda: _ok("", finish="length")  # noqa: E731
+        self._run([empty(), empty(), _ok("{}")])
+        self._run([empty(), empty(), _ok("{}")])
+        self._run([_ok("{}")])  # answered with reasoning on
+        self._run([empty(), empty(), _ok("{}")])
+        self.assertFalse(openrouter_client._RUNAWAY_REASONING_MODELS)
 
     def test_mandatory_reasoning_keeps_the_empty_reply_and_is_not_remembered(self) -> None:
         result = self._run(
@@ -102,7 +124,8 @@ class ReasoningSettingsTest(unittest.TestCase):
         self.addCleanup(live_cost._ACTIVE_TABLE.pop, "org/model", None)
         self._run([_ok("", finish="length"), _ok('{"ok": true}')])
         self.assertEqual(self.sent[0]["max_tokens"], 4000)
-        self.assertEqual(self.sent[1]["max_tokens"], 4000)  # the doubled retry is capped too
+        # already at the limit: no bigger retry is possible, so it goes to hidden reasoning off
+        self.assertEqual(self.sent[1]["reasoning"], {"enabled": False})
 
     def test_answer_time_counts_answered_calls_only(self) -> None:
         result = self._run([_http_error(503, "upstream error"), _ok('{"ok": true}')])

@@ -71,7 +71,7 @@ class HoldTest(unittest.TestCase):
         empty = lambda: io.BytesIO(  # noqa: E731
             json.dumps({"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}).encode()
         )
-        result = self._run([empty(), empty(), empty()])  # normal, double room, hidden reasoning off
+        result = self._run([empty(), empty(), empty()])  # normal, 2x room, hidden reasoning off
         self.assertEqual(result["choices"][0]["message"]["content"], "")
         self.assertEqual(self.sleeps, [])  # no hold
 

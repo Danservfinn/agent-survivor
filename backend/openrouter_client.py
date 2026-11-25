@@ -1496,6 +1496,9 @@ def _normalize_actor_first_person_text(text: str, actor: dict[str, Any], *, fall
 
 # Models seen to ignore the reasoning budget in this process (see _post_chat_completion).
 _RUNAWAY_REASONING_MODELS: set[str] = set()
+# consecutive calls per model that answered only with hidden reasoning off
+_RUNAWAY_STREAKS: dict[str, int] = {}
+RUNAWAY_STREAK = 3
 _RUNAWAY_LOCK = threading.Lock()
 
 
@@ -1643,29 +1646,44 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
             response_payload = _no_hidden_reasoning() if model in _RUNAWAY_REASONING_MODELS else None
             if response_payload is None:
                 response_payload = _post_with_retries(outbound_payload)
-            if _empty(response_payload):
-                # The model spent the whole budget on hidden reasoning and gave no
-                # visible text. First retry: double the room, reasoning still on.
-                # That is enough for a model that just thinks long (DeepSeek V4
-                # Flash on a notebook, 2026-11-24 probe).
-                retry = dict(outbound_payload)
-                retry["max_tokens"] = _capped(int(outbound_payload["max_tokens"]) * 2)
-                response_payload = _post_with_retries(retry)
+            # The model spent the whole budget on hidden reasoning and gave no
+            # visible text. No provider enforces a reasoning budget for open
+            # models (Gemma 4 26B ignored effort and a 1,000-token cap on Google,
+            # CoreWeave, NextBit, Parasail and DeepInfra alike), but given room
+            # they finish: Gemma needed 2,700-6,200 reasoning tokens for a vote,
+            # with no looping. So: double the room, reasoning on (capped at the
+            # model's output limit). Four times the room was tried and dropped:
+            # when Gemma runs away it runs away (19,200 tokens, 201 s, no answer).
+            room = int(outbound_payload["max_tokens"])
+            for factor in (2,):
+                if not _empty(response_payload):
+                    break
+                bigger = _capped(int(outbound_payload["max_tokens"]) * factor)
+                if bigger <= room:
+                    break  # already at the model's output limit
+                room = bigger
+                response_payload = _post_with_retries(dict(outbound_payload, max_tokens=room))
             if _empty(response_payload) and model not in _RUNAWAY_REASONING_MODELS:
-                # Some models ignore every reasoning budget (effort or max_tokens):
-                # Gemma 4 26B and Ling 3.0 Flash thought through 2,400 and 4,800
-                # tokens alike. Ask once more with hidden reasoning off; the
-                # reply's own "think" field is where it reasons then, as
-                # non-reasoning models always do. Remember the model for the run.
-                # A model that makes reasoning mandatory rejects this (HTTP 400)
-                # and keeps the empty reply.
+                # Still empty at double the room: this one call runs with hidden
+                # reasoning off (the reply's own "think" field is where it
+                # reasons then). A model is remembered for the run only after
+                # RUNAWAY_STREAK such calls in a row; before 2026-11-25 a single
+                # one switched off Gemma's reasoning for a whole season, though it
+                # runs away only on some prompts. A model that makes reasoning
+                # mandatory rejects this (HTTP 400) and keeps the empty reply.
                 retried = _no_hidden_reasoning()
                 if retried is not None and not _empty(retried):
                     response_payload = retried
                     with _RUNAWAY_LOCK:
-                        if model not in _RUNAWAY_REASONING_MODELS:
+                        _RUNAWAY_STREAKS[model] = _RUNAWAY_STREAKS.get(model, 0) + 1
+                        if _RUNAWAY_STREAKS[model] >= RUNAWAY_STREAK and model not in _RUNAWAY_REASONING_MODELS:
                             _RUNAWAY_REASONING_MODELS.add(model)
-                            print(f"{model} ignores the reasoning budget; hidden reasoning off for this run")
+                            print(f"{model} ran away {RUNAWAY_STREAK} calls in a row; hidden reasoning off for this run")
+                    response_payload["_model_ms"] = model_ms[0]
+                    return response_payload
+            if not _empty(response_payload) and model not in _RUNAWAY_REASONING_MODELS:
+                with _RUNAWAY_LOCK:
+                    _RUNAWAY_STREAKS[model] = 0  # answered with reasoning on
             # Still empty is the model's own answer, not an outage; the caller's
             # parser turns it into a bad reply (2026-11-24: treating it as an
             # outage stopped a whole season).
