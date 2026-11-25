@@ -817,6 +817,7 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
             "immune_tonight": bool(me and me["has_immunity"]),
             "challenge_correct": challenge_totals.get(actor_id, {}).get("correct", 0),
             "challenge_wins": challenge_totals.get(actor_id, {}).get("wins", 0),
+            **({"advantages": advantages} if (advantages := _auction_view(conn, actor_id, round_number)) else {}),
         },
         "tonight": {
             "round": round_number,
@@ -836,6 +837,13 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
         "your_betrayals_and_what_they_achieved": _own_betrayals(conn, actor_id),
         "jury_so_far": jury,
     }
+
+
+def _auction_view(conn, actor_id: str, round_number: int) -> dict[str, Any] | None:
+    from .auction import your_advantages
+    from .turn_controller import _season_first_round
+
+    return your_advantages(conn, actor_id, round_number, _season_first_round(conn))
 
 
 def _own_betrayals(conn, actor_id: str) -> list[dict[str, Any]]:

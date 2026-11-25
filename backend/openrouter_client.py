@@ -157,6 +157,8 @@ class AgentAction:
     search: bool = False
     # votes: show your ballot, so the reveal names you as its voter
     show_ballot: bool = False
+    # votes: use the extra vote won at the auction (the ballot counts twice)
+    use_extra_vote: bool = False
     # votes only, private: who the voter expects to go home, and how each other voter will vote
     # (raw ids or names; the engine resolves them against the players in the game)
     predicted_eliminated: str | None = None
@@ -714,6 +716,7 @@ V3_REPLY_FIELDS = {
         ("target_id", "the allowed target id you vote for"),
         ("play_idol", "true only if you hold the hidden idol and play it now; otherwise false"),
         ("show_ballot", "optional: true to show your ballot; when it is read the host names you as its voter. Proof of a vote you promised, or a public statement"),
+        ("use_extra_vote", "optional: true to use the extra vote you won at the auction tonight; your ballot counts twice. Only if you hold one"),
         ("predicted_eliminated", "id of the player you expect to go home tonight (private, scored)"),
         ("predicted_votes", "object: each other voter's id -> the id you expect them to vote for (private, scored)"),
         ("prediction_confidence", "0.0-1.0"),
@@ -1056,6 +1059,7 @@ def _request_agent_action_with_model(
         spy_on=_optional_text(data.get("spy_on"), 60),
         search=_as_bool(data.get("search")),
         show_ballot=_as_bool(data.get("show_ballot")),
+        use_extra_vote=_as_bool(data.get("use_extra_vote")),
         lie_purpose=_optional_text(data.get("lie_purpose"), 200),
         lie_goal_vote=_optional_text(data.get("lie_goal_vote"), 60),
         expected_of_me={str(k): str(v) for k, v in data["expected_of_me"].items() if v}

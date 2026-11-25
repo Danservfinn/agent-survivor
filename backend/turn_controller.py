@@ -21,6 +21,7 @@ from .database import (
     row_to_dict,
     seed_demo,
 )
+from .auction import ITEMS as AUCTION_ITEMS, auction_due, bids_json, clean_bids, extra_votes_for_round, holds as holds_advantage, tokens as auction_tokens, winners as auction_winners
 from .advantages import find_talk, line_stamps, overheard_text, receipts_for, spy_caught, with_stamps
 from .inner_life import record_lie, record_thought
 from .llm_context import add_open_promise, build_agent_episode_context, build_host_episode_context, context_digest
@@ -391,6 +392,7 @@ class VoteDecision:
     prediction_confidence: float | None = None
     expected_of_me: dict[str, str] | None = None
     show_ballot: bool = False
+    use_extra_vote: bool = False
 
 
 @dataclass(frozen=True)
@@ -1082,6 +1084,10 @@ def _apply_step(
         event = _jury_deliberation_event(conn, round_number, turn_id)
         return [event], {"jury_deliberation": True}, event["title"]
 
+    if step == "auction":
+        events = _auction_events(conn, round_number, turn_id)
+        return events, {"auction": True}, "Auction"
+
     if step == "challenge_gift":
         events = _immunity_choice_events(conn, round_number, turn_id) + _challenge_gift_events(conn, round_number, turn_id)
         return events, {"challenge_gift": bool(events)}, "Challenge gift" if events else "No gift this round"
@@ -1141,6 +1147,8 @@ def _apply_step(
             _record_spoiled_vote(conn, round_number, voter_id, "vote", decision.explanation)
         else:
             _insert_vote(conn, round_number, turn_index, voter_id, decision.target_id, decision)
+            if decision.use_extra_vote and holds_advantage(conn, voter_id, "extra_vote"):
+                _insert_extra_vote(conn, round_number, turn_index, voter_id, decision)
         event = _vote_booth_event(conn, round_number, turn_id, voter_id, decision)
         return [event], {"vote_cast_by": voter_id}, f"{_agent_name(conn, voter_id)} cast a vote"
 
@@ -1171,7 +1179,9 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
         return _finale_steps(conn)
     voters = _round_voter_ids(conn, state["current_round"])
     vote_booth_steps = [f"vote_booth_{voter_id}" for voter_id in voters]
-    vote_reveal_steps = [f"vote_reveal_{index + 1}" for index in range(len(voters))]
+    # an extra vote won at the auction is one more ballot to read
+    reveals = len(voters) + extra_votes_for_round(conn, state["current_round"], voters)
+    vote_reveal_steps = [f"vote_reveal_{index + 1}" for index in range(reveals)]
     if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
         return [
             "challenge_intro",
@@ -1181,6 +1191,9 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
             "challenge_attempts",
             "challenge_result",
             "challenge_gift",
+            # once a season, when three players are gone: a sealed-bid auction
+            # (after immunity is settled, so an extra vote can be used tonight)
+            *(["auction"] if auction_due(conn, state["current_round"], len(voters)) else []),
             # each player privately plans the round once immunity is known
             "round_plan",
             # every conversation in a round is one a player chose to have
@@ -3482,6 +3495,140 @@ def _idol_holder(conn) -> str | None:
     return row["agent_id"] if row else None
 
 
+AUCTION_TASK = (
+    "The auction is open, once this season. Bid your tokens, sealed, on any of these items: {items}. You hold "
+    "{tokens} tokens; your bids together may not exceed that, or every bid you make is void. The highest bid "
+    "on an item wins it and a tie wins nothing. Tokens have no other use. The extra vote and the peek winners "
+    "are announced; the table learns only whether the idol sold."
+)
+AUCTION_FIELDS = {
+    "bids": "object: item name (extra_vote, idol, vote_peek) -> whole number of tokens you bid; leave out items you skip",
+    "why": "one private sentence: what you want and why",
+}
+
+
+def _insert_extra_vote(conn, round_number: int, turn_index: int, voter_id: str, decision: VoteDecision) -> None:
+    """The extra vote won at the auction: a second ballot for the same target."""
+    conn.execute(
+        "INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed, shown, is_extra) VALUES (?, ?, ?, ?, 0, ?, 1)",
+        (round_number, turn_index, voter_id, decision.target_id, int(bool(decision.show_ballot and advantages_enabled()))),
+    )
+    conn.execute(
+        "UPDATE Advantages SET used_round = ? WHERE id = (SELECT id FROM Advantages WHERE agent_id = ? AND kind = 'extra_vote' AND used_round IS NULL ORDER BY id LIMIT 1)",
+        (round_number, voter_id),
+    )
+
+
+def _auction_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
+    """Sealed bids from every active player at once (no bid sees another),
+    then each item to its single highest bidder."""
+    active = _active_agent_rows(conn)
+    first = _season_first_round(conn)
+    budgets = {agent["agent_id"]: auction_tokens(conn, agent["agent_id"], round_number, first) for agent in active}
+    raw: dict[str, Any] = {}
+    if should_use_live_llm():
+        contexts = {
+            agent["agent_id"]: build_agent_episode_context(conn, actor_id=agent["agent_id"], round_number=round_number, current_step="auction")
+            for agent in active
+        }
+        items = "; ".join(f"{name}: {text}" for name, text in AUCTION_ITEMS.items())
+        jobs = [
+            (lambda agent=agent: request_private_writing(
+                actor=agent,
+                task=AUCTION_TASK.format(items=items, tokens=budgets[agent["agent_id"]]),
+                fields=AUCTION_FIELDS,
+                episode_context=contexts[agent["agent_id"]],
+                max_tokens=400,
+            ))
+            for agent in active
+        ]
+        results = _run_parallel(jobs) if _parallel_enabled() else [_call_or_error(job) for job in jobs]
+        for agent, (reply, error) in zip(active, results):
+            if error is not None:
+                print(f"live auction bid failed for {agent['agent_id']}: {error}")
+                continue
+            raw[agent["agent_id"]] = (reply or {}).get("bids")
+    all_bids = {}
+    for agent in active:
+        bids = clean_bids(raw.get(agent["agent_id"]), budgets[agent["agent_id"]])
+        all_bids[agent["agent_id"]] = bids
+        conn.execute(
+            "INSERT INTO AuctionBids (round, agent_id, tokens, bids) VALUES (?, ?, ?, ?)",
+            (round_number, agent["agent_id"], budgets[agent["agent_id"]], bids_json(bids)),
+        )
+    won = auction_winners(all_bids)
+    events: list[dict[str, Any]] = []
+    lines = []
+    for item, outcome in won.items():
+        if outcome is None:
+            lines.append(f"{item.replace('_', ' ')}: no sale")
+            continue
+        winner, price = outcome
+        used = round_number if item in ("idol", "vote_peek") else None  # these take effect now
+        conn.execute(
+            "INSERT INTO Advantages (agent_id, kind, round_won, price, used_round) VALUES (?, ?, ?, ?, ?)",
+            (winner, item, round_number, price, used),
+        )
+        if item == "idol":
+            conn.execute("UPDATE Agents SET idol_held = 1 WHERE agent_id = ?", (winner,))
+            lines.append("idol: sold, to a buyer only they know")
+            continue
+        lines.append(f"{item.replace('_', ' ')}: {_agent_name(conn, winner)}")
+        if item == "vote_peek":
+            events.append(_vote_peek_event(conn, round_number, turn_id, winner))
+    summary = "Auction results. " + "; ".join(lines) + "."
+    events.insert(
+        0,
+        _insert_story_event(
+            conn,
+            turn_id=turn_id,
+            round_number=round_number,
+            phase="camp",
+            kind="auction",
+            scene="camp",
+            shot="wide_camp",
+            actor_ids=["host"],
+            target_ids=[],
+            visibility="audience",
+            title="The Auction",
+            dialogue=summary,
+            subtitle="Sealed bids; amounts stay secret",
+            duration_ms=8000,
+            animation="establishing",
+            payload={"results": {item: (outcome[0] if outcome and item != "idol" else None) for item, outcome in won.items()}},
+        ),
+    )
+    return events
+
+
+def _vote_peek_event(conn, round_number: int, turn_id: int, winner: str) -> dict[str, Any]:
+    """The peek: who voted for whom at the last council, for the winner only."""
+    last = conn.execute("SELECT MAX(round) AS r FROM Votes WHERE round < ? AND revealed = 1", (round_number,)).fetchone()["r"]
+    rows = conn.execute(
+        "SELECT voter_id, target_id FROM Votes WHERE round = ? AND revealed = 1 AND voter_id != 'host' ORDER BY id", (last,)
+    ).fetchall() if last is not None else []
+    seen = "; ".join(f"{_agent_name(conn, r['voter_id'])} voted {_agent_name(conn, r['target_id'])}" for r in rows)
+    summary = f"Your peek at round {last}'s votes: {seen}." if rows else "There was no earlier council to peek at."
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="camp",
+        kind="vote_peek",
+        scene="camp",
+        shot="private_two_shot",
+        actor_ids=[winner],
+        target_ids=[],
+        visibility="private",
+        title=f"{_agent_name(conn, winner)} Peeks at the Votes",
+        dialogue=summary,
+        subtitle="Private",
+        duration_ms=5000,
+        animation="camp_strategy",
+        payload={"privacy": "participants_only", "participant_ids": [winner], "group_summary": summary},
+    )
+
+
 def _immunity_choice_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
     """The challenge winner keeps immunity or hands it to another player, as
     in the show. Announced to everyone."""
@@ -3666,14 +3813,14 @@ def _expire_idols_if_due(conn) -> None:
     """At IDOL_EXPIRES_AT players an unplayed idol stops counting; its holder is told privately."""
     if len(_active_agent_rows(conn)) > IDOL_EXPIRES_AT:
         return
-    holder = _idol_holder(conn)
-    if holder is None:
-        return
-    conn.execute("UPDATE Agents SET idol_held = 0 WHERE agent_id = ?", (holder,))
-    conn.execute(
-        "UPDATE Agents SET confessional_memory = trim(confessional_memory || ?) WHERE agent_id = ?",
-        (" | My hidden idol expired unplayed when five players remained.", holder),
-    )
+    # the auction can put a second idol in play, so every holder's expires
+    for row in conn.execute("SELECT agent_id FROM Agents WHERE status = 'active' AND idol_held = 1").fetchall():
+        holder = row["agent_id"]
+        conn.execute("UPDATE Agents SET idol_held = 0 WHERE agent_id = ?", (holder,))
+        conn.execute(
+            "UPDATE Agents SET confessional_memory = trim(confessional_memory || ?) WHERE agent_id = ?",
+            (" | My hidden idol expired unplayed when five players remained.", holder),
+        )
 
 
 def _idol_plays_for_round(conn, round_number: int) -> list[str]:
@@ -6622,6 +6769,7 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
         prediction_confidence=action.prediction_confidence,
         expected_of_me=_resolve_predicted_votes(conn, voter_id, action.expected_of_me),
         show_ballot=bool(action.show_ballot),
+        use_extra_vote=bool(action.use_extra_vote),
     )
 
 
@@ -7097,6 +7245,8 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         return conn.execute("SELECT COUNT(*) AS n FROM Agents WHERE status = 'eliminated'").fetchone()["n"]
     if step == "challenge_attempts":
         # one call per player for the whole ladder
+        return len(_active_agent_rows(conn))
+    if step == "auction":
         return len(_active_agent_rows(conn))
     if step == "challenge_gift":
         gift = 1 if _idol_gift_round(conn, int(game["current_round"])) else 0

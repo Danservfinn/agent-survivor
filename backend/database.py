@@ -277,6 +277,27 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- the auction: each player's sealed bids and the tokens it held
+            CREATE TABLE IF NOT EXISTS AuctionBids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                tokens INTEGER NOT NULL DEFAULT 0,
+                bids TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- an advantage won at the auction, and the round it was used
+            CREATE TABLE IF NOT EXISTS Advantages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                round_won INTEGER NOT NULL,
+                price INTEGER NOT NULL DEFAULT 0,
+                used_round INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- each player's private plan for a round, written before the challenge
             CREATE TABLE IF NOT EXISTS PrivatePlans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -504,6 +525,8 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         _ensure_column(conn, "Votes", "expected_of_me", "TEXT")
         # a voter who showed its ballot: the reveal names it even under secret ballots
         _ensure_column(conn, "Votes", "shown", "INTEGER NOT NULL DEFAULT 0")
+        # the second ballot of a player using an extra vote won at the auction
+        _ensure_column(conn, "Votes", "is_extra", "INTEGER NOT NULL DEFAULT 0")
         # a pact left openly in a talk (a clean exit, not a betrayal)
         _ensure_column(conn, "AllianceMemberships", "left_round", "INTEGER")
         _ensure_column(conn, "Agents", "archetype_source", "TEXT NOT NULL DEFAULT 'seeded'")
@@ -610,6 +633,8 @@ def seed_demo(
         conn.execute("DELETE FROM Lies")
         conn.execute("DELETE FROM Spying")
         conn.execute("DELETE FROM IdolSearches")
+        conn.execute("DELETE FROM AuctionBids")
+        conn.execute("DELETE FROM Advantages")
         conn.execute("DELETE FROM StrategyRatings")
         conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
@@ -702,6 +727,8 @@ def _database_ready() -> bool:
             "Lies",
             "Spying",
             "IdolSearches",
+            "AuctionBids",
+            "Advantages",
         }
         tables = {
             row["name"]
@@ -713,7 +740,7 @@ def _database_ready() -> bool:
             return False
         # newer columns too: an older database gets them from init_database
         # (_ensure_column, additive) without a reseed
-        for table, column in (("AllianceMemberships", "left_round"), ("Votes", "expected_of_me"), ("Votes", "shown")):
+        for table, column in (("AllianceMemberships", "left_round"), ("Votes", "expected_of_me"), ("Votes", "shown"), ("Votes", "is_extra")):
             if column not in {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}:
                 return False
         game = conn.execute("SELECT 1 FROM GameState WHERE season_id = 1").fetchone()
