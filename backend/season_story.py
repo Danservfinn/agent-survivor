@@ -318,6 +318,8 @@ def add_player_tags(models: list[dict[str, Any]], rounds: list[dict[str, Any]], 
     most = max(m["challenge_attempts"] for m in models)
     ranked_solvers = [m for m in models if m["challenge_attempts"] and m["challenge_attempts"] * 2 >= most]
     top_accuracy = max((m["challenge_accuracy"] for m in ranked_solvers), default=None)
+    # a label shared by most of the cast says nothing: only a sole leader or a pair gets it
+    top_solver_count = sum(1 for m in ranked_solvers if m["challenge_accuracy"] == top_accuracy)
     top_votes = max(m["votes_received"] for m in models)
     readers = [m for m in models if m["prediction_accuracy"] is not None]
     top_read = max((m["prediction_accuracy"] for m in readers), default=None)
@@ -337,7 +339,7 @@ def add_player_tags(models: list[dict[str, Any]], rounds: list[dict[str, Any]], 
             tags.append("Kept every promise")
         elif most_broken >= 2 and m["promises_broken"] == most_broken:
             tags.append("Broke the most promises")
-        if top_accuracy and m in ranked_solvers and m["challenge_accuracy"] == top_accuracy:
+        if top_accuracy and m in ranked_solvers and m["challenge_accuracy"] == top_accuracy and top_solver_count <= 2:
             tags.append("Best at puzzles")
         elif m["challenge_attempts"] >= 3 and m["challenge_correct"] == 0:
             tags.append("Never solved a puzzle")

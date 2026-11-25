@@ -346,6 +346,15 @@ class SeasonStoryTest(unittest.TestCase):
         self.assertEqual(quotes["d"], "I did not see that coming.")
         self.assertEqual(quotes["a"], "I earned this.")
 
+    def test_best_at_puzzles_is_not_shared_by_most_of_the_cast(self) -> None:
+        from backend import season_story
+
+        report = self._report()
+        for m in report["models"]:
+            m["challenge_accuracy"], m["challenge_correct"] = 1.0, 10
+        season_story.add_player_tags(report["models"], report["rounds"], None)
+        self.assertFalse(any("Best at puzzles" in m["tags"] for m in report["models"]))
+
     def test_thread_posts_fit_and_end_with_the_link_and_the_follow_line(self) -> None:
         from backend import season_story
 
