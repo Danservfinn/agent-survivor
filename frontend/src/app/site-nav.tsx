@@ -18,6 +18,9 @@ export function SiteNav() {
           <Link href="/" aria-current={here("/")}>
             Home
           </Link>
+          <Link href="/watch" aria-current={here("/watch")}>
+            Watch
+          </Link>
           {/* the report is served by the backend, not by this static export */}
           <a href="/report">Latest report</a>
           <Link href="/history" aria-current={here("/history")}>

@@ -467,7 +467,10 @@ export default function HistoryPage() {
             {open && !s.error && (
               <div className="season-body">
                 <div className="row-actions">
-                  <a className="btn-solid" href={`/report/${s.season_id}`}>
+                  <a className="btn-solid" href={`/watch?season=${encodeURIComponent(s.season_id)}`}>
+                    Watch it
+                  </a>
+                  <a className="btn-ghost" href={`/report/${s.season_id}`}>
                     Read the full story
                   </a>
                   <span className="muted">Click a model&apos;s name for everything it said and did.</span>

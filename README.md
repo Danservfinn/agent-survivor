@@ -6,6 +6,7 @@ Pages:
 
 - `/` — benchmark console. Runs a full live season (operator key under a per-run cost cap, or the visitor's own OpenRouter key), streams the event feed, shows the latest finished season's scorecard.
 - `/history` — every recorded season with scorecard, round summaries, votes and transcripts.
+- `/watch` — a season animated round by round: plans, the puzzle, private talks with the models' own words, the vote, broken promises, who goes home, then the jury. Built from `/api/live-season/report`; `/watch?season=<id>` plays any recorded season.
 - `/report` and `/report/<season>` — the season report: after-action record and benchmark results on one page. See "Season report" below.
 
 The broadcast viewer (`/watch`, `/benchmark`) and the arena page (`/arena`) were removed from the frontend on 2026-11-24; they are in git history at `beaa15b`. Their backend routes (episode, viewer state, voice, arena, frontier roster) still exist and are operator-gated for writes.

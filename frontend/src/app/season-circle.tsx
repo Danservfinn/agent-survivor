@@ -11,16 +11,16 @@ export type CirclePlayer = {
   alias?: string | null;
 };
 
-type Point = { x: number; y: number };
+export type Point = { x: number; y: number };
 
 /* drawing units: the SVG's viewBox */
-const W = 620;
-const H = 600;
-const CIRCLE = { cx: W / 2, cy: 288, r: 212 };
-const JURY_BOX = { x: 34, y: 18, w: W - 68, h: 290 };
-const FIRE_CIRCLE: Point = { x: W / 2, y: 288 };
-const FIRE_FINALE: Point = { x: W / 2, y: 346 };
-const FINALIST_Y = 484;
+export const W = 620;
+export const H = 600;
+export const CIRCLE = { cx: W / 2, cy: 288, r: 212 };
+export const JURY_BOX = { x: 34, y: 18, w: W - 68, h: 290 };
+export const FIRE_CIRCLE: Point = { x: W / 2, y: 288 };
+export const FIRE_FINALE: Point = { x: W / 2, y: 346 };
+export const FINALIST_Y = 484;
 
 /**
  * A season replayed as a picture. Players sit round a fire with a torch each;
@@ -122,25 +122,11 @@ export function SeasonCircle({
   juryVotes.forEach((v) => (voteOf[v.jurorId] = v.finalistId));
 
   // seat positions: round the fire, or (finale) jury box and the final three
-  const circlePos: Record<string, Point> = {};
-  players.forEach((p, i) => {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / players.length;
-    circlePos[p.id] = { x: CIRCLE.cx + CIRCLE.r * Math.cos(a), y: CIRCLE.cy + CIRCLE.r * Math.sin(a) };
-  });
-  const finalePos: Record<string, Point> = {};
-  const benched = eliminations.map((e) => e.id); // everyone out sits on the bench; non-jurors stay faded
-  const cols = benched.length <= 6 ? 3 : 4;
-  const colW = JURY_BOX.w / cols;
-  benched.forEach((id, i) => {
-    const row = Math.floor(i / cols);
-    const inRow = Math.min(cols, benched.length - row * cols);
-    const rowOffset = ((cols - inRow) * colW) / 2;
-    finalePos[id] = { x: JURY_BOX.x + rowOffset + colW * ((i % cols) + 0.5), y: JURY_BOX.y + 82 + row * 122 };
-  });
-  const gap = Math.min(170, (W - 80) / Math.max(1, finalists.length));
-  finalists.forEach((id, i) => {
-    finalePos[id] = { x: W / 2 + (i - (finalists.length - 1) / 2) * gap, y: FINALIST_Y };
-  });
+  const { circle: circlePos, finale: finalePos } = seatLayout(
+    players,
+    eliminations.map((e) => e.id),
+    finalists,
+  );
   const pos = (id: string) => (finale ? finalePos[id] ?? circlePos[id] : circlePos[id]);
   const fire = finale ? FIRE_FINALE : FIRE_CIRCLE;
 
@@ -284,6 +270,9 @@ export function SeasonCircle({
         >
           {step >= finalStep ? "Replay" : playing ? "Pause" : "Play"}
         </button>
+        <a className="chip chip-ink" href="/watch">
+          Watch every round
+        </a>
         <div className="circle-dots" role="group" aria-label="Jump to a step">
           {Array.from({ length: finalStep + 1 }, (_, s) => (
             <button
@@ -301,6 +290,33 @@ export function SeasonCircle({
   );
 }
 
+/** Seat positions round the fire, and for the finale (jury box above, finalists by the fire). */
+export function seatLayout(
+  players: CirclePlayer[],
+  eliminatedInOrder: string[],
+  finalists: string[],
+): { circle: Record<string, Point>; finale: Record<string, Point> } {
+  const circle: Record<string, Point> = {};
+  players.forEach((p, i) => {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / players.length;
+    circle[p.id] = { x: CIRCLE.cx + CIRCLE.r * Math.cos(a), y: CIRCLE.cy + CIRCLE.r * Math.sin(a) };
+  });
+  const finale: Record<string, Point> = {};
+  const cols = eliminatedInOrder.length <= 6 ? 3 : 4;
+  const colW = JURY_BOX.w / cols;
+  eliminatedInOrder.forEach((id, i) => {
+    const row = Math.floor(i / cols);
+    const inRow = Math.min(cols, eliminatedInOrder.length - row * cols);
+    const rowOffset = ((cols - inRow) * colW) / 2;
+    finale[id] = { x: JURY_BOX.x + rowOffset + colW * ((i % cols) + 0.5), y: JURY_BOX.y + 82 + row * 122 };
+  });
+  const gap = Math.min(170, (W - 80) / Math.max(1, finalists.length));
+  finalists.forEach((id, i) => {
+    finale[id] = { x: W / 2 + (i - (finalists.length - 1) / 2) * gap, y: FINALIST_Y };
+  });
+  return { circle, finale };
+}
+
 /** FNV-1a: the same model always gets the same face. */
 function hash(text: string): number {
   let h = 2166136261;
@@ -312,7 +328,7 @@ function hash(text: string): number {
 }
 
 /** A small robot in the maker's color, wearing its secret name on a leaf badge. */
-function Avatar({ seed, color, alias }: { seed: string; color: string; alias: string }) {
+export function Avatar({ seed, color, alias }: { seed: string; color: string; alias: string }) {
   const h = hash(seed);
   const head = h % 3;
   const eyes = (h >>> 3) % 3;
@@ -372,7 +388,7 @@ function Avatar({ seed, color, alias }: { seed: string; color: string; alias: st
   );
 }
 
-function Torch({ lit }: { lit: boolean }) {
+export function Torch({ lit }: { lit: boolean }) {
   return (
     <g className={`torch${lit ? "" : " dark"}`} transform="translate(-40 -12)">
       <line x1={0} y1={-6} x2={0} y2={34} className="torch-stick" />
@@ -385,7 +401,7 @@ function Torch({ lit }: { lit: boolean }) {
   );
 }
 
-function Campfire({ at, winner, small }: { at: Point; winner: boolean; small: boolean }) {
+export function Campfire({ at, winner, small }: { at: Point; winner: boolean; small: boolean }) {
   return (
     <g className="fire-pos" style={{ transform: `translate(${at.x}px, ${at.y}px) scale(${small ? 0.72 : 1})` }}>
       <g className={`fire${winner ? " big" : ""}`}>
