@@ -135,8 +135,52 @@ def _make_line_cross(rng: random.Random, size: int) -> tuple[list[list[int]], li
             return inp, out
 
 
+# Extreme grid puzzles (2026-11-25): harder by a hidden twist on a mid-sized
+# grid, not by size. The old extreme sizes (18x12, 14x14) were tedium: the rule
+# was stated and models had to write out ~200 cells, which made the slowest
+# thinkers take minutes. Now the rule is not stated, the grid is at most 10x10,
+# and the examples are chosen so the twist can be inferred unambiguously.
+_UNSTATED_RULE_PROMPT = (
+    "ARC-style grid puzzle. The rule is NOT stated: work it out from the examples, which all follow the same "
+    "rule. Return the output grid for the test input."
+)
+
+
+def _make_row_copy_mirrored(rng: random.Random, rows: int, cols: int) -> tuple[list[list[int]], list[list[int]]]:
+    """Each non-zero row is copied, mirrored left to right, into the empty row below it."""
+    inp, out = _make_row_copy(rng, rows, cols)
+    for r in range(1, len(out)):
+        if all(v == 0 for v in inp[r]) and any(v != 0 for v in inp[r - 1]):
+            out[r] = list(reversed(inp[r - 1]))
+    return inp, out
+
+
+def _make_line_cross_vertical_wins(
+    rng: random.Random, size: int, vertical_higher: bool | None = None
+) -> tuple[list[list[int]], list[list[int]]]:
+    """Line segments as in grid_line_cross, but the crossing cell takes the
+    vertical line's color. vertical_higher fixes whether the vertical color is
+    the larger one, so examples can rule out "the bigger/smaller color wins"."""
+    while True:
+        inp, out = _make_line_cross(rng, size)
+        crossing = next((r, c) for r, row in enumerate(out) for c, v in enumerate(row) if v == 9)
+        r, c = crossing
+        # the vertical color is the one above/below the crossing in the input endpoints' column
+        column = [inp[i][c] for i in range(size) if inp[i][c] != 0]
+        line_row = [v for v in inp[r] if v != 0]
+        if not column or not line_row:
+            continue
+        v_color, h_color = column[0], line_row[0]
+        if vertical_higher is not None and (v_color > h_color) != vertical_higher:
+            continue
+        out[r][c] = v_color
+        return inp, out
+
+
 def _grid_family_puzzle(family: str, difficulty: str, seed: int) -> dict[str, Any]:
     rng = _rng(family, difficulty, seed)
+    if difficulty == "extreme" and family in ("grid_row_copy", "grid_line_cross"):
+        return _extreme_grid_puzzle(family, seed, rng)
     if family == "grid_fill_border":
         size = {"easy": 3, "medium": 4, "hard": 5, "frontier": 7, "extreme": 10}[difficulty]
         color = rng.randint(1, 9)
@@ -171,6 +215,36 @@ def _grid_family_puzzle(family: str, difficulty: str, seed: int) -> dict[str, An
 
     prompt = _PROMPT_BY_FAMILY[family] + f" Test input: {_grid_str(test_input)}."
     puzzle_id = f"{family}-{difficulty}-{seed:04d}"
+    return _grid_puzzle(puzzle_id, family, prompt, examples, test_input, answer, difficulty)
+
+
+def _extreme_grid_puzzle(family: str, seed: int, rng: random.Random) -> dict[str, Any]:
+    examples = []
+    if family == "grid_row_copy":
+        for ex_seed in (1, 2):
+            ex_inp, ex_out = _make_row_copy_mirrored(_rng(family, "extreme", seed * 37 + ex_seed), 10, 6)
+            examples.append({"input": ex_inp, "output": ex_out})
+        test_input, answer = _make_row_copy_mirrored(rng, 10, 6)
+    else:
+        # one example where the vertical color is higher and one where it is lower
+        for ex_seed, higher in ((1, True), (2, False)):
+            ex_inp, ex_out = _make_line_cross_vertical_wins(_rng(family, "extreme", seed * 41 + ex_seed), 10, higher)
+            examples.append({"input": ex_inp, "output": ex_out})
+        test_input, answer = _make_line_cross_vertical_wins(rng, 10)
+    # the examples reach the player in the puzzle's "examples" field, as for every puzzle
+    prompt = f"{_UNSTATED_RULE_PROMPT} Test input: {_grid_str(test_input)}."
+    return _grid_puzzle(f"{family}-extreme-{seed:04d}", family, prompt, examples, test_input, answer, "extreme")
+
+
+def _grid_puzzle(
+    puzzle_id: str,
+    family: str,
+    prompt: str,
+    examples: list[dict[str, Any]],
+    test_input: list[list[int]],
+    answer: list[list[int]],
+    difficulty: str,
+) -> dict[str, Any]:
     return {
         "puzzle_id": puzzle_id,
         "family": family,

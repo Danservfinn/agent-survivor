@@ -205,3 +205,58 @@ class Ladder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExtremeGridTest(unittest.TestCase):
+    """Extreme grids are harder by an unstated twist on a mid-sized grid, not by size.
+    Answer keys are checked independently of the generator."""
+
+    def test_mirrored_row_copy_keys_are_right(self) -> None:
+        for seed in range(200):
+            puzzle = generate_puzzle("grid_row_copy", "extreme", seed)
+            for case in [*puzzle["examples"], {"input": puzzle["test_input"], "output": puzzle["answer"]}]:
+                grid, out = case["input"], case["output"]
+                self.assertLessEqual(len(grid) * len(grid[0]), 100)
+                for r, row in enumerate(grid):
+                    if any(row) or r == 0:
+                        self.assertEqual(out[r], row)
+                    else:
+                        self.assertEqual(out[r], list(reversed(grid[r - 1])))
+            self.assertIn("NOT stated", puzzle["prompt"])
+            self.assertNotIn("copied", puzzle["prompt"])
+
+    def test_line_cross_crossing_takes_the_vertical_color_and_examples_rule_out_max_and_min(self) -> None:
+        def expected(grid: list[list[int]]) -> tuple[list[list[int]], bool]:
+            """Rebuild the answer from the input's endpoints alone."""
+            points = [(r, c, v) for r, row in enumerate(grid) for c, v in enumerate(row) if v]
+            (r1, c1, h), (r2, c2, _) = next(
+                (p, q) for p in points for q in points if p < q and p[0] == q[0] and p[2] == q[2]
+            )
+            (s1, k1, v), (s2, k2, _) = next(
+                (p, q) for p in points for q in points if p < q and p[1] == q[1] and p[2] == q[2]
+            )
+            out = [list(row) for row in grid]
+            for c in range(min(c1, c2) + 1, max(c1, c2)):
+                out[r1][c] = h
+            for r in range(min(s1, s2) + 1, max(s1, s2)):
+                out[r][k1] = v
+            out[r1][k1] = v  # the crossing takes the vertical line's color
+            return out, v > h
+
+        for seed in range(200):
+            puzzle = generate_puzzle("grid_line_cross", "extreme", seed)
+            higher = []
+            for case in [*puzzle["examples"], {"input": puzzle["test_input"], "output": puzzle["answer"]}]:
+                self.assertLessEqual(len(case["input"]) * len(case["input"][0]), 100)
+                out, vertical_higher = expected(case["input"])
+                self.assertEqual(case["output"], out)
+                higher.append(vertical_higher)
+            # one example with the vertical color higher, one lower: max or min cannot explain both
+            self.assertEqual(higher[:2], [True, False])
+            self.assertIn("NOT stated", puzzle["prompt"])
+
+    def test_extreme_answers_are_far_smaller_than_before(self) -> None:
+        for family, old_cells in (("grid_row_copy", 18 * 12), ("grid_line_cross", 14 * 14)):
+            answer = generate_puzzle(family, "extreme", 3)["answer"]
+            self.assertLessEqual(sum(len(row) for row in answer), 100)
+            self.assertLess(sum(len(row) for row in answer), old_cells)
