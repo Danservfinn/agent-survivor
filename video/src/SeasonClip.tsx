@@ -18,16 +18,12 @@ import {
   seatLayout,
 } from "../../frontend/src/app/season-circle";
 import { friendlyDate, orgColor } from "../../frontend/src/app/score-table";
-import { Beat, ClipProps, Segment, clipPlan } from "./plan";
+import { Beat, ClipProps, RETURN, Segment, WALK, clipPlan } from "./plan";
 
 type Camp = Extract<Segment, { kind: "camp" }>;
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const ease = Easing.bezier(0.45, 0, 0.2, 1);
-
-// a private talk: walk over, the first speaker, the reply, walk back (seconds)
-const WALK = 1.0;
-const RETURN = 0.8;
 
 /** Which segment the frame is in, how far into it, and the one before. */
 function locate(plan: Segment[], frame: number, fps: number) {
@@ -158,12 +154,15 @@ export const SeasonClip = ({ report, handle, site }: ClipProps) => {
   // the featured pair: one speaks, then the other answers
   const talkStart = WALK * fps;
   const talkEnd = len - RETURN * fps;
-  const turnAt = (talkStart + talkEnd) / 2;
   const featuredIds = camp?.featured?.focus ?? [];
   const featuredPair =
     camp?.groups.find((g) => g.visitors.length === 1 && featuredIds.includes(g.host) && featuredIds.includes(g.visitors[0])) ?? null;
-  const spoken = featuredPair ? (camp?.featured?.bubbles ?? []).filter((b) => b.id === featuredPair.host || featuredPair.visitors.includes(b.id)) : [];
-  const speaker = spoken.length ? (t < turnAt || spoken.length === 1 ? spoken[0].id : spoken[1].id) : null;
+  const spoken = featuredPair ? camp?.spoken ?? [] : [];
+  // each line starts when the one before it has been up for its reading time
+  const lineStart: number[] = [];
+  spoken.reduce((at, l) => (lineStart.push(at), at + l.seconds * fps), talkStart);
+  const speakerIdx = spoken.reduce((cur, _, n) => (t >= lineStart[n] ? n : cur), 0);
+  const speaker = spoken.length ? spoken[speakerIdx].id : null;
 
   const fire = { x: FIRE_CIRCLE.x + (FIRE_FINALE.x - FIRE_CIRCLE.x) * toFinale, y: FIRE_CIRCLE.y + (FIRE_FINALE.y - FIRE_CIRCLE.y) * toFinale };
   const appear = (delay: number) => interpolate(t, [delay, delay + 0.4 * fps], [0, 1], { ...clamp, easing: Easing.bezier(0.16, 1, 0.3, 1) });
@@ -335,11 +334,11 @@ export const SeasonClip = ({ report, handle, site }: ClipProps) => {
           featuredPair &&
           spoken.map((b, n) => {
             const m = meet[featuredPair.host];
-            const from = n === 0 ? talkStart : turnAt;
-            const to = n === 0 && spoken.length > 1 ? turnAt : talkEnd;
+            const from = lineStart[n];
+            const to = n + 1 < spoken.length ? lineStart[n + 1] : talkEnd;
             const show = interpolate(t, [from, from + 0.35 * fps], [0, 1], clamp) * interpolate(t, [to - 0.25 * fps, to], [1, 0], clamp);
             if (show <= 0) return null;
-            return <Bubble key={b.id} at={m} who={nm(b.id)} text={b.text} show={show} />;
+            return <Bubble key={b.id} at={m} who={nm(b.id)} text={b.text} show={show} wide />;
           })}
 
         {/* other beats: the bubbles the stage chose */}
@@ -381,13 +380,13 @@ export const SeasonClip = ({ report, handle, site }: ClipProps) => {
 };
 
 /** A speech bubble over the stage, above the speaker when it is low on the stage and below it when high. */
-function Bubble({ at, who, text, show }: { at: Point; who: string; text: string; show: number }) {
+function Bubble({ at, who, text, show, wide = false }: { at: Point; who: string; text: string; show: number; wide?: boolean }) {
   const above = at.y > H * 0.42;
   const left = (at.x / W) * 100;
   const shift = left < 24 ? "-12%" : left > 76 ? "-88%" : "-50%";
   return (
     <div
-      className="clip-bubble"
+      className={`clip-bubble${wide ? " wide" : ""}`}
       style={{
         left: `${left}%`,
         ...(above ? { bottom: `${((H - at.y + 50) / H) * 100}%` } : { top: `${((at.y + 86) / H) * 100}%` }),

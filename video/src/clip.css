@@ -29,6 +29,7 @@
 .clip-badge-t { fill: #fff; font-family: var(--mono); font-size: 13px; font-weight: 700; text-anchor: middle; }
 
 .clip-bubble { position: absolute; width: 46%; background: var(--ink); color: #fff; border-radius: 16px; padding: 14px 18px; font-size: 17.5px; line-height: 1.4; box-shadow: 0 10px 30px #14213d33; display: -webkit-box; -webkit-line-clamp: 6; max-height: 12.6em; -webkit-box-orient: vertical; overflow: hidden; }
+.clip-bubble.wide { width: 62%; font-size: 19px; -webkit-line-clamp: 7; max-height: 15em; }
 .clip-bubble-who { display: block; font-family: var(--mono); font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: #a9b8d6; margin-bottom: 4px; }
 
 .clip-caption { position: absolute; left: 0; right: 0; bottom: 0; height: 248px; padding: 26px 64px 0; background: #fff; border-top: 1px solid var(--border); }

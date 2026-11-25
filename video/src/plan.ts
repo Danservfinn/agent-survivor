@@ -10,12 +10,39 @@ export type ClipProps = {
 
 export type Beat = ReturnType<typeof buildBeats>[number];
 
+/** Seconds to walk over to a talk, and back to the seats after it. */
+export const WALK = 1.0;
+export const RETURN = 0.8;
+
+/**
+ * How long a speech bubble stays up: a second to find it, then about 30
+ * characters a second (a relaxed reading pace for text over moving pictures),
+ * never under 3 seconds or over 7.5.
+ */
+export function readSeconds(text: string): number {
+  return Math.min(7.5, Math.max(3, 1 + text.length / 30));
+}
+
+/** The most of a line that reads in one bubble: whole sentences up to `max`
+ *  characters when they make a fair share of it, else cut at a word. */
+export function bubbleText(text: string, max = 200): string {
+  const t = (text || "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const head = t.slice(0, max);
+  const end = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
+  if (end >= max * 0.45) return head.slice(0, end + 1);
+  return head.slice(0, max - 1).replace(/\s+\S*$/, "") + "…";
+}
+
+/** One line of the featured talk, and how long it stays on screen. */
+export type Line = { id: string; text: string; seconds: number };
+
 /** A group talking in private: the `visitors` walk over to the `host`. */
 export type Group = { host: string; visitors: string[] };
 
 export type Segment =
   | { kind: "title"; seconds: number }
-  | { kind: "camp"; round: number; out: string[]; groups: Group[]; talks: number; featured: Beat | null; seconds: number }
+  | { kind: "camp"; round: number; out: string[]; groups: Group[]; talks: number; featured: Beat | null; spoken: Line[]; seconds: number }
   | { kind: "beat"; beat: Beat; seconds: number }
   | { kind: "end"; beat: Beat | null; seconds: number };
 
@@ -44,7 +71,18 @@ export function clipPlan(report: StageReport): Segment[] {
 
     const groups = talkGroups(r.talks, active, featured);
     const talkCount = r.talks.filter((t) => t.kind === "conversation").length || r.talks.length;
-    if (groups.length) plan.push({ kind: "camp", round: r.round, out: [...out], groups, talks: talkCount, featured, seconds: r.round === keyRound ? 7 : 6 });
+    // the featured pair says its lines one after the other, each up long enough to read
+    const ids = featured?.focus ?? [];
+    const pair = groups.find((g) => g.visitors.length === 1 && ids.includes(g.host) && ids.includes(g.visitors[0]));
+    // the stage keeps each speaker's fuller line as a quote; the bubble shows more of it than the site does
+    const spoken: Line[] = pair
+      ? (featured?.quotes ?? [])
+          .filter((q) => q.who === pair.host || q.who === pair.visitors[0])
+          .map((q) => ({ id: q.who, text: bubbleText(q.text) }))
+          .map((l) => ({ ...l, seconds: readSeconds(l.text) }))
+      : [];
+    const talking = spoken.length ? spoken.reduce((n, l) => n + l.seconds, 0) : 3.2;
+    if (groups.length) plan.push({ kind: "camp", round: r.round, out: [...out], groups, talks: talkCount, featured, spoken, seconds: WALK + talking + RETURN });
 
     const vote = inRound.find((b) => b.kind === "vote");
     if (vote) plan.push({ kind: "beat", beat: vote, seconds: 2.3 });
@@ -55,7 +93,10 @@ export function clipPlan(report: StageReport): Segment[] {
     const outBeat = inRound.find((b) => b.kind === "out");
     if (outBeat) {
       const full = r.round === keyRound;
-      plan.push({ kind: "beat", beat: full ? outBeat : { ...outBeat, bubbles: [], quotes: [] }, seconds: full ? 3.4 : 1.9 });
+      // the round shown in full keeps the leaving player's last words, up long enough to read
+      const words = full ? (outBeat.bubbles ?? []).map((b) => b.text).join(" ") : "";
+      const seconds = full ? Math.max(3.4, words ? 0.6 + readSeconds(words) : 0) : 1.9;
+      plan.push({ kind: "beat", beat: full ? outBeat : { ...outBeat, bubbles: [], quotes: [] }, seconds });
     }
     if (r.eliminated_id) out.push(r.eliminated_id);
   }
