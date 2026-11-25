@@ -108,6 +108,15 @@ def season_narrative(season_id: str) -> dict[str, Any]:
         names = _names(conn)
         aliases = _alias_map(conn)
         rounds: list[dict[str, Any]] = []
+        # confessionals to the camera, by round (seasons from 2026-11-25 on)
+        confessionals: dict[int, list[dict[str, str]]] = {}
+        try:
+            for row in conn.execute("SELECT round, agent_id, text FROM Confessionals ORDER BY round, id"):
+                confessionals.setdefault(row["round"], []).append(
+                    {"who": names.get(row["agent_id"], row["agent_id"]), "text": _swap_names(_clean(row["text"]), aliases)}
+                )
+        except sqlite3.OperationalError:
+            pass  # older seasons have no Confessionals table
         for r in conn.execute(
             "SELECT DISTINCT round FROM StoryEvents ORDER BY round"
         ):
@@ -284,6 +293,7 @@ def season_narrative(season_id: str) -> dict[str, Any]:
                     "votes": votes,
                     "elimination": elimination,
                     "had_revote": had_revote,
+                    "confessionals": confessionals.get(rn, []),
                 }
             )
 

@@ -76,6 +76,8 @@ type Narrative = {
     votes: { who: string; target: string; reason: string }[];
     elimination: string | null;
     had_revote: boolean;
+    // what each player told the camera after the council (seasons from 2026-11-25 on)
+    confessionals?: { who: string; text: string }[];
   }[];
   jury: { who: string; target: string; reason: string }[];
   pitches: { who: string; pitch: string }[];
@@ -566,6 +568,19 @@ export default function HistoryPage() {
                               </Line>
                             ))}
                           </div>
+                        )}
+
+                        {(r.confessionals ?? []).length > 0 && (
+                          <Collapsed label={`confessionals (${(r.confessionals ?? []).length})`}>
+                            <p className="bench-meta">
+                              What each player told the camera after the vote. Only the player itself reads it back.
+                            </p>
+                            {(r.confessionals ?? []).map((c, i) => (
+                              <Line key={i} who={c.who} onWho={() => openByName(c.who, s.rows)}>
+                                {c.text}
+                              </Line>
+                            ))}
+                          </Collapsed>
                         )}
                       </div>
                     ))}
