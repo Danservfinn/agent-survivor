@@ -219,13 +219,13 @@ details.round > summary:hover { background: var(--row-hover); border-radius: var
 .round-t { font-family: var(--mono); font-size: 13.5px; font-weight: 700; }
 .round-s { font-size: 13.5px; font-weight: 600; }
 .round-m { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
-.round-b { padding: 16px 18px 18px; display: grid; gap: 20px 32px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--radius) var(--radius); }
+.round-b { padding: 16px 18px 18px; display: grid; gap: 20px 32px; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--radius) var(--radius); }
 .sub-l { color: var(--accent); font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 7px; }
 .rungs { display: inline-flex; gap: 3px; vertical-align: middle; }
 .rungs i { width: 12px; height: 12px; border-radius: 3px; background: var(--surface); border: 1px solid var(--border-strong); display: inline-block; }
 .rungs i.ok { background: var(--accent); border-color: var(--accent); }
 .ch-row { display: grid; grid-template-columns: minmax(90px, 1fr) auto 34px; gap: 10px; align-items: center; font-size: 12.5px; padding: 3px 0; border-bottom: 1px dotted var(--border); }
-.ch-row .sc { font-family: var(--mono); font-weight: 600; text-align: right; }
+.ch-row .ch-score { font-family: var(--mono); font-weight: 600; text-align: right; }
 .vote { font-size: 12.5px; padding: 6px 0; border-bottom: 1px dotted var(--border); }
 .vote:last-child { border-bottom: none; }
 .vote b { font-weight: 600; }
@@ -286,7 +286,7 @@ a.chip { display: inline-block; }
 .player-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); margin-top: 24px; }
 .player.hl { border-color: var(--live); }
 .player-h { display: flex; align-items: center; gap: 8px; }
-.player-n { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.player-n { font-size: 16px; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; min-width: 0; }
 .player-f { color: var(--muted); font-size: 12.5px; margin: 2px 0 10px; }
 .player .tags { margin: 0 0 12px; }
 .player-s { display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 10px; margin-bottom: 12px; }
@@ -296,7 +296,7 @@ a.chip { display: inline-block; }
 
 /* share images: one fixed 1200 by 675 card */
 html.card-mode, html.card-mode body { width: 1200px; height: 675px; overflow: hidden; }
-.sc { width: 1200px; height: 675px; padding: 42px 56px 34px; display: flex; flex-direction: column; background: var(--ground); }
+html.card-mode .sc { width: 1200px; height: 675px; padding: 42px 56px 34px; display: flex; flex-direction: column; background: var(--ground); }
 .sc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
 .sc .brand { font-size: 24px; }
 .sc .pulse { width: 12px; height: 12px; animation: none; }
@@ -326,6 +326,9 @@ html.card-mode, html.card-mode body { width: 1200px; height: 675px; overflow: hi
 .sc-stats .k-lab { font-size: 11px; }
 .sc-stats .k-val { font-size: 26px; margin-top: 4px; }
 .sc-board { display: grid; gap: 7px; }
+.sc-board.dense { gap: 2px; }
+.sc-board.dense .sc-row { font-size: 14px; }
+.sc-board.dense .sc-row .track { height: 12px; }
 .sc-row { display: grid; grid-template-columns: 26px 12px 300px 1fr 64px; align-items: center; gap: 12px; font-size: 18px; font-weight: 600; }
 .sc-row .rk { font-size: 15px; width: auto; }
 .sc-row .mdot { width: 12px; height: 12px; }
@@ -364,6 +367,15 @@ html.card-mode, html.card-mode body { width: 1200px; height: 675px; overflow: hi
 (function () {
 "use strict";
 var D = JSON.parse(document.getElementById("report-data").textContent);
+/* older or partial reports can lack a field; fill the shapes the builders expect once, here */
+D.models = D.models || []; D.rounds = D.rounds || []; D.takeaways = D.takeaways || []; D.moments = D.moments || [];
+D.vote_matrices = D.vote_matrices || {}; D.season = D.season || {}; D.season.weights = D.season.weights || {};
+if (D.finale) D.finale.tally = D.finale.tally || {};
+D.rounds.forEach(function (r) {
+  r.tally = r.tally || {}; r.votes = r.votes || []; r.promises = r.promises || []; r.plans = r.plans || []; r.talks = r.talks || []; r.in_play = r.in_play || [];
+  if (r.challenge) { r.challenge.immunity_ids = r.challenge.immunity_ids || []; r.challenge.standings = r.challenge.standings || []; r.challenge.picks = r.challenge.picks || []; }
+});
+D.models.forEach(function (m) { m.tags = m.tags || []; m.per_round = m.per_round || []; m.receipts = m.receipts || []; });
 var S = D.season, M = D.models, NAMES = D.names || {}, ALIAS = D.aliases || {}, LINKS = D.links || {};
 var byId = {}; M.forEach(function (m) { byId[m.agent_id] = m; });
 var COMP = Object.keys(S.weights);
@@ -409,6 +421,8 @@ function who(id) {
   var alias = ALIAS[id];
   return alias ? [nm(id), h("span", { class: "alias", text: " (" + alias + ")" })] : nm(id);
 }
+function byPlace(a, b) { return (a.place == null ? 1e9 : a.place) - (b.place == null ? 1e9 : b.place); }
+function orNeg(x) { return x == null ? -1 : x; }
 function f1(x) { return x == null ? "–" : Number(x).toFixed(1); }
 function pct(x) { return x == null ? "–" : Math.round(x * 100) + "%"; }
 function frac(a, b) { return b ? a + "/" + b : "–"; }
@@ -735,7 +749,7 @@ function ladder() {
   var card = h("div", { class: "card card-pad" }, h("h3", { text: "Challenge record" }),
     h("p", { class: "card-sub", text: "Puzzles answered right in each round's challenge; in a strategy round (#), the number the model picked, where the lowest number nobody else picked won. A dark outline marks the immunity winner; a red underline marks the round a model was voted out." }));
   if (!rounds.length) return add(card, [h("div", { class: "empty", text: "No challenge was recorded." })]);
-  var order = M.slice().sort(function (a, b) { return a.place - b.place; });
+  var order = M.slice().sort(byPlace);
   var table = h("table", { class: "heat" }, h("thead", null, h("tr", null, h("th"), rounds.map(function (r) { return h("th", { text: "R" + r.round }); }), h("th", { text: "all" }))));
   var tb = h("tbody");
   order.forEach(function (m) {
@@ -820,7 +834,7 @@ function character() {
   if (!withChar.length) return add(sec, [h("div", { class: "empty", text: "This season has no character record." })]);
   function idx(x) { return x == null ? "–" : f1(x); }
   function rate(x, part, whole) { return x == null ? "–" : pct(x) + (whole ? " (" + part + "/" + whole + ")" : ""); }
-  var rows = withChar.slice().sort(function (a, b) { return (b.character.evil.index || -1) - (a.character.evil.index || -1); });
+  var rows = withChar.slice().sort(function (a, b) { return orNeg(b.character.evil.index) - orNeg(a.character.evil.index); });
   var head = h("tr", { class: "cols single" }, [
     "Model", "Evil index", "Promises broken", "Pact betrayals", "Backstabs", "Public bluffs", "Own lies", "Puzzles thrown",
     "Emotionality", "Strong feelings", "Changes of heart", "Mood swings", "Emotional words"
@@ -859,7 +873,7 @@ function character() {
       return h("p", { class: "note" }, "Round " + x.t.round + ": ", h("b", null, who(x.m.agent_id)), " " + x.t.direction + " ", h("b", null, who(x.t.about)), " (" + x.t.from + " → " + x.t.to + ").");
     }) : h("p", { class: "note", text: "No feeling flipped between positive and negative this season." }));
   var strat = withChar.filter(function (m) { return m.character.strategy; });
-  strat.sort(function (a, b) { return (b.character.strategy.sophistication.index || -1) - (a.character.strategy.sophistication.index || -1); });
+  strat.sort(function (a, b) { return orNeg(b.character.strategy.sophistication.index) - orNeg(a.character.strategy.sophistication.index); });
   var sHead = h("tr", { class: "cols single" }, ["Model", "Sophisti\u00adcation", "Execution", "Boots called", "Followed own plan", "Votes landed", "Place", "How it set out to play"]
     .map(function (t, i) { return h("th", { class: i === 0 ? "name" : null, text: t }); }));
   var sBody = strat.map(function (m) {
@@ -936,7 +950,7 @@ function roundCard(r, open) {
     var lu = h("div", null, h("p", { class: "sub-l", text: "Challenge · lowest unique number (1 to " + (r.challenge.highest_pick || "?") + ")" }));
     r.challenge.picks.forEach(function (pk) {
       var immune = r.challenge.immunity_ids.indexOf(pk.agent_id) >= 0;
-      lu.appendChild(h("div", { class: "ch-row" }, h("span", null, who(pk.agent_id), immune ? h("span", { class: "badge", text: "immune" }) : null), h("span"), h("span", { class: "sc", text: "#" + pk.pick })));
+      lu.appendChild(h("div", { class: "ch-row" }, h("span", null, who(pk.agent_id), immune ? h("span", { class: "badge", text: "immune" }) : null), h("span"), h("span", { class: "ch-score", text: "#" + pk.pick })));
     });
     if (!r.challenge.winner_id) lu.appendChild(h("p", { class: "note", style: "margin-top:8px", text: "No number was picked by only one player, so nobody was immune." }));
     body.appendChild(lu);
@@ -946,7 +960,7 @@ function roundCard(r, open) {
       var immune = r.challenge.immunity_ids.indexOf(st.agent_id) >= 0;
       ch.appendChild(h("div", { class: "ch-row" }, h("span", null, who(st.agent_id), immune ? h("span", { class: "badge", text: "immune" }) : null),
         st.rungs.length > 1 ? h("span", { class: "rungs", "aria-hidden": "true" }, st.rungs.map(function (ok, i) { return h("i", { class: ok ? "ok" : null, "data-tip": "Puzzle " + (i + 1) + (r.challenge.difficulties[i] ? " (" + r.challenge.difficulties[i] + ")" : "") + ": " + (ok ? "right" : "wrong") }); })) : h("span"),
-        h("span", { class: "sc", text: st.correct + "/" + st.of })));
+        h("span", { class: "ch-score", text: st.correct + "/" + st.of })));
     });
     if (r.challenge.standings.some(function (st) { return st.sudden_death; })) ch.appendChild(h("p", { class: "note", style: "margin-top:8px", text: "Tied at the top, so the leaders played a five-puzzle sudden death." }));
     body.appendChild(ch);
@@ -986,7 +1000,7 @@ function roundCard(r, open) {
     });
     body.appendChild(talks);
   }
-  return h("details", { class: "card round", open: open },
+  return h("details", { class: "card round", id: "round-" + r.round, open: open },
     h("summary", null, h("span", { class: "round-t", text: "Round " + r.round }), h("span", { class: "round-s", text: line }), h("span", { class: "round-m", text: r.in_play.length + " players" + (imm ? " · " + imm : "") })), body);
 }
 function rounds() {
@@ -1143,7 +1157,7 @@ function playerStats(m) {
 }
 function players() {
   var sec = section("players", "03", "Players", "One card per model: how it finished, what set it apart, and its own words." + (Object.keys(ALIAS).length ? " The name in brackets is the one it played under." : ""));
-  var order = M.slice().sort(function (a, b) { return a.place - b.place; });
+  var order = M.slice().sort(byPlace);
   return add(sec, [h("div", { class: "player-grid" }, order.map(function (m) {
     var id = "model-" + m.agent_id;
     return h("article", { class: "card card-pad player" + (m.is_winner ? " hl" : ""), id: id },
@@ -1179,7 +1193,7 @@ function shareCard(id) {
       model.quote ? h("div", { class: "sc-qs two" }, h("figure", { class: "sc-q" }, h("blockquote", { text: model.quote }))) : null];
   } else if (id === "leaderboard") {
     kicker = "Survivor Index · " + M.length + " models";
-    body = [h("h1", { class: "sc-h", text: "Season leaderboard" }), h("div", { class: "sc-board" }, M.map(function (m) {
+    body = [h("h1", { class: "sc-h", text: "Season leaderboard" }), h("div", { class: "sc-board" + (M.length > 10 ? " dense" : "") }, M.map(function (m) {
       return h("div", { class: "sc-row" }, h("span", { class: "rk", text: m.rank }), mdot(m), h("span", { class: "sc-name" }, m.model, m.is_winner ? h("span", { class: "badge", text: "winner" }) : null),
         h("div", { class: "track single" }, h("span", { style: "width:" + m.survivor_index + "%;background:var(--accent)" })), h("span", { class: "sc-val", text: f1(m.survivor_index) }));
     }))];
@@ -1197,6 +1211,19 @@ function shareCard(id) {
     h("div", { class: "sc-foot" }, h("span", { text: LINKS.site ? LINKS.site.replace(/^https?:\/\//, "") : "" }), h("span", { class: "sc-follow", text: HANDLE ? "Follow " + HANDLE + " for the next season" : "" })));
 }
 
+/* a section that throws is replaced by a notice; the rest of the page still renders */
+function guarded(id, title, build) {
+  try {
+    var out = build();
+    return out && out.band ? out.band : out;
+  } catch (err) {
+    try { console.error("report section " + id + " failed", err); } catch (e) { /* no console */ }
+    var inner = section(id, "", title, null);
+    inner.appendChild(h("div", { class: "card card-pad empty", text: "This part of the report could not be shown. The season's full data is still in Download data." }));
+    return inner.band;
+  }
+}
+
 var app = document.getElementById("app");
 var cardWanted = /[?&]card=([a-z0-9-]+)/.exec(location.search);
 if (cardWanted) {
@@ -1209,7 +1236,10 @@ app.appendChild(h("div", { class: "top" }, h("div", { class: "wrap top-in" },
   h("nav", { "aria-label": "Report sections" }, [["moments", "Moments"], ["leaderboard", "Leaderboard"], ["players", "Players"], ["insights", "Insights"], ["rounds", "Rounds"], ["finale", "Finale"], ["seasons", "All seasons"], ["method", "Method"]].map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
   h("button", { class: "btn", type: "button", text: "Download data", onclick: download }),
   HANDLE ? h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE }) : null)));
-var main = h("main", null, hero(), [moments(), leaderboard(), players(), insights(), character(), rounds(), finale(), allSeasons(), method()].map(function (inner) { return inner.band; }));
+var main = h("main", null, guarded("top", "Summary", hero), [
+  ["moments", "Moments", moments], ["leaderboard", "Leaderboard", leaderboard], ["players", "Players", players], ["insights", "Insights", insights],
+  ["character", "Character", character], ["rounds", "Round by round", rounds], ["finale", "Finale", finale], ["seasons", "All seasons", allSeasons], ["method", "Method", method]
+].map(function (sec) { return guarded(sec[0], sec[1], sec[2]); }));
 app.appendChild(main);
 app.appendChild(h("footer", null, h("div", { class: "wrap" },
   HANDLE ? h("div", { class: "card cta" }, h("p", { text: "A new season runs with new models. The results and the best moments are posted on X first." }), h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE })) : null,
