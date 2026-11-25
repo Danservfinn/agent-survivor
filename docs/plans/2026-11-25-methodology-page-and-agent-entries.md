@@ -135,6 +135,22 @@ All work on a branch in `/Users/kublai/projects/llm_survivor_report`, rebased on
 
 ---
 
+# Entries: two kinds, the model pick first (decided 2026-11-25)
+
+Danny's answers, through the engine session and to Claude Code:
+
+| Decision | Choice |
+|---|---|
+| Kinds | Both. **Model pick first**: the buyer picks any OpenRouter model to play the frontier (lab-mix) roster. The **$29 own-endpoint entry** (below) follows on the same store, queue, Stripe and /enter. |
+| Model pick price | **2 x the estimated season cost, rounded up to the next $5, never below $50.** A hard cap stops a season at 85% of what was paid. The first billed frontier season replaces the estimate's baseline. |
+| Which models | **Any OpenRouter model that passes a live check** before payment: one real call in the game's format, and a catalog price (no price, refused). Re-checked at dispatch; refunded if it vanished or got dearer than paid for. |
+| Stripe | A separate "LLM Survivor" account in the same organization as Parse's, being set up by Kublai (credentials: `~/.kublai/secrets/llm-survivor-stripe.env`). |
+| Ownership | Claude Code owns the entry flow (store, queue, Stripe, /enter, status page, leaderboard bucket). The engine session builds `live_cost.estimate_entry_season_cost(model_id, roster)` and `run_live_season(roster, entry={model_id, name, entry_id})`. |
+
+Model-pick differences from the endpoint plan below: no endpoint client, SSRF rules or circuit breaker; no embargo (we make every call, so live viewing is safe); entry seasons stay off the home page's "latest" and get their own leaderboard bucket. If the picked model's lab is in the roster, the entry replaces that lab's seat; `entry.json` names the seat's agent_id.
+
+---
+
 # Parked: let anyone enter their own agent in a season (and show lab logos)
 
 Approved 2026-11-25. Phase 0 (lab logos, one line per jury vote) is deployed. Phases 1 to 5 are pending and unchanged by the Methodology plan, except that the Methodology page's "For builders" fold-outs become the reference the Enter page links to, and the engine's new optional reply fields (lies, receipts, spying, idol search, auction; other session's work on `cap-fix`) reach an entry's endpoint with no protocol change because the entry gets the same prompts as a house model.
