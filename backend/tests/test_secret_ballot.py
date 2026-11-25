@@ -155,3 +155,59 @@ class SocialStepsTest(_Base):
         finalist_view = json.dumps(build_agent_episode_context(self.conn, actor_id=finalists[0], round_number=9, current_step="x"))
         self.assertIn(f"jury_deliberation from {jurors[1]}", juror_view)
         self.assertNotIn("jury_deliberation from", finalist_view)
+
+
+class ReputationTest(_Base):
+    """Each player sees how the others can see it, and is asked to shape it."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.alias = {row["agent_id"]: row["pseudonym"] for row in self.conn.execute("SELECT agent_id, pseudonym FROM Agents")}
+
+    def _reputation(self, actor: str) -> dict:
+        return build_agent_episode_context(self.conn, actor_id=actor, round_number=ROUND, current_step="x")["situation_brief"]["your_reputation"]
+
+    def test_public_mentions_count_but_private_ones_do_not(self) -> None:
+        me, speaker, juror, *_ = self.players
+        name = self.alias[me]
+        tc._insert_story_event(
+            self.conn, turn_id=1, round_number=ROUND, phase="tribal", kind="tribal_council", scene="tribal",
+            shot="x", actor_ids=[speaker], target_ids=[], visibility="audience", title="T", dialogue="d",
+            payload={"speaker_lines": [{"agent_id": speaker, "text": f"{name} is the biggest threat here."},
+                                       {"agent_id": me, "text": f"I am {name} and I am harmless."}]},
+        )
+        tc._insert_story_event(
+            self.conn, turn_id=1, round_number=ROUND, phase="finale", kind="jury_deliberation", scene="finale",
+            shot="x", actor_ids=[juror], target_ids=[], visibility="audience", title="J", dialogue="d",
+            payload={"privacy": "participants_only", "participant_ids": [juror],
+                     "speaker_lines": [{"agent_id": juror, "text": f"{name} played well."}]},
+        )
+        reputation = self._reputation(me)
+        self.assertEqual(reputation["times_others_named_you_in_public"], 1)
+        self.assertEqual(reputation["what_others_said_about_you_in_public"][0]["by"], self.alias[speaker])
+
+    def test_puzzle_rank_immunity_and_meetings_are_shown(self) -> None:
+        me, other, *_ = self.players
+        self.conn.execute(
+            "INSERT INTO ChallengeResults (round, puzzle_id, challenge_type, winning_agent_id, immunity_agent_ids, status, result_payload)"
+            " VALUES (1, 'p', 'individual', ?, '[]', 'x', ?)",
+            (me, json.dumps({"scores": {me: {"correct": 5, "weighted": 15}, other: {"correct": 2, "weighted": 3}}})),
+        )
+        tc._insert_story_event(
+            self.conn, turn_id=1, round_number=ROUND, phase="camp", kind="camp_meetings", scene="camp", shot="x",
+            actor_ids=["host"], target_ids=[], visibility="audience", title="M", dialogue="d",
+            payload={"meetings": [{"started_by": self.alias[me], "with": [self.alias[me], self.alias[other]]},
+                                  {"started_by": self.alias[other], "with": [self.alias[other], self.alias[me]]}]},
+        )
+        reputation = self._reputation(me)
+        self.assertEqual(reputation["puzzle_rank_among_players_left"], f"1 of {len(self.players)}")
+        self.assertEqual(reputation["immunity_wins"], 1)
+        self.assertEqual((reputation["meetings_you_started"], reputation["meetings_you_were_invited_to"]), (1, 1))
+
+    def test_players_are_asked_to_shape_their_image(self) -> None:
+        from backend.llm_context import game_rules
+
+        self.assertTrue(any("reputation" in rule.lower() for rule in game_rules()))
+        self.assertIn("image", tc.ROUND_PLAN_FIELDS)
+        self.assertEqual(tc._render_notebook({"image": "a loyal ally", "plan": "p"}), "Image: a loyal ally | Plan: p")
+        self.assertTrue(any("wrong on purpose" in rule for rule in game_rules()))

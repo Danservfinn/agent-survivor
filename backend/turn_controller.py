@@ -1569,12 +1569,13 @@ ROUND_PLAN_EFFORT = "high"
 
 ROUND_PLAN_TASK = (
     "The challenge is over and immunity is settled. Plan the rest of this round. Name the biggest threats to you and why, the "
-    "players most likely to vote with you, what you will say in your private talk and to whom, "
-    "and who you expect to go home tonight and how sure you are. Keep it short; you will see "
-    "this plan again in every decision this round."
+    "players most likely to vote with you, how the others see you now and the image you want them to have, "
+    "what you will say in your private talk and to whom, and who you expect to go home tonight and how sure "
+    "you are. Keep it short; you will see this plan again in every decision this round."
 )
 ROUND_PLAN_FIELDS = {
     "threats": "who threatens your game and why",
+    "image": "how the others see you now (your_reputation) and the image you want; what you will do this round to shape it",
     "allies": "who is likely to vote with you",
     "talk_plan": "who you will talk to and what you will say",
     "expected_out": "the id of the player you expect to go home tonight",
@@ -1594,6 +1595,7 @@ def _round_plans(conn, round_number: int) -> int:
         provider = "deterministic"
         plan: dict[str, Any] = {
             "threats": "Whoever is gathering votes fastest.",
+            "image": "A steady player who keeps their word.",
             "allies": "Anyone who shared information with me last round.",
             "talk_plan": "Find out where the votes are going before I commit.",
             "expected_out": None,
@@ -1699,7 +1701,8 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> str | N
                 "The council is over. Rewrite your private notebook, which replaces your old one and is the "
                 "only memory you carry forward besides the public record. Cover what you predicted and what "
                 "actually happened, which promises held and who lied to you, what you have learned about each "
-                f"remaining player, and your plan for next round. At most {NOTEBOOK_MAX_CHARS} characters."
+                f"remaining player, and your plan for next round, including how you will play the next challenge "
+                f"(to win, or to do worse on purpose and look less threatening). At most {NOTEBOOK_MAX_CHARS} characters."
             ),
             fields={"notebook": f"your new notebook, first person, at most {NOTEBOOK_MAX_CHARS} characters"},
             episode_context=context,
@@ -1715,6 +1718,7 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> str | N
         ),
         fields={
             "players": "object: each remaining player's name -> one line: trust high/medium/low; threat high/medium/low; their last vote; what they owe you or you owe them",
+            "image": "how you think the others see you now, and how you want to be seen",
             "lessons": "what you predicted vs what happened, and who lied to you",
             "plan": "your plan for next round",
         },
@@ -1744,6 +1748,8 @@ def _render_notebook(written: dict[str, Any]) -> str | None:
     lines = []
     if isinstance(players, dict):
         lines += [f"{name}: {str(note).strip()}" for name, note in players.items() if str(note).strip()]
+    if written.get("image"):
+        lines.append(f"Image: {str(written['image']).strip()}")
     if written.get("lessons"):
         lines.append(f"Lessons: {str(written['lessons']).strip()}")
     if written.get("plan"):
@@ -2695,8 +2701,7 @@ def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, A
     active_names = ", ".join(agent["pseudonym"] for agent in _active_agent_rows(conn))
     stakes = (
         f"Every player gets the same {len(ladder)} puzzles, easiest to hardest. Most correct answers wins immunity; "
-        "a tie goes to the harder puzzles, then to whoever answered fastest. Last round's immunity winner "
-        "cannot win this round."
+        "a tie goes to the harder puzzles, then to whoever answered fastest."
     )
     if _idol_gift_round(conn, round_number):
         stakes += " This round the winner also gives a hidden idol to another player."
@@ -3299,6 +3304,9 @@ def _round_ladder(conn, round_number: int) -> list[dict[str, Any]]:
     return ladder
 
 
+FIRST_LADDER_LEVEL = 1
+
+
 def _ladder_level(conn, round_number: int) -> int:
     """Difficulty level for this round's ladder, from the previous round's result.
     Up a level when two or more players solved every rung (the top was not
@@ -3309,7 +3317,9 @@ def _ladder_level(conn, round_number: int) -> int:
         "SELECT result_payload FROM ChallengeResults WHERE round < ? ORDER BY round DESC LIMIT 1", (round_number,)
     ).fetchone()
     if previous is None:
-        return 0
+        # the first round starts one level up: at level 0 four players scored
+        # 5/5 in the first live season and answer speed decided it
+        return FIRST_LADDER_LEVEL
     payload = json.loads(previous["result_payload"] or "{}")
     level = int(payload.get("ladder_level", 0))
     scores = [score["correct"] for score in (payload.get("scores") or {}).values()]
@@ -3501,12 +3511,12 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
     leaders = sorted(agent_id for agent_id, score in scores.items() if (score["correct"], score["weighted"]) == best)
 
     times = {row["agent_id"]: row["response_ms"] for row in ladder_rows}
-    # no immunity two rounds running: last round's winner plays, but cannot win
-    previous = conn.execute(
-        "SELECT winning_agent_id FROM ChallengeResults WHERE round = ?", (round_number - 1,)
-    ).fetchone()
-    barred = previous["winning_agent_id"] if previous and previous["winning_agent_id"] else None
-    eligible = {agent_id: score for agent_id, score in scores.items() if agent_id != barred}
+    # Back-to-back wins are allowed, as in Survivor (operator, 2026-11-25). The
+    # earlier bar left last round's winner unprotected right after it had been
+    # marked as a threat: in the first live season both early winners went home
+    # the round after their win.
+    barred = None
+    eligible = scores
 
     winning_agent_id: str | None = None
     tied: list[str] = []

@@ -16,8 +16,9 @@ MAX_CONTEXT_CHARS = 40_000
 # in turn_controller.py: players can only plan around rules they are told.
 GAME_RULES = [
     "All players live and vote as one group for the whole season; there are no tribes.",
-    "Each round has a challenge: the same five puzzles for every player; the difficulty rises when two or more players solve them all and falls when nobody reaches three. Most correct answers wins immunity; a tie goes to whoever solved the harder puzzles, then to whoever answered fastest. Last round's immunity winner cannot win it this round. Every player's score is public (challenge_history).",
-    "The challenge winner is immune: they cannot be voted for that round, but they still vote. A player may answer puzzles wrong on purpose to look less threatening.",
+    "Each round has a challenge: the same five puzzles for every player; the difficulty rises when two or more players solve them all and falls when nobody reaches three. Most correct answers wins immunity, in any round, including rounds in a row; a tie goes to whoever solved the harder puzzles, then to whoever answered fastest. Every player's score is public (challenge_history).",
+    "Your reputation is part of the game: every challenge score, public speech, meeting and vote tally shapes how the others see you (your_reputation in your situation brief shows what they can see). Decide deliberately what image you want, a threat, a loyal ally, a harmless follower, a leader, and act to build it.",
+    "The challenge winner is immune: they cannot be voted for that round, but they still vote. You choose how strong you look: every score is public, so you may answer puzzles wrong on purpose to look weaker and less threatening, or play to win and look strong. A player who keeps winning challenges is safe while immune but becomes the obvious target the first round they are not.",
     "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it. Only one idol is in play at a time.",
     "A holder plays the idol with their vote at a council; every vote against them that round is then cancelled, and the play is announced. An unplayed idol expires when five players remain.",
     "The player with the most votes leaves. On a tie, everyone may speak once, then the players who are not tied vote again, only for the tied players; the tied players do not vote.",
@@ -658,7 +659,81 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
         **({} if secret else {"voting_together": voting_together}),
         "votes_against_you": votes_against_you,
         "your_pacts": _pact_record(conn, actor_id, by_round, names),
+        "your_reputation": _reputation(conn, actor_id, names, tallies, challenge_totals, active),
         "jury_so_far": jury,
+    }
+
+
+# public speech the whole group hears; what others say about you there is your reputation
+_PUBLIC_SPEECH_KINDS = (
+    "tribal_council",
+    "tie_discussion",
+    "deadlock_discussion",
+    "parting_words",
+    "finale_crossfire",
+    "finale_rebuttal",
+    "jury_questions",
+)
+
+
+def _reputation(
+    conn,
+    actor_id: str,
+    names: dict[str, str],
+    tallies: dict[int, dict[str, int]],
+    challenge_totals: dict[str, dict[str, int]],
+    active: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """How the other players can see this player: only what is public to them.
+    Their puzzle record against the field, the votes cast against them, what
+    others have said about them in public, and the meetings people saw them in."""
+    import re
+
+    me = names.get(actor_id, actor_id)
+    field = sorted(
+        ({"id": agent["agent_id"], **challenge_totals.get(agent["agent_id"], {"correct": 0, "wins": 0})} for agent in active),
+        key=lambda entry: -entry["correct"],
+    )
+    rank = next((index + 1 for index, entry in enumerate(field) if entry["id"] == actor_id), None)
+    mine = challenge_totals.get(actor_id, {"correct": 0, "wins": 0})
+
+    pattern = re.compile(rf"\b{re.escape(me)}\b", re.IGNORECASE)
+    said: list[dict[str, Any]] = []
+    placeholders = ",".join("?" for _ in _PUBLIC_SPEECH_KINDS)
+    for event in conn.execute(
+        f"SELECT round, kind, actor_ids, dialogue, payload FROM StoryEvents WHERE kind IN ({placeholders}) ORDER BY id",
+        _PUBLIC_SPEECH_KINDS,
+    ).fetchall():
+        payload = json.loads(event["payload"] or "{}")
+        if payload.get("privacy") == "participants_only":
+            continue
+        lines = payload.get("speaker_lines") or []
+        if event["kind"] == "parting_words":
+            speaker = (json.loads(event["actor_ids"] or "[]") or [None])[0]
+            lines = [{"agent_id": speaker, "text": event["dialogue"] or ""}]
+        for line in lines:
+            speaker, text = line.get("agent_id"), str(line.get("text") or "")
+            if speaker and speaker != actor_id and pattern.search(text):
+                said.append({"round": event["round"], "by": names.get(speaker, speaker), "said": text[:200]})
+
+    started = joined = 0
+    for event in conn.execute("SELECT payload FROM StoryEvents WHERE kind = 'camp_meetings'").fetchall():
+        for meeting in json.loads(event["payload"] or "{}").get("meetings", []):
+            if meeting.get("started_by") == me:
+                started += 1
+            elif me in (meeting.get("with") or []):
+                joined += 1
+
+    return {
+        "note": "Only what the other players can see. Every score, speech, meeting and vote tally shapes how they see you.",
+        "puzzles_solved": mine["correct"],
+        "puzzle_rank_among_players_left": f"{rank} of {len(field)}" if rank else None,
+        "immunity_wins": mine["wins"],
+        "votes_cast_against_you": sum(tally.get(actor_id, 0) for tally in tallies.values()),
+        "times_others_named_you_in_public": len(said),
+        "what_others_said_about_you_in_public": said[-4:],
+        "meetings_you_started": started,
+        "meetings_you_were_invited_to": joined,
     }
 
 

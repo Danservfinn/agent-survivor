@@ -110,7 +110,7 @@ class LadderScoringTest(_SeasonDb):
         self.assertEqual(result["result_payload"]["tied"], sorted([a, b]))
         self.assertEqual(self._immune(), [])
 
-    def test_last_rounds_winner_cannot_win_again(self) -> None:
+    def test_last_rounds_winner_can_win_again(self) -> None:
         a, b, *_ = self.players
         self.conn.execute(
             "INSERT INTO ChallengeResults (round, puzzle_id, challenge_type, winning_agent_id, immunity_agent_ids, status, result_payload)"
@@ -118,21 +118,24 @@ class LadderScoringTest(_SeasonDb):
             (ROUND, a),
         )
         result = self._run({a: {0, 1, 2, 3, 4}, b: {0, 1}}, round_number=ROUND + 1)
-        self.assertEqual(result["winning_agent_id"], b)
-        self.assertEqual(result["result_payload"]["barred_last_winner"], a)
-        self.assertEqual(result["result_payload"]["scores"][a]["correct"], 5)  # still scored and shown
+        self.assertEqual(result["winning_agent_id"], a)
+        self.assertIsNone(result["result_payload"]["barred_last_winner"])
+
+    def test_the_first_round_starts_one_level_up(self) -> None:
+        self.assertEqual(tc._ladder_level(self.conn, ROUND), tc.FIRST_LADDER_LEVEL)
+        self.assertEqual(tc.FIRST_LADDER_LEVEL, 1)
 
     def test_ladder_gets_harder_when_two_players_solve_everything(self) -> None:
         a, b, *_ = self.players
         self._run({a: {0, 1, 2, 3, 4}, b: {0, 1, 2, 3, 4}})
-        self.assertEqual(tc._ladder_level(self.conn, ROUND + 1), 1)
+        self.assertEqual(tc._ladder_level(self.conn, ROUND + 1), 2)
         next_ladder = tc._round_ladder(self.conn, ROUND + 1)
-        self.assertEqual(tuple(p["difficulty"] for p in next_ladder), tc.LADDER_LEVELS[1])
+        self.assertEqual(tuple(p["difficulty"] for p in next_ladder), tc.LADDER_LEVELS[2])
 
     def test_one_perfect_score_keeps_the_level(self) -> None:
         a, b, *_ = self.players
         self._run({a: {0, 1, 2, 3, 4}, b: {0, 1, 2}})
-        self.assertEqual(tc._ladder_level(self.conn, ROUND + 1), 0)
+        self.assertEqual(tc._ladder_level(self.conn, ROUND + 1), tc.FIRST_LADDER_LEVEL)
 
     def test_ladder_eases_when_nobody_reaches_three(self) -> None:
         self.conn.execute(
