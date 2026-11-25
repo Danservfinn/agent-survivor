@@ -96,6 +96,9 @@ class AgentAction:
     play_idol: bool = False
     # in a private talk: the player this speaker promises to vote for at this round's council
     promised_vote_target: str | None = None
+    # in a private talk: the speaker declares an alliance with the others in the talk.
+    # An alliance forms only when every player in the talk ends it by declaring one.
+    pact: bool = False
     # votes only, private: who the voter expects to go home, and how each other voter will vote
     # (raw ids or names; the engine resolves them against the players in the game)
     predicted_eliminated: str | None = None
@@ -666,6 +669,7 @@ V3_REPLY_FIELDS = {
     "group_conversation": [
         ("target_id", "id of the player your words are aimed at, or null"),
         ("promised_vote_target", "allowed id you promise to vote for tonight, or null; checked against your vote"),
+        ("pact", "true to declare an alliance with the other player in this talk; it forms only if they also end the talk with true, and it is shown to them and to the jury"),
     ],
 }
 
@@ -914,6 +918,7 @@ def _request_agent_action_with_model(
         promised_vote_target=_resolve_target_id(data.get("promised_vote_target"), allowed_targets)
         if data.get("promised_vote_target")
         else None,
+        pact=_as_bool(data.get("pact")),
         predicted_eliminated=str(data["predicted_eliminated"]).strip() if data.get("predicted_eliminated") else None,
         predicted_votes={
             str(voter): str(target) for voter, target in data["predicted_votes"].items() if voter and target

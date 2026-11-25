@@ -2056,7 +2056,7 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
                     "pass_no": pass_no,
                     "llm_provider": live_llm_provider(),
                     "model_id": action.model_id,
-                    "join_intent": "reinforce" if action.move_type in {"reassure_ally", "vote_commitment"} else "none",
+                    "join_intent": _join_intent(action),
                     "llm_context_digest": context_digest(context),
                 }
             )
@@ -2328,7 +2328,7 @@ def _group_speaker_lines(
                 text = action.dialogue
                 provider = live_llm_provider()
                 model_id = action.model_id
-                join_intent = "reinforce" if action.move_type in {"reassure_ally", "vote_commitment"} else "none"
+                join_intent = _join_intent(action)
                 if action.promised_vote_target:
                     _record_promise(conn, round_number, agent_id, participant_ids, action.promised_vote_target, step)
             else:
@@ -2340,7 +2340,8 @@ def _group_speaker_lines(
                 text = _deterministic_group_line(conn, agent_id, participant_ids, declined_ids, stage, previous_line)
                 provider = failed_llm_provider() if should_use_live_llm() else "deterministic"
                 model_id = agent.get("model_id") if agent else None
-                join_intent = "reinforce" if _stable_index(f"{step}:{agent_id}:reinforce", 3) == 0 else "none"
+                # no model: a simulated pact, half the time (both sides must declare one)
+                join_intent = "reinforce" if _stable_index(f"{step}:{agent_id}:reinforce", 2) == 0 else "none"
             previous_line = text
             lines.append({"agent_id": agent_id, "text": text})
             metadata.append(
@@ -2436,6 +2437,14 @@ def _deterministic_group_line(
     return f"I want this group to compare real options now, then decide who benefits most if we stay together."
 
 
+def _join_intent(action: AgentAction) -> str:
+    """v3: only a declared pact joins an alliance. v2 (kept for comparisons)
+    guessed it from the move label, which formed alliances nobody asked for."""
+    if prompt_profile() == "v2":
+        return "reinforce" if action.move_type in {"reassure_ally", "vote_commitment"} else "none"
+    return "join" if action.pact else "none"
+
+
 def _maybe_update_alliance(
     conn,
     round_number: int,
@@ -2443,12 +2452,14 @@ def _maybe_update_alliance(
     participant_ids: list[str],
     line_metadata: list[dict[str, Any]],
 ) -> tuple[str | None, str | None]:
-    joiners = [
-        meta["agent_id"]
-        for meta in line_metadata
-        if meta.get("join_intent") in {"join", "reinforce"}
-    ]
-    if len(joiners) < 2:
+    # Each player's last line decides, and each player counts once. Counting
+    # every line let one player who spoke twice "ally" with itself (seen as
+    # "Juniper + Juniper" in the 2026-11-24 lab_mix season).
+    last_intent: dict[str, str] = {}
+    for meta in line_metadata:
+        last_intent[meta["agent_id"]] = meta.get("join_intent") or "none"
+    joiners = [agent_id for agent_id, intent in last_intent.items() if intent in {"join", "reinforce"}]
+    if len(joiners) < 2 or (prompt_profile() != "v2" and len(joiners) < len(last_intent)):
         return None, "none"
     existing = _find_existing_alliance(conn, joiners)
     if existing:
@@ -2539,8 +2550,10 @@ def _group_topic(conn, stage: str, accepted_ids: list[str], declined_ids: list[s
 
 def _group_summary(conn, participant_ids: list[str], alliance_status: str | None) -> str:
     names = _names(conn, participant_ids)
-    if alliance_status in {"formed", "reinforced"}:
-        return f"I know {names} used this private talk to {alliance_status} an alliance path."
+    if alliance_status == "formed":
+        return f"I know {names} formed an alliance in this private group talk."
+    if alliance_status == "reinforced":
+        return f"I know {names} reinforced their alliance in this private group talk."
     return f"I know {names} compared vote options in a private group talk."
 
 

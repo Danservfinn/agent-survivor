@@ -23,6 +23,7 @@ GAME_RULES = [
     "Each voter casts one secret vote for an eligible player. After everyone votes, the votes are revealed one by one and stay public: every player sees who voted for whom (vote_history).",
     "The player with the most votes leaves. On a tie there is a revote among the tied players only; tied players cannot vote for themselves.",
     "If the revote is also tied, the tied player with the fewest challenge wins this season leaves; if still level, the one who has received the most votes this season leaves.",
+    "Alliances are declared, never assumed: in a private talk each player may declare a pact, and an alliance forms only when every player in the talk ends it by declaring one. Your active alliances are listed in your private memory, and the jury sees them.",
     "Each round, before the vote, every player picks one other player for a private talk; only the two of them hear it. A promise to vote for someone, made in a talk, is recorded and later checked against the revealed vote (your_promises).",
     "Each round you privately write a plan after the challenge, privately predict the vote when you cast yours, and rewrite your private notebook after the council. Only you see these; your prediction accuracy is shown to you (your_predictions).",
     "After the talks, each player may send one short private message to one other player before the vote.",
