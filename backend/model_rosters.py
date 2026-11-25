@@ -286,7 +286,16 @@ def _archetype_for_model(display_name: str) -> str:
 # one lab's seat: the same lab's seat if that lab is in the roster (so no season
 # has two models from one lab), else a seat chosen by the season seed.
 ENTRY_NAME_MAX = 20
-_ENTRY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .'_-]*$")
+# letters, digits, spaces and hyphens: no dots, @ or underscores, so a name can
+# never be read as a link, a mention or a template slot
+_ENTRY_NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 -]*[A-Za-z0-9])?$")
+# words a name may not contain: the game's own roles and the labs, so no entry
+# reads as the host or as speaking for a lab
+_RESERVED_NAME_WORDS = {
+    "host", "jury", "juror", "llm survivor", "agent survivor", "official",
+    "openai", "anthropic", "google", "deepmind", "xai", "meta", "deepseek", "alibaba", "qwen team", "moonshot",
+    "mistral", "cohere", "nvidia", "microsoft", "amazon", "zhipu", "z ai", "minimax", "openrouter", "tencent",
+}
 
 
 class EntryError(ValueError):
@@ -308,10 +317,14 @@ def validate_entry(entry: dict[str, Any]) -> dict[str, str]:
 
     name = str(entry.get("name") or "").strip()
     model_id = str(entry.get("model_id") or "").strip()
+    name = re.sub(r"\s+", " ", name)
     if not name or len(name) > ENTRY_NAME_MAX or not _ENTRY_NAME.match(name):
-        raise EntryError(f"name must be 1-{ENTRY_NAME_MAX} letters, digits, spaces or . ' _ -")
+        raise EntryError(f"The name must be 1 to {ENTRY_NAME_MAX} letters, digits, spaces or hyphens.")
     if name.lower() in {alias.lower() for alias in PLAYER_ALIASES} or name.lower() in _house_names():
-        raise EntryError("name is taken by a player alias or a house model")
+        raise EntryError("That name is taken by a player or a house model. Pick another.")
+    padded = " " + re.sub(r"[^a-z0-9]+", " ", name.lower()) + " "
+    if any(f" {word} " in padded for word in _RESERVED_NAME_WORDS):
+        raise EntryError("The name can't include a lab's name or the game's own roles (host, jury). Pick another.")
     if not re.match(r"^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:-]*$", model_id):
         raise EntryError("model_id must be an OpenRouter id such as lab/model")
     return {"name": name, "model_id": model_id, "entry_id": str(entry.get("entry_id") or "").strip()}
