@@ -16,6 +16,7 @@ type Facts = {
   switches: Record<string, boolean | string>;
   roster: { name: string; players: number; models: { model: string; model_id: string }[]; aliases: string[] };
   challenge: { puzzles_per_round: number; tiers: string[]; levels: string[][]; rung_weights: number[]; first_level: number };
+  strategy?: { every: number; first_round: number; highest_pick: { players: number; top: number }; top_per_player: number };
   idols: { gift_rounds: number; expires_at_players: number; search_from_round: number; hidden_chance: number };
   advantages: { spy_caught_chance: number; auction_tokens_per_round: number; auction_after_players_gone: number };
   talks: { per_round: number; notebook_max_chars: number };
@@ -245,7 +246,7 @@ type PromptExample = {
   model_ms?: number | null;
 };
 
-function PromptFold({ family, facts }: { family?: string; facts: Facts | null }) {
+function PromptFold({ family, facts, label = "The prompt and a real reply" }: { family?: string; facts: Facts | null; label?: string }) {
   const [example, setExample] = useState<PromptExample | null | "none">(null);
   if (!family) return null;
   const available = facts?.reference?.prompt_examples?.includes(family);
@@ -258,7 +259,7 @@ function PromptFold({ family, facts }: { family?: string; facts: Facts | null })
   };
   return (
     <details className="more meth-fold" onToggle={(e) => load((e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>The prompt and a real reply</summary>
+      <summary>{label}</summary>
       {!available ? (
         <p className="card-sub">
           Prompts are recorded from the first season played after 25 November 2026. The reference season below this
@@ -320,7 +321,8 @@ function StepCard({ step, facts, report, n }: { step: Step; facts: Facts | null;
         </figure>
       ) : null}
       <Rules facts={facts} phrases={step.rules} />
-      <PromptFold family={step.family} facts={facts} />
+      <PromptFold family={step.family} facts={facts} label={step.id === "challenge" ? "The puzzle prompt and a real reply" : undefined} />
+      {step.id === "challenge" ? <PromptFold family="strategy_pick" facts={facts} label="The strategy-game prompt and a real pick" /> : null}
       <Builders facts={facts} kind={step.replyKind} />
     </li>
   );
@@ -330,7 +332,7 @@ function ChallengeFacts({ facts }: { facts: Facts }) {
   const c = facts.challenge;
   return (
     <details className="more meth-fold">
-      <summary>The difficulty ladder</summary>
+      <summary>The puzzle ladder and the strategy game, in numbers</summary>
       <p className="card-sub">
         Four levels; each round&apos;s level moves up one when any player solved every puzzle the round before, and
         down one when nobody reached three. The public season starts at level {c.first_level}. Harder puzzles count
@@ -363,6 +365,15 @@ function ChallengeFacts({ facts }: { facts: Facts }) {
         reveal. &quot;Master&quot; puzzles are six-peg Mastermind, knights and knaves with twelve speakers, and
         counting the orderings of nine people under seven rules; each answer is checked unique by brute force.
       </p>
+      {facts.strategy && facts.switches.strategy_challenges !== false ? (
+        <p className="card-sub">
+          The strategy game comes every {facts.strategy.every === 2 ? "second" : `${facts.strategy.every}th`} round,
+          starting with round {facts.strategy.first_round}; the ladder&apos;s level carries over it unchanged. With{" "}
+          {facts.strategy.highest_pick.players} players the picks run from 1 to {facts.strategy.highest_pick.top}. The
+          picks are sealed: each player makes its pick in a private call, all at once, and none sees another&apos;s
+          until the result.
+        </p>
+      ) : null}
     </details>
   );
 }

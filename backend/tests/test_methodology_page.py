@@ -22,7 +22,7 @@ CONTENT = Path(__file__).resolve().parents[2] / "frontend" / "src" / "app" / "me
 FAMILIES = {
     "challenge", "round_plan", "game_plan", "auction", "notebook", "vote", "whisper", "council", "host_answer",
     "parting", "tie", "pitch", "crossfire", "jury_question", "rebuttal", "deliberation", "jury_vote", "talk_choice",
-    "talk", "idol_gift", "immunity_choice",
+    "talk", "idol_gift", "immunity_choice", "strategy_pick",
 }
 
 
@@ -71,6 +71,7 @@ class MethodologyPageTest(unittest.TestCase):
             (entry("Task (private: ...):\nBefore the game starts, decide who you are"), "game_plan"),
             (entry("Task (private: ...):\nThe auction is open, once this season."), "auction"),
             (entry("Task (private: ...):\nThe council is over. Rewrite your private notebook"), "notebook"),
+            (entry("Task (private: ...):\nImmunity challenge: lowest unique number. Each of the 9 players"), "strategy_pick"),
             (entry("x", "vote_booth_agent-03"), "vote"),
             (entry("x", "camp_talks", {"invite": ["agent-02"]}), "talk_choice"),
             (entry("x", "camp_talks", {"dialogue": "hi"}), "talk"),

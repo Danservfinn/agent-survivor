@@ -12,7 +12,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from backend import advantages, auction, challenge_bank, llm_context
+from backend import advantages, auction, challenge_bank, llm_context, strategy_challenge
 from backend import turn_controller as tc
 
 WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
@@ -65,6 +65,14 @@ class RulesAgreeWithEngineTest(unittest.TestCase):
         self.assertIn("passes = 2 if len(participants) > 1 else 1", inspect.getsource(tc))
         self.says("every player starts one private talk")
         self.says("each speaks twice")
+
+    def test_strategy_rounds(self) -> None:
+        self.assertEqual(strategy_challenge.STRATEGY_EVERY, 2)
+        self.says("Every second round, starting with round 2")
+        for players in (3, 9, 12):
+            self.assertEqual(strategy_challenge.highest_pick(players), 2 * players)
+        self.says("picks a whole number from 1 to twice the number of players")
+        self.says("the lowest number picked by exactly one player wins immunity")
 
     def test_finale_at_three(self) -> None:
         self.assertIn("if len(active_agents) <= 3:", inspect.getsource(tc.start_next_round))

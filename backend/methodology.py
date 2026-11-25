@@ -29,6 +29,7 @@ from . import (
     public_gate,
     rules_changelog,
     season_character,
+    strategy_challenge,
     strategy_judging,
 )
 from . import turn_controller as tc
@@ -90,6 +91,12 @@ def _code_facts() -> dict[str, Any]:
             "levels": [list(level) for level in challenge_bank.LADDER_LEVELS],
             "rung_weights": list(challenge_bank.RUNG_WEIGHTS),
             "first_level": tc.FIRST_LEVEL_BY_ROSTER.get(public_gate.PUBLIC_ROSTER, tc.FIRST_LADDER_LEVEL),
+        },
+        "strategy": {
+            "every": strategy_challenge.STRATEGY_EVERY,
+            "first_round": strategy_challenge.STRATEGY_EVERY,
+            "highest_pick": {"players": len(model_rosters.LAB_MIX_OPENROUTER_MODELS), "top": strategy_challenge.highest_pick(len(model_rosters.LAB_MIX_OPENROUTER_MODELS))},
+            "top_per_player": 2,  # highest_pick(n) is 2n; test_rules_agree holds the two together
         },
         "idols": {
             "gift_rounds": tc.IDOL_GIFT_ROUNDS,
@@ -176,6 +183,7 @@ def family_of(entry: dict[str, Any]) -> str | None:
     if "Task (private" in text:
         task = text.split("Task (private", 1)[1]
         for opening, family in (
+            ("Immunity challenge: lowest unique number", "strategy_pick"),
             ("The challenge is over", "round_plan"),
             ("Before the game starts", "game_plan"),
             ("Half the cast is gone", "game_plan"),

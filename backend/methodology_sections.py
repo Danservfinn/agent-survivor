@@ -28,7 +28,17 @@ SECTIONS: dict[str, tuple[str, tuple[str, ...]]] = {
     "round": ("A round, step by step", ("turn_controller._phase_steps", "turn_controller.start_next_round")),
     "challenge": (
         "The challenge",
-        ("turn_controller._ensure_challenge_result", "turn_controller._ladder_level", "challenge_bank.ladder_for_round", "challenge_bank.grade_answer"),
+        (
+            "turn_controller._ensure_challenge_result",
+            "turn_controller._ladder_level",
+            "challenge_bank.ladder_for_round",
+            "challenge_bank.grade_answer",
+            "turn_controller._strategy_result",
+            "strategy_challenge.is_strategy_round",
+            "strategy_challenge.highest_pick",
+            "strategy_challenge.clean_pick",
+            "strategy_challenge.lowest_unique_winner",
+        ),
     ),
     "idols": (
         "Idols and immunity",
