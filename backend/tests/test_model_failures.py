@@ -192,3 +192,18 @@ class JsonParsingTest(_Base):
         # Mistral Nemo wrote its game plan with real newlines inside a string
         parsed = _parse_json_content('```json\n{"identity": "under the radar\nthen strike", "change_if": "x"}\n```')
         self.assertEqual(parsed["identity"], "under the radar\nthen strike")
+
+
+class MissingCommaTest(_Base):
+    def test_a_missing_comma_between_lines_is_repaired(self) -> None:
+        from backend.openrouter_client import _parse_json_content
+
+        broken = '{\n "feelings": {\n  "Pine": {"feeling": "trust"}\n  "Ash": {"feeling": "fear"}\n },\n "mood": "cornered"\n "plan": "x"\n}'
+        parsed = _parse_json_content(broken)
+        self.assertEqual(parsed["feelings"]["Ash"]["feeling"], "fear")
+        self.assertEqual(parsed["plan"], "x")
+
+    def test_valid_json_is_untouched(self) -> None:
+        from backend.openrouter_client import _parse_json_content
+
+        self.assertEqual(_parse_json_content('{"a": "line one\\n\\"quoted\\"", "b": [1, 2]}')["b"], [1, 2])

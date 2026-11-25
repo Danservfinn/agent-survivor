@@ -1863,4 +1863,17 @@ def _parse_json_content(content: str) -> dict[str, Any]:
         match = re.search(r"\{.*\}", text, flags=re.DOTALL)
         if not match:
             raise
-        return json.loads(match.group(0), strict=False)
+        try:
+            return json.loads(match.group(0), strict=False)
+        except json.JSONDecodeError:
+            # last resort: a missing comma between entries on separate lines
+            # (Mistral Nemo's notebook, 2026-11-25: "Expecting ',' delimiter")
+            return json.loads(_add_missing_commas(match.group(0)), strict=False)
+
+
+_MISSING_COMMA = re.compile(r'([}\]"]|\d|true|false|null)(\s*\n\s*)(")')
+
+
+def _add_missing_commas(text: str) -> str:
+    """Insert a comma where one value ends a line and the next line opens a new key."""
+    return _MISSING_COMMA.sub(r"\1,\2\3", text)
