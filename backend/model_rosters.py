@@ -44,8 +44,10 @@ CHEAP_RECENT_OPENROUTER_MODELS = [
         "status": "cheap_recent",
     },
     {
-        "model_id": "rekaai/reka-edge",
-        "display_name": "Reka Edge",
+        # replaced Reka Edge on 2026-11-25: its 16,384-token window could not
+        # hold a late-game prompt (12,675 tokens for a jury vote) plus a reply
+        "model_id": "tencent/hy4-flash",
+        "display_name": "Hunyuan 4 Flash",
         "status": "cheap_recent",
     },
     {
@@ -251,7 +253,7 @@ def _archetype_for_model(display_name: str) -> str:
         return "pattern generalist"
     if "Granite" in display_name:
         return "structured analyst"
-    if "Reka" in display_name:
+    if "Reka" in display_name or "Hunyuan" in display_name:
         return "adaptive wildcard"
     if "Qwen" in display_name:
         return "patient tactician"

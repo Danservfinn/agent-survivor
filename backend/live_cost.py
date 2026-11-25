@@ -34,6 +34,7 @@ FALLBACK_PRICING = {
     "google/gemma-4-26b-a4b-it": (0.10, 0.10),
     "google/gemma-4-31b-it": (0.20, 0.20),
     "rekaai/reka-edge": (0.20, 0.20),
+    "tencent/hy4-flash": (0.05, 0.20),
     "qwen/qwen3.5-9b": (0.10, 0.10),
     "openrouter/owl-alpha": (0.25, 0.25),
 }

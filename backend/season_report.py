@@ -40,6 +40,7 @@ ORG_NAMES = {
     "deepseek": "DeepSeek",
     "inclusionai": "Inclusion AI",
     "rekaai": "Reka",
+    "tencent": "Tencent",
     "openai": "OpenAI",
     "anthropic": "Anthropic",
     "qwen": "Alibaba",
