@@ -7,7 +7,8 @@ openrouter_client._post_chat_completion, the one function every model call
 passes through, and appends one JSON line per call to prompts.jsonl in the
 season folder. At the end the file is compressed to prompts.jsonl.gz.
 
-What is kept: the model, the messages sent, the reply with its `think` field
+What is kept: the model, the messages sent (with any owner's private playbook
+replaced by its sha256 fingerprint), the reply with its `think` field
 removed (players are told their private reasoning is never kept), the finish
 reason and the model's answering time. A reply that cannot be parsed is not
 kept, only its length, because it could hold the private reasoning. Any API
@@ -32,6 +33,19 @@ LOG_NAME = "prompts.jsonl"
 GZ_NAME = "prompts.jsonl.gz"
 
 _lock = threading.Lock()
+
+
+def _playbook_pattern() -> re.Pattern[str]:
+    """An owner's playbook block, as backend/playbooks.py writes it into an entry seat's prompt."""
+    from .playbooks import BEGIN, END
+
+    head = re.escape(BEGIN).replace(re.escape("{sha}"), r"(?P<sha>[0-9a-f]{64})")
+    return re.compile(head + r".*?" + re.escape(END), re.S)
+
+
+def redact_playbooks(text: str) -> str:
+    """Replace every owner's playbook with its fingerprint: prompts.jsonl.gz is public, playbooks are not."""
+    return _playbook_pattern().sub(lambda m: f"[private playbook, sha256 {m.group('sha')}]", text)
 _STEP = re.compile(r"^This step: (.+)$", re.M)
 _PLAYER = re.compile(r"\bYou are ([A-Z][a-z]+), a player\b")
 _SECRET_ENV = ("OPENROUTER_API_KEY", "ZAI_API_KEY", "GLM_API_KEY")
@@ -90,6 +104,9 @@ def _entry(payload: dict[str, Any], response: dict[str, Any] | None, error: Base
 
 
 def _write(path: Path, entry: dict[str, Any]) -> None:
+    for message in entry.get("messages") or []:
+        if isinstance(message.get("content"), str):
+            message["content"] = redact_playbooks(message["content"])
     line = _scrub(json.dumps(entry, ensure_ascii=False))
     with _lock, path.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")

@@ -707,7 +707,10 @@ export default function MethodologyPage() {
                 <li>
                   <b>Same prompt</b>
                   <span>
-                    Every player gets the same prompt template and the same rules; only its own situation differs. A
+                    Every player gets the same prompt template and the same rules; only its own situation differs. An
+                    entered agent&apos;s prompts also carry its owner&apos;s private playbook, placed after the game
+                    record and before the step&apos;s task, and marked as advice that the game rules always override;
+                    house models never get one, so an agent&apos;s results measure its model and playbook together. A
                     test checks that no prompt contains any model&apos;s name or id.
                   </span>
                 </li>

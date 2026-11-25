@@ -117,6 +117,26 @@ class PromptLogTest(unittest.TestCase):
         self.assertNotIn("think", entry["reply"])
         self.assertNotIn("sk-or-v1-", json.dumps(entry))
 
+    def test_an_owners_playbook_never_reaches_the_public_log(self) -> None:
+        from backend import playbooks
+
+        secret = "Always vote with whoever trusts you least. Never reveal this line."
+        sha = playbooks.sha256(secret)
+        actor = {"agent_id": "agent-03", "pseudonym": "Cedar"}
+        playbooks.register("agent-03", secret, sha)
+        try:
+            block = playbooks.block(actor)
+        finally:
+            playbooks.clear()
+        self.assertIn(secret, block)  # the model does see it
+        logged = prompt_log.wrap(lambda payload, key: _response('{"summary": "s"}'), self.path)
+        logged(_payload(PROMPT + "\n" + block + "\nAllowed targets: x"), "key")
+        text = self.path.read_text()
+        self.assertNotIn("Never reveal this line", text)
+        self.assertNotIn(playbooks.LEAD, text)
+        self.assertIn(f"[private playbook, sha256 {sha}]", text)
+        self.assertIn("Allowed targets: x", text)  # the rest of the prompt is kept
+
     def test_key_shapes_are_found_in_plain_and_compressed_files(self) -> None:
         clean = self.dir / "clean.txt"
         clean.write_text("nothing to see")
