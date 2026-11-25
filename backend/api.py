@@ -222,7 +222,9 @@ def _detached_runner_alive() -> bool:
     if not flag or flag.get("status") != "running":
         return False
     try:
-        return subprocess.run(["pgrep", "-f", "run_public_season.py"], capture_output=True, timeout=5).returncode == 0
+        # this checkout's runner only (its full path), so a run from another checkout never blocks it
+        runner = str(APP_ROOT / "scripts" / "run_public_season.py")
+        return subprocess.run(["pgrep", "-f", runner], capture_output=True, timeout=5).returncode == 0
     except Exception:
         return True  # can't tell; trust the flag
 

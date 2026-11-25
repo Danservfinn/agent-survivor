@@ -312,7 +312,11 @@ class RunnerSpecTest(unittest.TestCase):
         spec_file.write_text(json.dumps({"entry_id": "e_1", "name": "Night Owl", "model_id": "x-ai/grok-4.7", "cap_cents": 5525}))
         loader = importlib.util.spec_from_file_location("run_public_season_under_test", root / "scripts" / "run_public_season.py")
         module = importlib.util.module_from_spec(loader)
-        loader.loader.exec_module(module)
+        # importing the runner loads the production secrets file and switches the provider to
+        # OpenRouter; keep that out of every other test, which must never make a live call
+        with patch.dict(os.environ, {}), patch.object(module, "__name__", module.__name__):
+            with patch("pathlib.Path.home", return_value=Path(tempfile.mkdtemp())):
+                loader.loader.exec_module(module)
         with patch.object(sys, "argv", ["run_public_season.py", "--entry-spec", str(spec_file)]):
             self.assertEqual(module._entry_spec()["cap_cents"], 5525)
         self.assertFalse(spec_file.exists())
