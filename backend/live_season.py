@@ -24,7 +24,8 @@ from typing import Any
 from . import database, prompt_log, rules_changelog
 from .benchmark_scoring import score_season
 from .database import seed_demo
-from .model_rosters import EntryError, entry_agents, validate_entry
+from . import playbooks
+from .model_rosters import EntryError, entry_agents, table_agents, validate_entry
 from .demo_harness import _run_lock as _shared_run_lock
 from .llm_config import PROVIDER_OPENROUTER, live_llm_provider, should_use_live_llm
 from .turn_controller import FIRST_LEVEL_BY_ROSTER, auto_run_to_end
@@ -107,6 +108,36 @@ def _entry_record(db_path: Path, record: dict[str, Any], season_seed: int) -> di
     return {**record, "agent_id": row[0] if row else None, "alias": row[1] if row else None, "season_seed": season_seed, "maker": "Community"}
 
 
+def _variable_price(model_id: str) -> bool:
+    from .live_cost import get_pricing_table
+
+    try:
+        return bool((get_pricing_table().get(model_id) or {}).get("variable"))
+    except Exception:  # noqa: BLE001 - no catalog: the cost estimate refuses unpriced models
+        return False
+
+
+def _table_record(db_path: Path, seats: list[dict[str, Any]], season_seed: int) -> dict[str, Any]:
+    """entries.json: every seat with its season agent id and alias. Entry seats
+    carry their entry and agent references and playbook hash, never its text."""
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = {
+            (model_id, name): (agent_id, alias)
+            for agent_id, alias, model_id, name in conn.execute("SELECT agent_id, pseudonym, model_id, display_name FROM Agents")
+        }
+    finally:
+        conn.close()
+    out = []
+    for seat in seats:
+        agent_id, alias = rows.get((seat["model_id"], seat["name"]), (None, None))
+        keep = ("seat", "entry_id", "agent_ref", "version", "name", "model_id", "playbook_sha256") if seat["seat"] == "entry" else ("seat", "name", "model_id")
+        out.append({"agent_id": agent_id, "alias": alias, **{k: seat.get(k) for k in keep}})
+    return {"season_seed": season_seed, "seats": out}
+
+
 def run_live_season(
     *,
     roster: str = "frontier_live_8",
@@ -114,21 +145,35 @@ def run_live_season(
     max_cost_cents: float | None = None,
     max_live_calls: int | None = None,
     entry: dict[str, Any] | None = None,
+    entries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run one full live season. Operator-only; never call from public routes.
 
     entry: a paid entry, {"model_id", "name", "entry_id"}: the buyer's
     OpenRouter model takes one lab_mix seat (model_rosters.entry_agents).
     The season folder ends in -lab_mix_entry and holds entry.json (no secrets).
+
+    entries: a table of 1 to 10 agents, each {"entry_id", "agent_ref",
+    "version", "name", "model_id", "playbook", "playbook_sha256"}; house
+    models fill the other seats (model_rosters.table_agents). Each playbook
+    goes into its own seat's prompts only (backend/playbooks.py) and is never
+    stored; entries.json records only its sha256.
     """
     if roster not in ALLOWED_ROSTERS:
         return {"ok": False, "error": f"roster must be one of {ALLOWED_ROSTERS}"}
-    if entry is not None:
+    if entry is not None and entries is not None:
+        return {"ok": False, "error": "pass entry or entries, not both"}
+    if entry is not None or entries is not None:
         if roster != "lab_mix_openrouter":
             return {"ok": False, "error": "an entry plays the lab_mix_openrouter roster"}
         try:
-            validate_entry(entry)
-        except EntryError as exc:
+            for item in [entry] if entry is not None else entries:
+                validate_entry(item)
+                if item.get("playbook"):
+                    playbooks.check(item["playbook"], item.get("playbook_sha256"))
+                if _variable_price(item["model_id"]):
+                    raise EntryError(f"{item['model_id']} has a variable price")
+        except (EntryError, playbooks.PlaybookError) as exc:
             return {"ok": False, "error": f"entry: {exc}"}
         if season_seed is None:
             # the seat an entry takes is chosen by the seed, so fix one now
@@ -153,7 +198,7 @@ def run_live_season(
             }
 
         season_id = time.strftime("%Y%m%d-%H%M%S")
-        season_dir = SEASONS_DIR / f"{season_id}-{'lab_mix_entry' if entry is not None else roster}"
+        season_dir = SEASONS_DIR / f"{season_id}-{'lab_mix_entry' if entry is not None or entries is not None else roster}"
         season_dir.mkdir(parents=True, exist_ok=True)
         db_path = season_dir / "season.db"
 
@@ -165,11 +210,23 @@ def run_live_season(
 
         database.DATABASE_PATH = db_path
         entry_record = None
+        table_record = None
         if entry is not None:
             agents, entry_record = entry_agents(entry, season_seed)
             seed_demo(reset=True, path=db_path, roster_preset=roster, agents=agents)
             entry_record = _entry_record(db_path, entry_record, season_seed)
             (season_dir / "entry.json").write_text(json.dumps(entry_record, indent=2))
+            if entry.get("playbook") and entry_record.get("agent_id"):
+                playbooks.register(entry_record["agent_id"], entry["playbook"], entry.get("playbook_sha256"))
+        elif entries is not None:
+            agents, seats = table_agents(entries, season_seed)
+            seed_demo(reset=True, path=db_path, roster_preset=roster, agents=agents)
+            table_record = _table_record(db_path, seats, season_seed)
+            (season_dir / "entries.json").write_text(json.dumps(table_record, indent=2))
+            by_name = {seat["name"]: seat["agent_id"] for seat in table_record["seats"]}
+            for item in entries:
+                if item.get("playbook"):
+                    playbooks.register(by_name[validate_entry(item)["name"]], item["playbook"], item.get("playbook_sha256"))
         else:
             seed_demo(reset=True, path=db_path, roster_preset=roster)
 
@@ -210,6 +267,8 @@ def run_live_season(
         scorecard["report_url"] = f"/report/{season_dir.name}"
         if entry_record is not None:
             scorecard["entry"] = entry_record
+        if table_record is not None:
+            scorecard["entries"] = table_record
         if scorecard["finished"]:
             # judges score each player's strategy for the report; a failure here
             # never fails the season
@@ -233,6 +292,7 @@ def run_live_season(
             else:
                 os.environ["SURVIVOR_SEASON_SEED"] = original_seed
         database.DATABASE_PATH = original_path
+        playbooks.clear()  # private text never outlives its season
         if roster in FIRST_LEVEL_BY_ROSTER and original_level is None:
             os.environ.pop("SURVIVOR_FIRST_LADDER_LEVEL", None)
         if _current["status"] == "running":

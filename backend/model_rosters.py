@@ -335,3 +335,34 @@ def entry_agents(entry: dict[str, Any], season_seed: int) -> tuple[list[dict[str
         "replaced_display_name": replaced["display_name"],
         "replaced_because": reason,
     }
+
+
+# A table of agents: 1 to TABLE_SEATS entries, house models in the empty seats.
+TABLE_SEATS = len(LAB_MIX_OPENROUTER_MODELS)
+
+
+def table_agents(entries: list[dict[str, Any]], season_seed: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Seats for a table of entries. House models fill the rest, from labs no
+    entry's model represents; when there are more such labs than seats the
+    season seed picks, and when there are too few the seed picks among the
+    others. Returns the seat list and, per seat, its record (no playbook text)."""
+    if not 1 <= len(entries) <= TABLE_SEATS:
+        raise EntryError(f"a table holds 1 to {TABLE_SEATS} entries")
+    checked = [{**validate_entry(entry), **{k: entry.get(k) for k in ("agent_ref", "version", "playbook_sha256")}} for entry in entries]
+    names = [c["name"].lower() for c in checked]
+    if len(set(names)) != len(names):
+        raise EntryError("two entries at one table have the same name")
+    rng = random.Random(f"table:{season_seed}")
+    entry_labs = {c["model_id"].split("/", 1)[0] for c in checked}
+    fresh = [m for m in LAB_MIX_OPENROUTER_MODELS if m["model_id"].split("/", 1)[0] not in entry_labs]
+    taken = [m for m in LAB_MIX_OPENROUTER_MODELS if m not in fresh]
+    needed = TABLE_SEATS - len(checked)
+    if len(fresh) >= needed:
+        house = rng.sample(fresh, needed)
+    else:
+        house = fresh + rng.sample(taken, needed - len(fresh))
+    models = [{"model_id": c["model_id"], "display_name": c["name"], "status": "entry"} for c in checked] + deepcopy(house)
+    seats = [{"seat": "entry", **c} for c in checked] + [
+        {"seat": "house", "name": m["display_name"], "model_id": m["model_id"]} for m in house
+    ]
+    return _agents_for_models(models), seats

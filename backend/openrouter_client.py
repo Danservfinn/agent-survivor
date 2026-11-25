@@ -24,6 +24,7 @@ from .llm_config import (
 )
 from .challenge_bank import answer_format
 from .live_cost import max_output_tokens
+from . import playbooks
 from .deception import add_deception_lines
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -252,7 +253,7 @@ Player:
 
 Game record visible to you:
 {_context_for_prompt(episode_context or {})}
-
+{playbooks.block(actor)}
 Task (private: no other player will ever see this):
 {task}
 
@@ -531,7 +532,7 @@ Player:
 
 Game record visible to you:
 {_context_for_prompt(episode_context or {})}
-
+{playbooks.block(actor)}
 Puzzles:
 {_context_for_prompt({"puzzles": puzzle_block})}
 
@@ -847,7 +848,7 @@ Your private notebook: {actor.get('confessional_memory') or '(empty)'}
 
 Game record visible to you:
 {_context_for_prompt(context, ordered=True)}
-
+{playbooks.block(actor)}
 Allowed targets:
 {target_lines or '- none'}
 

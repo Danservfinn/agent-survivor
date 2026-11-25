@@ -334,3 +334,67 @@ def estimate_entry_season_cost(
         "calls_per_seat": calls_per_seat,
         **basis,
     }
+
+
+def estimate_table_season_cost(model_ids: list[str], *, seasons_dir: Path | None = None) -> dict[str, Any]:
+    """What a season costs with these entry models at the table and house
+    models in the other seats (dearest eligible labs assumed, since the seed
+    picks). total_usd prices every seat at the mean use plus the host;
+    total_max_usd prices the three dearest seats as finalists."""
+    from .llm_config import get_llm_settings
+    from .model_rosters import LAB_MIX_OPENROUTER_MODELS, TABLE_SEATS
+    from .openrouter_client import _host_model_id
+
+    if not 1 <= len(model_ids) <= TABLE_SEATS:
+        raise ValueError(f"a table holds 1 to {TABLE_SEATS} entries")
+    table = get_pricing_table()
+    unpriced = sorted({m for m in model_ids if m not in table and not m.endswith(FREE_SUFFIX)})
+    variable = sorted({m for m in model_ids if (table.get(m) or {}).get("variable")})
+    entry_labs = {m.split("/", 1)[0] for m in model_ids}
+    house_pool = [m["model_id"] for m in LAB_MIX_OPENROUTER_MODELS]
+    fresh = [m for m in house_pool if m.split("/", 1)[0] not in entry_labs]
+    taken = [m for m in house_pool if m not in fresh]
+    needed = TABLE_SEATS - len(model_ids)
+    dear = lambda pool: sorted(pool, key=lambda m: -_profile_seat_usd(m, table))  # noqa: E731
+    house = dear(fresh)[:needed] if len(fresh) >= needed else fresh + dear(taken)[: needed - len(fresh)]
+    host_model = _host_model_id(get_llm_settings())
+
+    def price(model: str, tokens_in: float, tokens_out: float) -> float:
+        return BILL_FACTOR * estimate_call_cost_usd(model, input_tokens=int(tokens_in), output_tokens=int(tokens_out), table=table)
+
+    if seasons_dir is None:
+        seasons_dir = Path(__file__).resolve().parent.parent / "artifacts" / "seasons"
+    recorded = _recorded_usage(seasons_dir)
+    if recorded is not None:
+        season_id, players, host_use = recorded
+        seats_use = list(players.values())
+        mean = {k: sum(s[k] for s in seats_use) / len(seats_use) for k in ("in", "out")}
+        top = max(seats_use, key=lambda s: s["calls"])
+        seat_mean = lambda m: price(m, mean["in"], mean["out"])  # noqa: E731
+        seat_final = lambda m: price(m, top["in"], top["out"])  # noqa: E731
+        host_usd = price(host_model, host_use["in"], host_use["out"])
+        basis = {"basis": "recorded", "season_id": season_id}
+    else:
+        seat_mean = lambda m: _profile_seat_usd(m, table)  # noqa: E731
+        seat_final = lambda m: _profile_seat_usd(m, table, FINALIST_CALL_FACTOR)  # noqa: E731
+        host_usd = BILL_FACTOR * HOST_CALLS_PER_SEASON * estimate_call_cost_usd(
+            host_model, input_tokens=TOKEN_BUDGETS["host"][0], output_tokens=TOKEN_BUDGETS["host"][1], table=table
+        )
+        basis = {"basis": "estimated", "season_id": None}
+    seats = [
+        {"model_id": m, "seat": kind, "usd_mean": round(seat_mean(m), 2), "usd_finalist": round(seat_final(m), 2)}
+        for kind, group in (("entry", model_ids), ("house", house))
+        for m in group
+    ]
+    total = sum(s["usd_mean"] for s in seats) + host_usd
+    uplift = sorted((s["usd_finalist"] - s["usd_mean"] for s in seats), reverse=True)[:3]
+    return {
+        "seats": seats,
+        "house_usd": round(sum(s["usd_mean"] for s in seats if s["seat"] == "house") + host_usd, 2),
+        "entries_usd": round(sum(s["usd_mean"] for s in seats if s["seat"] == "entry"), 2),
+        "total_usd": round(total, 2),
+        "total_max_usd": round(total + sum(uplift), 2),
+        **basis,
+        "variable_price_models": variable,
+        "unpriced_models": unpriced,
+    }
