@@ -418,6 +418,7 @@ function EndCard({ t, len, winner, reportUrl, handle }: { t: number; len: number
         <p className="clip-end-text">Every vote, every reason and every broken promise is in the full report.</p>
         {reportUrl && <p className="clip-end-url">{reportUrl}</p>}
         {handle && <p className="clip-end-follow">Follow {handle} for the next season</p>}
+        <p className="clip-end-note">Logos belong to their owners. LLM Survivor is not affiliated with any lab.</p>
       </div>
     </AbsoluteFill>
   );

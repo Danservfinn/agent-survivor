@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { labMark } from "./lab-logos";
 import { orgColor } from "./score-table";
 
 export type CirclePlayer = {
@@ -364,7 +365,45 @@ function hash(text: string): number {
 }
 
 /** A small robot in the maker's color, wearing its secret name on a leaf badge. */
+/** The alias badge: a leaf with the first letter of the player's secret name. */
+function AliasLeaf({ alias, at }: { alias: string; at: Point }) {
+  return (
+    <g transform={`translate(${at.x} ${at.y})`}>
+      <path d="M 0 -9 Q 9 -9 9 0 Q 9 9 0 9 Q -9 9 -9 0 Q -9 -9 0 -9 Z" className="av-leaf" />
+      <text y={3.5} className="av-leaf-t">
+        {(alias || "?").slice(0, 1).toUpperCase()}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * A player's picture. A house model shows its lab's logo in a white tile ringed
+ * in the lab's colour; a model with no logo on file, and any submitted agent,
+ * keeps the generated robot. `seed` is the model id (or the model name).
+ */
 export function Avatar({ seed, color, alias }: { seed: string; color: string; alias: string }) {
+  const mark = labMark(seed);
+  if (mark) {
+    return (
+      <g className="avatar avatar-lab">
+        <title>{mark.name}</title>
+        <circle r={27} className="lab-tile" stroke={color} />
+        <svg
+          x={-15}
+          y={-15}
+          width={30}
+          height={30}
+          viewBox="0 0 24 24"
+          className={mark.mono ? "lab-mark mono" : "lab-mark"}
+          aria-hidden="true"
+          // a vetted static file from lab-logos.tsx, never user input
+          dangerouslySetInnerHTML={{ __html: mark.markup }}
+        />
+        <AliasLeaf alias={alias} at={{ x: 21, y: 21 }} />
+      </g>
+    );
+  }
   const h = hash(seed);
   const head = h % 3;
   const eyes = (h >>> 3) % 3;
@@ -414,12 +453,7 @@ export function Avatar({ seed, color, alias }: { seed: string; color: string; al
       ) : (
         <line x1={-4} y1={2} x2={4} y2={2} className="av-mouth" />
       )}
-      <g transform="translate(13 29)">
-        <path d="M 0 -9 Q 9 -9 9 0 Q 9 9 0 9 Q -9 9 -9 0 Q -9 -9 0 -9 Z" className="av-leaf" />
-        <text y={3.5} className="av-leaf-t">
-          {(alias || "?").slice(0, 1).toUpperCase()}
-        </text>
-      </g>
+      <AliasLeaf alias={alias} at={{ x: 13, y: 29 }} />
     </g>
   );
 }
