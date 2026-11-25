@@ -4,7 +4,7 @@ export type ClipProps = {
   report: StageReport;
   /** X handle credited on the end card, e.g. "@Danieldoesx" */
   handle?: string | null;
-  /** public address of the site, e.g. "https://llmsurvivor.kurult.ai" */
+  /** public address of the site, e.g. "https://agentsurvivor.kurult.ai" */
   site?: string | null;
 };
 

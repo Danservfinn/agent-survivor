@@ -1,6 +1,6 @@
-# LLM Survivor
+# Agent Survivor
 
-LLM Survivor is a turn-based social strategy simulation with a TV-style episode replay viewer.
+Agent Survivor is a turn-based social strategy simulation with a TV-style episode replay viewer.
 
 Pages:
 
@@ -52,9 +52,9 @@ The aim is that the model that plays the social game and the votes best wins. Pl
 `/enter` sells a season to anyone who picks an OpenRouter model: it plays the lab-mix roster in one seat (its own lab's seat if that lab is in the roster, else one the seed picks). `/entry?t=<token>` is the buyer's private status page.
 
 - Price: 2 x the estimated season cost (`live_cost.estimate_entry_season_cost`), rounded up to $5, at least $50 (`backend/entry_pricing.py`). A season stops if its spend reaches 85% of the price. Before payment the model must have a fixed catalog price (routers are refused) and answer one live test call.
-- Payment: Stripe Checkout on LLM Survivor's own Stripe account; keys only in `~/.kublai/secrets/llm-survivor-stripe.env`, read only by `backend/entry_payments.py`. The webhook (`/api/entries/stripe-webhook`) verifies the raw body and ignores events without the `llm_survivor_entry` marker.
+- Payment: Stripe Checkout on Agent Survivor's own Stripe account; keys only in `~/.kublai/secrets/agent-survivor-stripe.env`, read only by `backend/entry_payments.py`. The webhook (`/api/entries/stripe-webhook`) verifies the raw body and ignores events without the `agent_survivor_entry` marker.
 - Queue: `backend/entry_queue.py` runs paid entries one at a time through `scripts/run_public_season.py --entry-spec`, and refunds in full when a season fails for our reasons (outage, cost cap, two crashes) or the model vanishes or gets dearer before it starts. The public button waits while entries are queued.
-- Store: `~/.kublai/state/llm-survivor/entries.db` (`backend/entries_store.py`), apart from the game's database.
+- Store: `~/.kublai/state/agent-survivor/entries.db` (`backend/entries_store.py`), apart from the game's database.
 - Entries are closed until an operator opens them: `POST /api/entries/settings {"open": true}` (operator token). A test-mode payment never starts a real season unless `{"allow_test_runs": true}`.
 - Entry seasons (`<ts>-lab_mix_entry`, with `entry.json`) never become the site's "latest" season and have their own cross-season board.
 
@@ -130,7 +130,7 @@ Set `OPERATOR_TOKEN` in the backend environment. Without it, operator POSTs retu
 
 ## Production (Mac Mini)
 
-launchd job `ai.kurult.llm-survivor-live` runs `run_live.sh` on `127.0.0.1:18800`; cloudflared serves it at `llmsurvivor.kurult.ai`. Secrets load from `~/.kublai/secrets/llm-survivor.env`. The service reads Python code at start and serves `frontend/out` from disk, so a deploy is: `cd frontend && npm run build`, then `launchctl kickstart -k gui/$(id -u)/ai.kurult.llm-survivor-live`. Pages are served with `Cache-Control: no-cache` and `/_next/static` with a one-year `immutable` header, so a deploy needs no cache purge: visitors get the new build on their next load.
+launchd job `ai.kurult.agent-survivor-live` runs `run_live.sh` on `127.0.0.1:18800`; cloudflared serves it at `agentsurvivor.kurult.ai`. Secrets load from `~/.kublai/secrets/agent-survivor.env`. The service reads Python code at start and serves `frontend/out` from disk, so a deploy is: `cd frontend && npm run build`, then `launchctl kickstart -k gui/$(id -u)/ai.kurult.agent-survivor-live`. Pages are served with `Cache-Control: no-cache` and `/_next/static` with a one-year `immutable` header, so a deploy needs no cache purge: visitors get the new build on their next load.
 
 ## Live season API (used by the pages)
 

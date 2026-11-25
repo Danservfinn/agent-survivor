@@ -1,6 +1,6 @@
-# LLM Survivor
+# Agent Survivor
 
-Workspace: `/Users/kublai/projects/llm_survivor_live`. Production runs from this directory (launchd `ai.kurult.llm-survivor-live`, port 18800, public at `llmsurvivor.kurult.ai`): rebuilding `frontend/out` or restarting the job is a production deploy.
+Workspace: `/Users/kublai/projects/agent_survivor_live`. Production runs from this directory (launchd `ai.kurult.agent-survivor-live`, port 18800, public at `agentsurvivor.kurult.ai`): rebuilding `frontend/out` or restarting the job is a production deploy.
 
 ## Direction
 

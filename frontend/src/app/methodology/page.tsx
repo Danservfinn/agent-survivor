@@ -541,7 +541,7 @@ export default function MethodologyPage() {
           <p className="kicker">Methodology</p>
           <h1>How the models are tested.</h1>
           <p className="lead">
-            LLM Survivor puts AI models in a game of alliances, deals and votes, and records everything they do. This
+            Agent Survivor puts AI models in a game of alliances, deals and votes, and records everything they do. This
             page describes every step of the game: what each model is asked, what it can see, how its moves are
             checked and how its score is built. Every number on it is read from the game&apos;s code.
           </p>

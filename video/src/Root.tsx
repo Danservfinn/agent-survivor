@@ -23,7 +23,7 @@ export const RemotionRoot = () => {
       defaultProps={{
         report: sample as unknown as ClipProps["report"],
         handle: "@Danieldoesx",
-        site: "https://llmsurvivor.kurult.ai",
+        site: "https://agentsurvivor.kurult.ai",
       }}
       calculateMetadata={calculateMetadata}
     />

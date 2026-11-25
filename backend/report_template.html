@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__REPORT_TITLE__</title>
 __REPORT_HEAD__
-<meta name="description" content="After-action report and benchmark results for one LLM Survivor season: scores, votes, challenges, promises and the jury.">
+<meta name="description" content="After-action report and benchmark results for one Agent Survivor season: scores, votes, challenges, promises and the jury.">
 <style>
 /* Theme cloned from LiveBench 2.0 (livebench.ai): its tokens, type scale, table, chips, cards and chart
    conventions. LiveBench ships one light theme, so this page is light by default whatever the system
@@ -462,7 +462,7 @@ function frac(a, b) { return b ? a + "/" + b : "–"; }
 function usd(x) { return x == null ? "–" : "$" + (x >= 1 ? x.toFixed(2) : x >= 0.01 ? x.toFixed(3) : x.toFixed(4)); }
 function mix(color, share) { return "rgba(var(--accent-rgb)," + Math.round(share * 100) / 100 + ")"; }
 function sourceLine() {
-  return h("div", { class: "attrib" }, h("span", null, "Source: ", h("b", { text: "LLM Survivor" }), " season " + (S.date || S.season_id)),
+  return h("div", { class: "attrib" }, h("span", null, "Source: ", h("b", { text: "Agent Survivor" }), " season " + (S.date || S.season_id)),
     LINKS.site || LINKS.handle ? h("span", { class: "url", text: [LINKS.site ? LINKS.site.replace(/^https?:\/\//, "") : null, LINKS.handle].filter(Boolean).join(" · ") }) : null);
 }
 /* sections are full-width bands with a rule under them; content sits in the inner wrap that callers fill */
@@ -522,7 +522,7 @@ function hero() {
       h("div", { class: "who", text: S.winner }), h("div", { class: "how", text: jt ? "jury " + jt : "winner" })));
   }
   return h("header", { class: "hero" }, h("div", { class: "wrap" },
-    h("p", { class: "kicker", text: "LLM Survivor · Season " + (S.date || S.season_id) }),
+    h("p", { class: "kicker", text: "Agent Survivor · Season " + (S.date || S.season_id) }),
     h("h1", { text: title }),
     h("p", { class: "hero-sub", text: blurb + " " + facts.join(", ") + "." }),
     h("div", { class: "tags" }, tags.map(function (t) { return h("span", { class: "tag", text: t }); })),
@@ -1135,7 +1135,7 @@ function onResize(el, fn) {
 }
 function download() {
   var blob = new Blob([JSON.stringify(D, null, 1)], { type: "application/json" });
-  var a = h("a", { href: URL.createObjectURL(blob), download: "llm-survivor-" + S.season_id + ".json" });
+  var a = h("a", { href: URL.createObjectURL(blob), download: "agent-survivor-" + S.season_id + ".json" });
   document.body.appendChild(a); a.click(); a.remove();
 }
 /* ---------- sharing: every moment and player card can be posted with its image and its credit */
@@ -1255,7 +1255,7 @@ function shareCard(id) {
       h("div", { class: "sc-order" }, out.map(function (r) { return h("div", null, h("div", { class: "k-lab", text: "Out, round " + r.round }), h("div", { class: "sc-out", text: nm(r.eliminated_id) })); }))];
   }
   return h("div", { class: "sc" },
-    h("div", { class: "sc-top" }, h("span", { class: "brand" }, h("span", { class: "pulse" }), "LLM Survivor"), h("span", { class: "sc-season", text: "Season " + (S.date || S.season_id) })),
+    h("div", { class: "sc-top" }, h("span", { class: "brand" }, h("span", { class: "pulse" }), "Agent Survivor"), h("span", { class: "sc-season", text: "Season " + (S.date || S.season_id) })),
     h("p", { class: "kicker", text: kicker }), h("div", { class: "sc-body" }, body),
     h("div", { class: "sc-foot" }, h("span", { text: LINKS.site ? LINKS.site.replace(/^https?:\/\//, "") : "" }), h("span", { class: "sc-follow", text: HANDLE ? "Follow " + HANDLE + " for the next season" : "" })));
 }
@@ -1281,7 +1281,7 @@ if (cardWanted) {
   return;
 }
 app.appendChild(h("div", { class: "top" }, h("div", { class: "wrap top-in" },
-  h("a", { class: "brand", href: LINKS.site || "#" }, h("span", { class: "pulse" }), "LLM Survivor", h("span", { class: "sub", text: "-  Season Report" })),
+  h("a", { class: "brand", href: LINKS.site || "#" }, h("span", { class: "pulse" }), "Agent Survivor", h("span", { class: "sub", text: "-  Season Report" })),
   h("nav", { "aria-label": "Report sections" }, [["moments", "Moments"], ["leaderboard", "Leaderboard"], ["players", "Players"], ["insights", "Insights"], ["rounds", "Rounds"], ["finale", "Finale"], ["seasons", "All seasons"], ["method", "Method"]].map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
   h("button", { class: "btn", type: "button", text: "Download data", onclick: download }),
   HANDLE ? h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE }) : null)));
@@ -1293,7 +1293,7 @@ app.appendChild(main);
 app.appendChild(h("footer", null, h("div", { class: "wrap" },
   HANDLE ? h("div", { class: "card cta" }, h("p", { text: "A new season runs with new models. The results and the best moments are posted on X first." }), h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE })) : null,
   LINKS.contact ? h("div", { class: "card cta" }, h("p", { text: "Want a model in the next season, or the full data for every season?" }), h("a", { class: "btn-solid", href: LINKS.contact, text: "Get in touch" })) : null,
-  h("p", { text: "LLM Survivor season " + S.season_id + " · scored with Survivor Index v" + S.index_version + (S.rescored_at ? ", rescored " + String(S.rescored_at).slice(0, 10) : "") + " · report format v" + D.report_version + " · built from the season's own database with no model calls." }))));
+  h("p", { text: "Agent Survivor season " + S.season_id + " · scored with Survivor Index v" + S.index_version + (S.rescored_at ? ", rescored " + String(S.rescored_at).slice(0, 10) : "") + " · report format v" + D.report_version + " · built from the season's own database with no model calls." }))));
 })();
 </script>
 </body>

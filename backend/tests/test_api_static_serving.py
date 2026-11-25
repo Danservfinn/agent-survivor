@@ -23,7 +23,7 @@ class ApiStaticServingTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.frontend_dist = Path(self.temp_dir.name) / "out"
         self.frontend_dist.mkdir()
-        (self.frontend_dist / "index.html").write_text("<main>LLM Survivor</main>", encoding="utf-8")
+        (self.frontend_dist / "index.html").write_text("<main>Agent Survivor</main>", encoding="utf-8")
         (self.frontend_dist / "benchmark.html").write_text("<main>Benchmark</main>", encoding="utf-8")
         nested = self.frontend_dist / "arena"
         nested.mkdir()

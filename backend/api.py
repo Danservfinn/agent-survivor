@@ -118,7 +118,7 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 _SEASON_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
 FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST", APP_ROOT / "frontend" / "out"))
 
-app = FastAPI(title="LLM Survivor Turn API")
+app = FastAPI(title="Agent Survivor Turn API")
 app.mount("/media/voice", StaticFiles(directory=str(MEDIA_ROOT), check_dir=False), name="voice-media")
 PAGE_CACHE_CONTROL = "no-cache"
 ROOT_FILE_CACHE_CONTROL = "public, max-age=3600"
@@ -150,6 +150,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# The site's one public address. Any other public kurult.ai name that reaches this app
+# (the address it had before 2026-11-25) gets a permanent redirect to the same path
+# here, so links already shared keep working.
+PUBLIC_HOST = "agentsurvivor.kurult.ai"
+# Stripe does not follow redirects, so its webhook is answered on any host.
+_NO_REDIRECT = ("/api/entries/stripe-webhook", "/health")
+
+
+@app.middleware("http")
+async def _redirect_to_public_host(request: Request, call_next):
+    host = (request.headers.get("host") or "").split(":", 1)[0].lower()
+    if host.endswith(".kurult.ai") and host != PUBLIC_HOST and request.url.path not in _NO_REDIRECT:
+        target = f"https://{PUBLIC_HOST}{request.url.path}"
+        if request.url.query:
+            target += f"?{request.url.query}"
+        return Response(status_code=301, headers={"Location": target, "Cache-Control": "public, max-age=86400"})
+    return await call_next(request)
 
 
 @app.on_event("startup")
@@ -544,7 +562,7 @@ def _daily_budget_spent() -> bool:
 
 
 def _site() -> str:
-    return (os.environ.get("SURVIVOR_PUBLIC_URL") or "https://llmsurvivor.kurult.ai").rstrip("/")
+    return (os.environ.get("SURVIVOR_PUBLIC_URL") or "https://agentsurvivor.kurult.ai").rstrip("/")
 
 
 @app.get("/api/entries/config")
@@ -635,7 +653,7 @@ def _fulfil(session: dict) -> None:
 
     if session.get("payment_status") not in ("paid", "no_payment_required"):
         return
-    entry_id = (session.get("metadata") or {}).get("llm_survivor_entry") or session.get("client_reference_id")
+    entry_id = (session.get("metadata") or {}).get("agent_survivor_entry") or session.get("client_reference_id")
     entry = entries_store.get(str(entry_id)) if entry_id else None
     if not entry or entry.get("stripe_session_id") not in (None, session.get("id")):
         return
@@ -737,7 +755,7 @@ async def api_entries_stripe_webhook(request: Request) -> dict:
     if kind in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
         _fulfil(obj)
     elif kind == "checkout.session.expired":
-        entry_id = (obj.get("metadata") or {}).get("llm_survivor_entry")
+        entry_id = (obj.get("metadata") or {}).get("agent_survivor_entry")
         if entry_id:
             entries_store.move(str(entry_id), ("awaiting_payment",), "expired")
     entries_store.seen_event(str(event.get("id")), str(kind))
@@ -1059,7 +1077,7 @@ REPORT_CSP = _report_csp()
 # seasons moved out of the live folder keep working links
 ARCHIVE_DIRS = [
     Path(p).expanduser()
-    for p in (os.environ.get("SURVIVOR_ARCHIVE_DIRS") or str(Path.home() / "projects" / "llm_survivor_archive" / "seasons-until-2026-11-24")).split(os.pathsep)
+    for p in (os.environ.get("SURVIVOR_ARCHIVE_DIRS") or str(Path.home() / "projects" / "agent_survivor_archive" / "seasons-until-2026-11-24")).split(os.pathsep)
     if p
 ]
 
@@ -1099,12 +1117,12 @@ def _report_season_dir(season_id: str | None, key: str | None = None) -> Path:
 
 _NOT_FOUND_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Report not found · LLM Survivor</title>
+<title>Report not found · Agent Survivor</title>
 <style>body{margin:0;background:#f6f8fc;color:#14213d;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 main{max-width:560px;margin:18vh auto;padding:0 20px}h1{font-size:28px;margin:0 0 8px}p{color:#5a6b85}a{color:#2f54eb}
 @media (prefers-color-scheme:dark){body{background:#0f1522;color:#e8edf7}p{color:#a3b0c7}a{color:#6f8dff}}</style></head>
 <body><main><h1>No report here</h1><p>This season does not exist, has been withdrawn, or needs the private link it was shared with.</p>
-<p><a href="/history">All seasons</a> · <a href="/">LLM Survivor</a></p></main></body></html>"""
+<p><a href="/history">All seasons</a> · <a href="/">Agent Survivor</a></p></main></body></html>"""
 
 
 @app.get("/api/live-season/report")
@@ -1220,7 +1238,7 @@ def season_report_data(season_id: str, name: str, k: str | None = None) -> Respo
     return FileResponse(
         path,
         media_type=media_type,
-        filename=f"llm-survivor-{season_dir.name}-{filename}",
+        filename=f"agent-survivor-{season_dir.name}-{filename}",
         headers={"Cache-Control": ROOT_FILE_CACHE_CONTROL if not _link_key(k) else "private, max-age=300", "X-Content-Type-Options": "nosniff"},
     )
 

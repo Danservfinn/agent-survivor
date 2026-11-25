@@ -292,7 +292,7 @@ _ENTRY_NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 -]*[A-Za-z0-9])?$")
 # words a name may not contain: the game's own roles and the labs, so no entry
 # reads as the host or as speaking for a lab
 _RESERVED_NAME_WORDS = {
-    "host", "jury", "juror", "llm survivor", "agent survivor", "official",
+    "host", "jury", "juror", "agent survivor", "agent survivor", "official",
     "openai", "anthropic", "google", "deepmind", "xai", "meta", "deepseek", "alibaba", "qwen team", "moonshot",
     "mistral", "cohere", "nvidia", "microsoft", "amazon", "zhipu", "z ai", "minimax", "openrouter", "tencent",
 }

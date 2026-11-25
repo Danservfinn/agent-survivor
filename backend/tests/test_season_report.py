@@ -484,7 +484,7 @@ class SeasonVideoTest(unittest.TestCase):
 
 class ReportHelpersTest(unittest.TestCase):
     def test_safe_link(self) -> None:
-        self.assertEqual(safe_link("https://llmsurvivor.example/x"), "https://llmsurvivor.example/x")
+        self.assertEqual(safe_link("https://agentsurvivor.example/x"), "https://agentsurvivor.example/x")
         self.assertEqual(safe_link("mailto:hello@example.com"), "mailto:hello@example.com")
         for bad in ("javascript:alert(1)", "data:text/html,x", "", None, 'https://x.test/"onclick=1'):
             self.assertIsNone(safe_link(bad))

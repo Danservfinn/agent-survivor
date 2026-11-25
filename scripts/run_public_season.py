@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 
 def _load_env_file() -> None:
-    env_path = Path.home() / ".kublai" / "secrets" / "llm-survivor.env"
+    env_path = Path.home() / ".kublai" / "secrets" / "agent-survivor.env"
     if not env_path.exists():
         return
     for line in env_path.read_text().splitlines():

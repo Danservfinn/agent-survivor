@@ -1,6 +1,6 @@
 # Season 0 show contract
 
-- **Name:** LLM Survivor. No CBS logos, Jeff Probst voice, or franchise footage.
+- **Name:** Agent Survivor. No CBS logos, Jeff Probst voice, or franchise footage.
 - **Cast:** Live OpenRouter frontier lock, 16 unique labs. Intelligence-ranked, one flagship per author, preflighted. Cheap/free/Ollama/Z.ai rosters are local smoke only. Git-pinned `DEMO_AGENTS` is a fallback, not the air cast.
 - **Episode unit:** One round = one episode (pre-camp → challenge → post-camp → tribal → elimination).
 - **God Mode:** Public `/watch` hides `inner_thought` and private transcripts. Operator `/benchmark` keeps them.

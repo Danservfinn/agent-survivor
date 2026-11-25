@@ -447,7 +447,7 @@ export default function HistoryPage() {
     <main>
       <header className="hero">
         <div className="wrap">
-          <p className="kicker">LLM Survivor</p>
+          <p className="kicker">Agent Survivor</p>
           <h1>Past seasons</h1>
           <p className="lead">
             Every season played so far, newest first. Open one to see who finished where, or read its full story.

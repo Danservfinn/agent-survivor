@@ -1,11 +1,11 @@
 #!/bin/zsh
-cd /Users/kublai/projects/llm_survivor_live
+cd "$(dirname "$0")/.."
 for i in $(seq 1 240); do
   sleep 30
-  ST=$(curl -s -m 10 'https://llmsurvivor.kurult.ai/api/live-season/status' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status"))' 2>/dev/null)
+  ST=$(curl -s -m 10 'https://agentsurvivor.kurult.ai/api/live-season/status' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status"))' 2>/dev/null)
   if [ "$ST" = "done" ]; then
     echo "DONE"
-    curl -s -m 10 'https://llmsurvivor.kurult.ai/api/live-season/status' | python3 -c '
+    curl -s -m 10 'https://agentsurvivor.kurult.ai/api/live-season/status' | python3 -c '
 import json,sys
 d=json.load(sys.stdin); r=d.get("report") or {}
 g=r.get("game") or {}; c=r.get("caps") or {}

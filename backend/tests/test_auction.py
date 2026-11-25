@@ -90,7 +90,7 @@ class AuctionTest(_Base):
         self.conn.execute("INSERT INTO Advantages (agent_id, kind, round_won) VALUES (?, 'extra_vote', 4)", (a,))
         self.conn.execute("UPDATE GameState SET current_round = 4, phase = 'round', phase_step = 'vote_booth_x'")
         state = {"current_round": 4, "phase": "round", "phase_step": "camp_talks"}
-        with patch.dict(os.environ, {"LLM_SURVIVOR_FAST_BENCHMARK": "1"}):
+        with patch.dict(os.environ, {"AGENT_SURVIVOR_FAST_BENCHMARK": "1"}):
             before = [s for s in tc._phase_steps(self.conn, state) if s.startswith("vote_reveal_")]
             self.assertEqual(len(before), len(self.active) + 1)
             decision = tc.VoteDecision(b, "x", "openrouter", use_extra_vote=True)

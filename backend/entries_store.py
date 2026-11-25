@@ -28,7 +28,7 @@ OPEN = ("queued", "running")
 
 
 def db_path() -> Path:
-    return Path(os.environ.get("SURVIVOR_ENTRIES_DB") or Path.home() / ".kublai" / "state" / "llm-survivor" / "entries.db")
+    return Path(os.environ.get("SURVIVOR_ENTRIES_DB") or Path.home() / ".kublai" / "state" / "agent-survivor" / "entries.db")
 
 
 def connect() -> sqlite3.Connection:
@@ -103,7 +103,7 @@ def _row(row: sqlite3.Row | None) -> dict[str, Any] | None:
 
 
 def ip_hash(ip: str | None) -> str:
-    return hashlib.sha256(f"llm-survivor:{ip or ''}".encode()).hexdigest()[:16]
+    return hashlib.sha256(f"agent-survivor:{ip or ''}".encode()).hexdigest()[:16]
 
 
 def create(*, name: str, model_id: str, price_cents: int, cap_cents: int, estimate: dict[str, Any], ip: str | None, kind: str = "model", mode: str = "test") -> dict[str, Any]:

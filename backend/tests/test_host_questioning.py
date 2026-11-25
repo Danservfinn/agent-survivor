@@ -97,7 +97,7 @@ class QuestioningTest(_Base):
 
     def test_the_step_runs_before_the_speeches_and_can_be_switched_off(self) -> None:
         state = {"current_round": 1, "phase": "round", "phase_step": "challenge_intro"}
-        with patch.dict(os.environ, {"LLM_SURVIVOR_FAST_BENCHMARK": "1"}):
+        with patch.dict(os.environ, {"AGENT_SURVIVOR_FAST_BENCHMARK": "1"}):
             steps = tc._phase_steps(self.conn, state)
             self.assertLess(steps.index("host_questioning"), steps.index("tribal_council"))
             with patch.dict(os.environ, {"SURVIVOR_HOST_QUESTIONS": "0"}):

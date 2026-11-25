@@ -40,7 +40,7 @@ def round_start_step() -> str:
     """First step of a round. The fast step list (production) opens with the
     challenge; the long list opens with a camp scene. Must match
     turn_controller._phase_steps."""
-    if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
+    if os.environ.get("AGENT_SURVIVOR_FAST_BENCHMARK") == "1":
         return "challenge_intro"
     return "camp_pre_challenge_read"
 

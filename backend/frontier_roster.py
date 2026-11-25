@@ -410,7 +410,7 @@ def _openrouter_headers(api_key: str | None) -> dict[str, str]:
     headers = {
         "Content-Type": "application/json",
         "HTTP-Referer": os.environ.get("OPENROUTER_SITE_URL", "http://localhost:3001"),
-        "X-Title": os.environ.get("OPENROUTER_APP_NAME", "LLM Survivor frontier roster"),
+        "X-Title": os.environ.get("OPENROUTER_APP_NAME", "Agent Survivor frontier roster"),
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"

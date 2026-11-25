@@ -43,7 +43,7 @@ State of the game on 2026-11-25 (production `0e1f17b`):
 
 - A full rule-by-rule reading of the engine was done at `e160b6e`. Since then the other session shipped five phases of new mechanics (train of thought, a private lie record, forwarded quotes, spying, idol search, keep-or-hand immunity, an auction with an extra vote, an idol and a vote peek), behind `SURVIVOR_INNER_LIFE` and `SURVIVOR_ADVANTAGES` (both on). **The page's content must be written from the engine at build time, not from the earlier reading.**
 - No season has been played under these rules, and OpenRouter credit is about $1.
-- The live service does run the real step list (`run_live.sh` sets `LLM_SURVIVOR_FAST_BENCHMARK=1`).
+- The live service does run the real step list (`run_live.sh` sets `AGENT_SURVIVOR_FAST_BENCHMARK=1`).
 
 ## The page
 
@@ -112,7 +112,7 @@ Launch gate: a test (`test_rules_agree.py`) asserts the fixable ones (rule text 
 | 5 | Review: deploy the page unlisted (no menu link) for Danny to read | — |
 | 6 | Reference season: top up credit, play one season with recording on, pin it, re-check every example and the mismatch gate, add the menu link | `artifacts/methodology/reference.json` |
 
-All work on a branch in `/Users/kublai/projects/llm_survivor_report`, rebased on production before each deploy. Every deploy needs Danny's yes.
+All work on a branch in `/Users/kublai/projects/agent_survivor_report`, rebased on production before each deploy. Every deploy needs Danny's yes.
 
 ## Verification
 
@@ -146,7 +146,7 @@ Danny's answers, through the engine session and to Claude Code:
 | Price level (confirmed) | Kept at 2x after the estimate came in at $24-28 for a house season: picks cost about $60-80 (DeepSeek V4.1 Flash $60, Sonnet 5.5 $65, Opus 5.5 $80). |
 | Routers | **Refused**: models whose catalog price is variable (openrouter/auto, routers) cannot be entered. |
 | Which models | **Any OpenRouter model that passes a live check** before payment: one real call in the game's format, and a catalog price (no price, refused). Re-checked at dispatch; refunded if it vanished or got dearer than paid for. |
-| Stripe | A separate "LLM Survivor" account in the same organization as Parse's, being set up by Kublai (credentials: `~/.kublai/secrets/llm-survivor-stripe.env`). |
+| Stripe | A separate "Agent Survivor" account in the same organization as Parse's, being set up by Kublai (credentials: `~/.kublai/secrets/agent-survivor-stripe.env`). |
 | Ownership | Claude Code owns the entry flow (store, queue, Stripe, /enter, status page, leaderboard bucket). The engine session builds `live_cost.estimate_entry_season_cost(model_id, roster)` and `run_live_season(roster, entry={model_id, name, entry_id})`. |
 
 Model-pick differences from the endpoint plan below: no endpoint client, SSRF rules or circuit breaker; no embargo (we make every call, so live viewing is safe); entry seasons stay off the home page's "latest" and get their own leaderboard bucket. If the picked model's lab is in the roster, the entry replaces that lab's seat; `entry.json` names the seat's agent_id.
@@ -159,7 +159,7 @@ Approved 2026-11-25. Phase 0 (lab logos, one line per jury vote) is deployed. Ph
 
 ## Context
 
-LLM Survivor seasons are played only by nine house models today. The goal is revenue and reach: let anyone bring their own AI agent, pay an entry fee, and get a full season of it against the house models, with the report, the round-by-round replay and the share video that already exist. Danny also asked for the animation to show each lab's logo in place of the generated robot.
+Agent Survivor seasons are played only by nine house models today. The goal is revenue and reach: let anyone bring their own AI agent, pay an entry fee, and get a full season of it against the house models, with the report, the round-by-round replay and the share video that already exist. Danny also asked for the animation to show each lab's logo in place of the generated robot.
 
 Decided with Danny on 2026-11-25:
 
@@ -171,7 +171,7 @@ Decided with Danny on 2026-11-25:
 | Season make-up | One entry plays the house models. Each submitter gets their own season. |
 | Player pictures | Lab logos in the animation, not robots. |
 
-What the code has today (checked against the repo at `/Users/kublai/projects/llm_survivor_report`):
+What the code has today (checked against the repo at `/Users/kublai/projects/agent_survivor_report`):
 
 - Every model call goes through `_post_chat_completion(payload, api_key)` (`backend/openrouter_client.py:1519`). `payload["model"]` is the seat's model id at every call site, so a call can be routed by an `entry/` prefix with no signature or schema change.
 - A season starts from `/api/live-season/public-run` → `scripts/run_public_season.py` → `live_season.run_live_season(roster=…)`. There is no way to pass a custom player. One season runs at a time (process-global `database.DATABASE_PATH`).
@@ -227,7 +227,7 @@ Production is a Mac Mini on a home network. The client refuses anything that is 
 
 ### F. Entries store, queue and dispatcher
 
-- `backend/entries_store.py`: its own SQLite file at `~/.kublai/state/llm-survivor/entries.db` (mode 0600), never through `DATABASE_PATH`. Tables `Entries`, `StripeEvents`, `Settings`. The endpoint token is wiped at any end state and when a draft expires.
+- `backend/entries_store.py`: its own SQLite file at `~/.kublai/state/agent-survivor/entries.db` (mode 0600), never through `DATABASE_PATH`. Tables `Entries`, `StripeEvents`, `Settings`. The endpoint token is wiped at any end state and when a draft expires.
 - Statuses: `draft → tested → awaiting_payment → paid → queued → running → finished | failed | refunded | expired`.
 - `backend/entry_queue.py`: a dispatcher thread in the API process. It starts the next paid entry when no season runs, by launching the **existing** `scripts/run_public_season.py --entry-spec <0600 file>` (the one-at-a-time check greps for that script name). The runner reads and deletes the spec file and reports only through `scorecard.json` and `runner_status.json`; the dispatcher reconciles, refunds, and rebuilds its state after an API restart.
 - Paid entries go before the free public button (which returns 409 while one is queued). Queue cap about 8, counting unpaid checkouts. An operator kill switch pauses entries.
@@ -238,12 +238,12 @@ Production is a Mac Mini on a home network. The client refuses anything that is 
 
 ### H. Stripe
 
-- **Account: the existing Kurultai Stripe account** (Danny, 2026-11-25). On this Mac it is the account Parse uses: Stripe CLI login named "Parse", keys in Parse's production `.env`. Confirm with Danny that this is the one before Phase 3. Do not reuse Parse's secret key: create a restricted key for LLM Survivor only (Checkout Sessions write, Refunds write, Events read), its own webhook endpoint and signing secret, and a product "LLM Survivor season entry". Set a statement descriptor suffix (`LLM SURVIVOR`) so buyers recognise the charge. The Stripe CLI login expired 2026-11-07; `stripe login` again before testing webhooks.
+- **Account: the existing Kurultai Stripe account** (Danny, 2026-11-25). On this Mac it is the account Parse uses: Stripe CLI login named "Parse", keys in Parse's production `.env`. Confirm with Danny that this is the one before Phase 3. Do not reuse Parse's secret key: create a restricted key for Agent Survivor only (Checkout Sessions write, Refunds write, Events read), its own webhook endpoint and signing secret, and a product "Agent Survivor season entry". Set a statement descriptor suffix (`AGENT SURVIVOR`) so buyers recognise the charge. The Stripe CLI login expired 2026-11-07; `stripe login` again before testing webhooks.
 - **What Kublai found (2026-11-25):**
   - The account is acct_1Snq0B8LghiREdMS, the LLC's only known Stripe account, shared by Parse Agents and Parse Media.
   - Restricted keys can only be made in the dashboard, so Danny makes them. Don't create webhooks with Parse's key. The CLI login needs Danny to approve the pairing. No working test key exists on the Mac.
   - Every webhook endpoint on the account receives every checkout event. Ours must ignore sessions without our own metadata marker, still return 2xx, and never set the metadata keys `apiKeyId` or `tier`, which Parse's handler acts on.
-  - Checkout shows "Parse" unless the session sets `branding_settings.display_name`. The statement descriptor becomes "PARSE* LLM SURVIVOR". The business profile URL is parsethis.ai. Stripe Tax is on, with no registrations.
+  - Checkout shows "Parse" unless the session sets `branding_settings.display_name`. The statement descriptor becomes "PARSE* AGENT SURVIVOR". The business profile URL is parsethis.ai. Stripe Tax is on, with no registrations.
   - Code to copy: `~/parse-for-agents-live/src/stripe.ts` and `src/routes/billing.ts`. Test-mode steps are in `docs/staging-checkout.md`. Kublai's Stripe skill is read-mostly.
   - Pin the API version on both the endpoint and the client. Keep the secrets in one 0600 file with no `.bak` copies. After any key roll, confirm a real webhook delivery.
 - `backend/entry_payments.py`, standard library only: `create_checkout_session`, `verify_webhook`, `refund`. A restricted key, a sandbox first, a pinned API version, idempotency keys from the entry id, sessions that expire in 30 minutes.
@@ -269,7 +269,7 @@ New static pages `frontend/src/app/enter/page.tsx` (describe → test → pay, p
 - **Which logo:** from the model id's prefix, the key `orgColor` already uses (`score-table.tsx:25`). The nine public-roster labs first, then the other rosters.
 - **Source:** inline SVG in a new `frontend/src/app/lab-logos.tsx` (no network fetch, so it works in the static site and the Remotion render). Each mark comes unaltered from the lab's brand kit or the `lobe-icons` set, with source and licence recorded in `frontend/src/app/LOGOS.md`. Verify each file when building; never draw one from memory.
 - **Fallback:** a lab with no logo on file keeps the robot. A submitted entry keeps the robot with a "community" ring, so entries stand out and no uploaded image needs moderating.
-- **Trademarks:** the marks are used only to say whose model is playing. Add to the footer and the video end card: "Logos belong to their owners. LLM Survivor is not affiliated with any lab." Removing a lab from the module puts its robot back.
+- **Trademarks:** the marks are used only to say whose model is playing. Add to the footer and the video end card: "Logos belong to their owners. Agent Survivor is not affiliated with any lab." Removing a lab from the module puts its robot back.
 - **Not in scope:** the report page's dots and the share cards.
 
 ## Phases
@@ -293,7 +293,7 @@ Tests that must stay green unchanged: `test_live_season.py` (roster tuple), `tes
 
 ## Verification
 
-Run everything in the report worktree with the live venv: `/Users/kublai/projects/llm_survivor_live/.venv/bin/python -m unittest discover -s backend/tests`.
+Run everything in the report worktree with the live venv: `/Users/kublai/projects/agent_survivor_live/.venv/bin/python -m unittest discover -s backend/tests`.
 
 - **Phase 0:** `cd frontend && npm run lint && npm run build`; render stills of the video (`npx remotion render … --frames=…`) and screenshots of `/` and `/watch`; check nine logos, six jury lines, and the robot fallback with an unknown model id.
 - **Phase 1:** new `test_entry_endpoint.py` (every blocked address range, redirect refusal, DNS change, size and time limits, breaker) and `test_entry_season.py` (a full season with a local stub, serial and parallel; a dead endpoint and the season still ends; the token and host appear in no file under the season folder nor in captured output). By hand: run the starter, run the runner with a spec file on the cheap roster, kill the stub mid-season.
@@ -304,7 +304,7 @@ Run everything in the report worktree with the live venv: `/Users/kublai/project
 
 ## Needs Danny
 
-- Stripe: use the existing Kurultai account (decided). Confirm it is the account Parse uses, then create the LLM Survivor restricted keys (sandbox and live) and register the webhook address.
+- Stripe: use the existing Kurultai account (decided). Confirm it is the account Parse uses, then create the Agent Survivor restricted keys (sandbox and live) and register the webhook address.
 - Terms wording on `/enter`: sell "a benchmark run, report and video" (never "win", "prize" or "bet"); the refund rules above; a licence to publish the agent's output; acceptable use.
 - Whether to collect sales tax or VAT (Stripe collects none without a registration).
 - Confirm whether the repo is public; if it is, the seed salt in section E matters more.

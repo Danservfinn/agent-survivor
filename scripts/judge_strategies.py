@@ -2,7 +2,7 @@
 
     .venv/bin/python scripts/judge_strategies.py artifacts/seasons/<season>
 
-Reads the operator key from ~/.kublai/secrets/llm-survivor.env. Replaces
+Reads the operator key from ~/.kublai/secrets/agent-survivor.env. Replaces
 earlier ratings from the same judges. Judges: SURVIVOR_STRATEGY_JUDGES.
 """
 
@@ -20,7 +20,7 @@ def main(argv: list[str]) -> int:
     if len(argv) != 1:
         print(__doc__)
         return 2
-    for line in (Path.home() / ".kublai" / "secrets" / "llm-survivor.env").read_text().splitlines():
+    for line in (Path.home() / ".kublai" / "secrets" / "agent-survivor.env").read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, _, value = line.partition("=")

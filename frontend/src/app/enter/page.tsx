@@ -59,7 +59,7 @@ export default function EnterPage() {
       const made = await post("/api/entries", { model_id: model.trim(), name: name.trim() });
       try {
         // the browser remembers the status page, in case the buyer loses the link
-        localStorage.setItem("llm-survivor-entry", made.status_url);
+        localStorage.setItem("agent-survivor-entry", made.status_url);
       } catch {}
       window.location.href = made.checkout_url;
     } catch (e) {

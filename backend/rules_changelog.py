@@ -140,6 +140,15 @@ CHANGES: list[dict[str, Any]] = [
         ],
         "fingerprint": "cfb170f666f85844",
     },
+    {
+        "version": 11,
+        "since": "2026-11-25T19:00",
+        "title": "Renamed Agent Survivor",
+        "changes": [
+            "No change to how the game plays. The game is renamed Agent Survivor, and the setting that selects the season's step list is renamed with it.",
+        ],
+        "fingerprint": "56da6636f3010d72",
+    },
 ]
 
 

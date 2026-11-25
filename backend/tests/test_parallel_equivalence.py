@@ -167,7 +167,7 @@ def _play_season(parallel: bool, delay: float = 0.0) -> tuple[list[str], dict[st
         {
             "OPENROUTER_API_KEY": "stub",
             "LLM_PROVIDER": "openrouter",
-            "LLM_SURVIVOR_FAST_BENCHMARK": "1",
+            "AGENT_SURVIVOR_FAST_BENCHMARK": "1",
             "SURVIVOR_SEASON_SEED": "4242",
             "SURVIVOR_PARALLEL_CALLS": "1" if parallel else "0",
         },

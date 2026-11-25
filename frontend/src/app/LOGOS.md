@@ -4,7 +4,7 @@
 
 - Source: [`@lobehub/icons-static-svg`](https://github.com/lobehub/lobe-icons) version 1.102.0 (published 2026-11-02), MIT licence.
 - The files are used unaltered: the generator drops only the outer `<svg>` element and its `<title>`, and keeps the 24×24 view box.
-- The marks are trademarks of their owners. They are shown only to say whose model is playing; LLM Survivor is not affiliated with any lab, and the site footer and the video end card say so.
+- The marks are trademarks of their owners. They are shown only to say whose model is playing; Agent Survivor is not affiliated with any lab, and the site footer and the video end card say so.
 - To remove a lab's logo, delete its entry from `LAB_MARKS`; its players go back to the generated robot.
 
 | Model id prefix | Lab | File |

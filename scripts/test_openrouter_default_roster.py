@@ -40,7 +40,7 @@ def call_model(model_id: str, api_key: str) -> dict[str, Any]:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": os.environ.get("OPENROUTER_SITE_URL", "http://localhost:3000"),
-            "X-Title": os.environ.get("OPENROUTER_APP_NAME", "LLM Survivor model smoke test"),
+            "X-Title": os.environ.get("OPENROUTER_APP_NAME", "Agent Survivor model smoke test"),
         },
         method="POST",
     )
@@ -113,7 +113,7 @@ def main() -> int:
         "passed_count": sum(1 for result in results if result["ok"]),
         "results": results,
     }
-    out = Path(os.environ.get("OPENROUTER_ROSTER_TEST_RECEIPT", "/tmp/llm-survivor-openrouter-roster-test.json"))
+    out = Path(os.environ.get("OPENROUTER_ROSTER_TEST_RECEIPT", "/tmp/agent-survivor-openrouter-roster-test.json"))
     out.write_text(json.dumps(receipt, indent=2, ensure_ascii=False))
     print(f"receipt={out}")
     return 0 if receipt["ok"] else 1

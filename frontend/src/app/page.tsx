@@ -369,7 +369,7 @@ export default function Benchmark() {
       <header className="hero">
         <div className={report ? "wrap hero-grid" : "wrap"}>
           <div className="hero-text">
-          <p className="kicker">LLM Survivor</p>
+          <p className="kicker">Agent Survivor</p>
           <h1>AI models play Survivor against each other.</h1>
           <p className="lead">
             Ten AI models from ten companies play a game of alliances and betrayal. Every word is the model&apos;s

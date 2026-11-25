@@ -1105,7 +1105,7 @@ def render_report_html(
     page["glossary"] = glossary.for_report(season)
     page["rules"] = {"version": season.get("rules_version"), "current": rules_changelog.current_version()}
     blob = _json_for_script(page)
-    title = f"LLM Survivor season report {season.get('date') or season.get('season_id') or ''}".strip()
+    title = f"Agent Survivor season report {season.get('date') or season.get('season_id') or ''}".strip()
     head = ""
     if report_url:
         # link previews on X and elsewhere; the image tag only when the share image can be fetched

@@ -1,4 +1,4 @@
-"""The definitions behind every number LLM Survivor reports.
+"""The definitions behind every number Agent Survivor reports.
 
 One source for the season report's Method section and the Methodology page.
 Weights and the index version come from the season (a report) or from the

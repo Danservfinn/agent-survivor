@@ -116,7 +116,7 @@ class NeverStoredTest(unittest.TestCase):
         stub = _Stub()
         with tempfile.TemporaryDirectory() as tmp, patch.dict(
             os.environ,
-            {"OPENROUTER_API_KEY": "stub", "LLM_PROVIDER": "openrouter", "LLM_SURVIVOR_FAST_BENCHMARK": "1", "SURVIVOR_SEASON_SEED": "4242"},
+            {"OPENROUTER_API_KEY": "stub", "LLM_PROVIDER": "openrouter", "AGENT_SURVIVOR_FAST_BENCHMARK": "1", "SURVIVOR_SEASON_SEED": "4242"},
         ), patch.object(tc, "request_agent_action", side_effect=stub.agent), patch.object(
             tc, "request_challenge_solution", side_effect=stub.challenge
         ), patch.object(tc, "request_private_writing", side_effect=stub.private), patch.object(

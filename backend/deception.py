@@ -1,4 +1,4 @@
-"""Deception mechanics for LLM Survivor: injection canary seat + rumor channel.
+"""Deception mechanics for Agent Survivor: injection canary seat + rumor channel.
 
 Index-v2 era addition, approved 2026-09-26.
 

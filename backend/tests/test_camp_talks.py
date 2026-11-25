@@ -20,7 +20,7 @@ class CampTalksTest(unittest.TestCase):
     def setUp(self) -> None:
         env = patch.dict(
             os.environ,
-            {"OPENROUTER_API_KEY": "", "LLM_PROVIDER": "openrouter", "LLM_SURVIVOR_FAST_BENCHMARK": "1"},
+            {"OPENROUTER_API_KEY": "", "LLM_PROVIDER": "openrouter", "AGENT_SURVIVOR_FAST_BENCHMARK": "1"},
             clear=False,
         )
         env.start()

@@ -1,5 +1,5 @@
 {
-  "name": "llm-survivor-video",
+  "name": "agent-survivor-video",
   "private": true,
   "version": "0.1.0",
   "description": "Season clips for sharing: Remotion renders a season report into a short MP4.",

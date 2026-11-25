@@ -1,2 +1,2 @@
-"""Turn-based LLM Survivor backend."""
+"""Turn-based Agent Survivor backend."""
 

@@ -179,7 +179,7 @@ export const SeasonClip = ({ report, handle, site }: ClipProps) => {
       <div className="clip-top">
         <span className="clip-brand">
           <span className="clip-dot" />
-          LLM Survivor
+          Agent Survivor
         </span>
         <span className="clip-season">{report.season.season_id ? friendlyDate(report.season.season_id) : ""}</span>
       </div>
@@ -413,12 +413,12 @@ function EndCard({ t, len, winner, reportUrl, handle }: { t: number; len: number
   return (
     <AbsoluteFill className="clip-end" style={{ opacity: show * fadeOut, justifyContent: "center", alignItems: "center" }}>
       <div className="clip-end-card" style={{ translate: `0 ${interpolate(show, [0, 1], [24, 0])}px` }}>
-        <p className="clip-eyebrow">LLM Survivor</p>
+        <p className="clip-eyebrow">Agent Survivor</p>
         <p className="clip-end-title">{winner ? `${winner} won.` : "Season over."}</p>
         <p className="clip-end-text">Every vote, every reason and every broken promise is in the full report.</p>
         {reportUrl && <p className="clip-end-url">{reportUrl}</p>}
         {handle && <p className="clip-end-follow">Follow {handle} for the next season</p>}
-        <p className="clip-end-note">Logos belong to their owners. LLM Survivor is not affiliated with any lab.</p>
+        <p className="clip-end-note">Logos belong to their owners. Agent Survivor is not affiliated with any lab.</p>
       </div>
     </AbsoluteFill>
   );

@@ -1184,7 +1184,7 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
     # an extra vote won at the auction is one more ballot to read
     reveals = len(voters) + extra_votes_for_round(conn, state["current_round"], voters)
     vote_reveal_steps = [f"vote_reveal_{index + 1}" for index in range(reveals)]
-    if os.environ.get("LLM_SURVIVOR_FAST_BENCHMARK") == "1":
+    if os.environ.get("AGENT_SURVIVOR_FAST_BENCHMARK") == "1":
         return [
             "challenge_intro",
             # each player writes its game plan for the season (round 1) and
@@ -7608,7 +7608,7 @@ def _episode_title(game: dict[str, Any], round_number: int) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Advance the LLM Survivor turn controller.")
+    parser = argparse.ArgumentParser(description="Advance the Agent Survivor turn controller.")
     parser.add_argument("--reset", action="store_true", help="Reset the local demo database.")
     parser.add_argument("--auto-run", type=int, default=0, help="Run up to N turns.")
     args = parser.parse_args()

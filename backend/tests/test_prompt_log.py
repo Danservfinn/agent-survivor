@@ -100,7 +100,7 @@ class PromptLogTest(unittest.TestCase):
                             "confidence": 0.7, "dialogue": "Elm goes tonight."})
         actor = {"agent_id": "agent-03", "pseudonym": "Cedar", "model_id": "x-ai/grok-4.7", "confessional_memory": ""}
         targets = [{"agent_id": "agent-02", "pseudonym": "Elm"}]
-        env = {"OPENROUTER_API_KEY": "sk-or-v1-" + "e" * 40, "LLM_PROVIDER": "openrouter", "LLM_SURVIVOR_LIVE_LLM": "1"}
+        env = {"OPENROUTER_API_KEY": "sk-or-v1-" + "e" * 40, "LLM_PROVIDER": "openrouter", "AGENT_SURVIVOR_LIVE_LLM": "1"}
         with patch.dict(os.environ, env), patch.object(openrouter_client, "_post_chat_completion", lambda payload, key: _response(reply)):
             with prompt_log.recording(self.dir):
                 action = openrouter_client.request_agent_action(

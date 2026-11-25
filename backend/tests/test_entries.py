@@ -277,7 +277,7 @@ class ApiTest(_Base):
         token = made["status_url"].split("t=")[1]
         entry = store.by_token(token)
         self.assertEqual(entry["status"], "awaiting_payment")
-        session = {"id": "cs_1", "payment_status": "paid", "payment_intent": "pi_9", "metadata": {"llm_survivor_entry": entry["entry_id"]}}
+        session = {"id": "cs_1", "payment_status": "paid", "payment_intent": "pi_9", "metadata": {"agent_survivor_entry": entry["entry_id"]}}
         self.api._fulfil(session)
         self.api._fulfil(session)  # Stripe may send it twice
         status = self.api.api_entries_status(token)
@@ -286,8 +286,8 @@ class ApiTest(_Base):
 
     def test_a_session_for_another_entry_or_unpaid_does_nothing(self) -> None:
         e = self.entry("awaiting_payment", stripe_session_id="cs_mine")
-        self.api._fulfil({"id": "cs_other", "payment_status": "paid", "metadata": {"llm_survivor_entry": e["entry_id"]}})
-        self.api._fulfil({"id": "cs_mine", "payment_status": "unpaid", "metadata": {"llm_survivor_entry": e["entry_id"]}})
+        self.api._fulfil({"id": "cs_other", "payment_status": "paid", "metadata": {"agent_survivor_entry": e["entry_id"]}})
+        self.api._fulfil({"id": "cs_mine", "payment_status": "unpaid", "metadata": {"agent_survivor_entry": e["entry_id"]}})
         self.assertEqual(store.get(e["entry_id"])["status"], "awaiting_payment")
 
     def test_bad_names_and_closed_entries(self) -> None:
@@ -351,7 +351,7 @@ class ApiTest(_Base):
         e = self.entry("awaiting_payment", stripe_session_id="cs_w")
         events = [
             {"id": "evt_parse", "type": "checkout.session.completed", "data": {"object": {"id": "cs_parse", "payment_status": "paid", "metadata": {"tier": "pro"}}}},
-            {"id": "evt_ours", "type": "checkout.session.completed", "data": {"object": {"id": "cs_w", "payment_status": "paid", "payment_intent": "pi_w", "metadata": {"llm_survivor_entry": e["entry_id"]}}}},
+            {"id": "evt_ours", "type": "checkout.session.completed", "data": {"object": {"id": "cs_w", "payment_status": "paid", "payment_intent": "pi_w", "metadata": {"agent_survivor_entry": e["entry_id"]}}}},
         ]
 
         class Req:

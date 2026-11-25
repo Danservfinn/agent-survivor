@@ -63,7 +63,7 @@ def get_llm_settings() -> LLMSettings:
         # was billed again (2026-11-25). Ten minutes covers it.
         timeout_seconds=float(os.environ.get("OPENROUTER_TIMEOUT_SECONDS", "600")),
         site_url=os.environ.get("OPENROUTER_SITE_URL", "http://localhost:3001"),
-        app_name=os.environ.get("OPENROUTER_APP_NAME", "LLM Survivor Local"),
+        app_name=os.environ.get("OPENROUTER_APP_NAME", "Agent Survivor Local"),
         ollama_base_url=ollama_base_url,
         ollama_host_model_id=ollama_host_model_id,
         ollama_keep_alive=os.environ.get("OLLAMA_KEEP_ALIVE_PER_CALL", "0"),

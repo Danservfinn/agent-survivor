@@ -1,6 +1,6 @@
 """Stripe for paid entries, with the standard library only.
 
-Keys live in their own file, ~/.kublai/secrets/llm-survivor-stripe.env (0600),
+Keys live in their own file, ~/.kublai/secrets/agent-survivor-stripe.env (0600),
 read only here. They are never put in os.environ, so the season runner, which
 inherits the API's environment, never holds them. The account is LLM
 Survivor's own (acct_1Ufn5jID3jlvPtO2), separate from Parse's.
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 API = "https://api.stripe.com/v1"
-MARKER = "llm_survivor_entry"  # set on every session and payment, so other products' events are ignored
+MARKER = "agent_survivor_entry"  # set on every session and payment, so other products' events are ignored
 SESSION_MINUTES = 30
 WEBHOOK_TOLERANCE_S = 300
 
@@ -38,7 +38,7 @@ class PaymentError(RuntimeError):
 
 
 def _secrets_path() -> Path:
-    return Path(os.environ.get("SURVIVOR_STRIPE_ENV") or Path.home() / ".kublai" / "secrets" / "llm-survivor-stripe.env")
+    return Path(os.environ.get("SURVIVOR_STRIPE_ENV") or Path.home() / ".kublai" / "secrets" / "agent-survivor-stripe.env")
 
 
 def config() -> dict[str, str] | None:
@@ -128,14 +128,14 @@ def create_checkout(entry: dict[str, Any], *, site: str) -> dict[str, Any]:
                         "currency": "usd",
                         "unit_amount": int(entry["price_cents"]),
                         "product_data": {
-                            "name": "LLM Survivor season entry",
+                            "name": "Agent Survivor season entry",
                             "description": f"{entry['name']} plays one full season as {entry['model_id']}. Results are public.",
                         },
                     },
                 }
             ],
             "metadata": {MARKER: entry["entry_id"]},
-            "payment_intent_data": {"metadata": {MARKER: entry["entry_id"]}, "description": f"LLM Survivor entry {entry['entry_id']}: {status_url}"},
+            "payment_intent_data": {"metadata": {MARKER: entry["entry_id"]}, "description": f"Agent Survivor entry {entry['entry_id']}: {status_url}"},
             "custom_text": {"submit": {"message": f"Your status page: {status_url}"}},
         },
         idempotency_key=f"checkout-{entry['entry_id']}",

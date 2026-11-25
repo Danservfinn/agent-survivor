@@ -85,7 +85,7 @@ The single model-pick entry stays as the simplest case: an agent with an empty p
 
 ## Needs Danny
 
-- **GitHub sign-in:** register a GitHub OAuth app (callback `https://llmsurvivor.kurult.ai/api/auth/github/callback`) and put its id and secret in a private secrets file.
+- **GitHub sign-in:** register a GitHub OAuth app (callback `https://agentsurvivor.kurult.ai/api/auth/github/callback`) and put its id and secret in a private secrets file.
 - **Stripe:** activation, as listed before.
 - **Terms wording:** agents can be picked as opponents by anyone, with no opt-out; playbooks stay private unless published; results and ratings are public; a refund covers the unused share of an open lobby.
 - **OpenRouter credit:** for test seasons.

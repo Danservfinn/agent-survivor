@@ -6,7 +6,7 @@
 Arguments: roster, season seed, estimated-cost cap in cents. The season is written
 under artifacts/seasons/ of the tree this runs from, so run it from a development
 worktree to keep it out of the public history. Compare two with
-scripts/compare_seasons.py. Reads the operator key from ~/.kublai/secrets/llm-survivor.env.
+scripts/compare_seasons.py. Reads the operator key from ~/.kublai/secrets/agent-survivor.env.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 
 def _load_env_file() -> None:
-    env_path = Path.home() / ".kublai" / "secrets" / "llm-survivor.env"
+    env_path = Path.home() / ".kublai" / "secrets" / "agent-survivor.env"
     for line in env_path.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
@@ -37,7 +37,7 @@ def main(argv: list[str]) -> int:
     roster, seed, cap = argv[0], int(argv[1]), float(argv[2])
     _load_env_file()
     os.environ["LLM_PROVIDER"] = "openrouter"
-    os.environ["LLM_SURVIVOR_FAST_BENCHMARK"] = "1"
+    os.environ["AGENT_SURVIVOR_FAST_BENCHMARK"] = "1"
     from backend.live_season import run_live_season
     from backend.llm_config import feelings_enabled, jury_rule, prompt_profile, secret_ballot
 

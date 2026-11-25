@@ -12,7 +12,7 @@ export function SiteNav() {
       <div className="wrap top-in">
         <Link className="brand" href="/">
           <span className="pulse" aria-hidden="true" />
-          LLM Survivor
+          Agent Survivor
         </Link>
         <nav aria-label="Site">
           <Link href="/" aria-current={here("/")}>

@@ -47,7 +47,7 @@ class DataDownloadsTest(unittest.TestCase):
         for name, media in (("report.json", "application/json"), ("prompts.jsonl.gz", "application/gzip"), ("season.db", "application/vnd.sqlite3")):
             response = api.season_report_data(SEASON, name)
             self.assertEqual(response.media_type, media)
-            self.assertIn(f"llm-survivor-{SEASON}-{name}", response.headers["content-disposition"])
+            self.assertIn(f"agent-survivor-{SEASON}-{name}", response.headers["content-disposition"])
 
     def test_the_database_comes_without_puzzle_answers(self) -> None:
         response = api.season_report_data(SEASON, "season.db")
