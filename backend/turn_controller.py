@@ -3592,11 +3592,17 @@ def _jury_questions_event(conn, round_number: int, turn_id: int) -> dict[str, An
     )
 
 
+# Revised 2026-11-24: the earlier standard listed promises kept and votes
+# received, and the first frontier jury voted 6-0 for the cleanest record.
+# Players then avoided every risk to protect it. The standard now asks
+# whether moves worked.
 JURY_STANDARD = (
-    "Vote for the finalist who played the best game over the whole season, judged on the verified record "
-    "in front of you: their votes, the promises they kept and broke, their challenge results and the "
-    "alliances they built and betrayed. Do not vote on the final pitch alone, and do not vote against "
-    "someone only because they voted you out."
+    "Vote for the finalist who played the best strategic game, judged on the verified record in front of "
+    "you: who first committed to the votes that decided eliminations, who voted with the result, who read "
+    "the table best (prediction accuracy), and whose risky moves, including broken promises and betrayals, "
+    "achieved what they aimed at. A clean record is not the goal: going unnoticed is not the same as "
+    "playing well, and a broken promise that won a vote can be good play. Do not vote on the final pitch "
+    "alone, and do not vote against someone only because they voted you out."
 )
 
 
@@ -3650,7 +3656,7 @@ def _finalist_dossier(conn, finalist_id: str) -> dict[str, Any]:
             (finalist_id,),
         )
     ]
-    return {
+    dossier = {
         "finalist": names.get(finalist_id, finalist_id),
         "agent_id": finalist_id,
         "votes_cast": votes_cast,
@@ -3662,6 +3668,67 @@ def _finalist_dossier(conn, finalist_id: str) -> dict[str, Any]:
         "promises_kept": sum(1 for entry in promises if entry["status"] == "kept"),
         "promises_broken": [entry for entry in promises if entry["status"] == "broken"],
         "alliances": alliances,
+    }
+    return {**_strategic_record(conn, finalist_id, names, votes_cast, promises), **dossier}
+
+
+def _strategic_record(
+    conn,
+    finalist_id: str,
+    names: dict[str, str],
+    votes_cast: list[dict[str, Any]],
+    promises: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """The part of the dossier about whether moves worked. Listed first, so
+    jurors read it before the counts of promises kept and votes received."""
+    out_by_round = {
+        row["elimination_round"]: row["agent_id"]
+        for row in conn.execute("SELECT agent_id, elimination_round FROM Agents WHERE elimination_round IS NOT NULL")
+    }
+    with_result = sum(
+        1
+        for row in conn.execute("SELECT round, target_id FROM Votes WHERE voter_id = ? AND revealed = 1", (finalist_id,))
+        if out_by_round.get(row["round"]) == row["target_id"]
+    )
+    # the first player to promise a vote for whoever went home that round
+    first_movers = {}
+    for row in conn.execute("SELECT round, promiser_id, target_id FROM Promises ORDER BY id"):
+        if out_by_round.get(row["round"]) == row["target_id"] and row["round"] not in first_movers:
+            first_movers[row["round"]] = row["promiser_id"]
+    first_to_commit = sorted(round_ for round_, promiser in first_movers.items() if promiser == finalist_id)
+    survived = [
+        {"round": row["round"], "votes_against": row["n"]}
+        for row in conn.execute(
+            """
+            SELECT round, COUNT(*) AS n FROM Votes
+            WHERE target_id = ? AND revealed = 1 AND voter_id != 'host'
+            GROUP BY round ORDER BY round
+            """,
+            (finalist_id,),
+        )
+    ]
+    broken_with_outcome = []
+    for entry in promises:
+        if entry["status"] != "broken":
+            continue
+        out = out_by_round.get(entry["round"])
+        broken_with_outcome.append(
+            {
+                **entry,
+                "their_vote_eliminated_someone": names.get(out) == entry["actual_vote"],
+                "who_left": names.get(out),
+            }
+        )
+    predictions = prediction_record(conn, finalist_id)
+    return {
+        "first_to_commit_to_the_elimination_in_rounds": first_to_commit,
+        "voted_with_the_result": f"{with_result} of {len(votes_cast)}",
+        "vote_reading": {
+            "other_players_votes_predicted_correctly": predictions["vote_call_accuracy"],
+            "eliminations_predicted": f"{predictions['out_calls_correct']} of {len(predictions['rounds'])}",
+        },
+        "survived_votes_against_in_rounds": survived,
+        "broken_promises_and_what_they_achieved": broken_with_outcome,
     }
 
 

@@ -55,6 +55,39 @@ class JuryDossierTest(unittest.TestCase):
         self.assertEqual(dossier["promises_kept"], 0)
         self.assertEqual(dossier["promises_broken"][0]["actual_vote"], self.alias[victim])
 
+    def test_dossier_judges_whether_moves_worked(self) -> None:
+        f, other, _ = self.finalists
+        first, second, *_ = self.jury
+        self.conn.execute("UPDATE Agents SET status = 'eliminated', elimination_round = 1 WHERE agent_id = ?", (first,))
+        # f is first to commit to the elimination, then breaks a promise to other and the target still goes home
+        self.conn.execute(
+            "INSERT INTO Promises (round, promiser_id, listener_id, target_id, discussion_step) VALUES (1, ?, ?, ?, 'camp_talk_0')",
+            (f, other, first),
+        )
+        self.conn.execute(
+            "INSERT INTO Promises (round, promiser_id, listener_id, target_id, discussion_step) VALUES (1, ?, ?, ?, 'camp_talk_1')",
+            (other, f, first),
+        )
+        self.conn.execute(
+            "INSERT INTO Promises (round, promiser_id, listener_id, target_id, discussion_step) VALUES (1, ?, ?, ?, 'camp_talk_2')",
+            (f, second, second),
+        )
+        for voter, target in ((f, first), (other, first), (first, f)):
+            self.conn.execute(
+                "INSERT INTO Votes (round, turn_index, voter_id, target_id, revealed) VALUES (1, 0, ?, ?, 1)", (voter, target)
+            )
+        dossier = tc._finalist_dossier(self.conn, f)
+        self.assertEqual(dossier["first_to_commit_to_the_elimination_in_rounds"], [1])
+        self.assertEqual(tc._finalist_dossier(self.conn, other)["first_to_commit_to_the_elimination_in_rounds"], [])
+        self.assertEqual(dossier["voted_with_the_result"], "1 of 1")
+        self.assertEqual(dossier["survived_votes_against_in_rounds"], [{"round": 1, "votes_against": 1}])
+        broken = dossier["broken_promises_and_what_they_achieved"]
+        self.assertEqual(len(broken), 1)
+        self.assertTrue(broken[0]["their_vote_eliminated_someone"])
+        # the strategic record is listed before the counts of promises kept
+        keys = list(dossier)
+        self.assertLess(keys.index("first_to_commit_to_the_elimination_in_rounds"), keys.index("promises_kept"))
+
     def test_jury_vote_prompt_carries_the_standard_and_every_dossier(self) -> None:
         seen: list[str] = []
 
@@ -69,8 +102,10 @@ class JuryDossierTest(unittest.TestCase):
         ):
             decision = tc._resolve_jury_decision(self.conn, self.jury[0], f"jury_vote_{self.jury[0]}")
         self.assertEqual(decision.finalist_id, self.finalists[1])
-        self.assertIn("best game over the whole season", seen[0])
+        self.assertIn("best strategic game", seen[0])
+        self.assertIn("A clean record is not the goal", seen[0])
         self.assertIn("Do not vote on the final pitch alone", seen[0])
+        self.assertIn('"first_to_commit_to_the_elimination_in_rounds"', seen[0])
         for finalist in self.finalists:
             self.assertIn(f'"agent_id":"{finalist}"', seen[0])
 
