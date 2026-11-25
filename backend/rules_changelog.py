@@ -99,7 +99,15 @@ CHANGES: list[dict[str, Any]] = [
             "The host questions a few players at tribal council, from the public record.",
             "The rules text, promise checks and seeding agree with the engine: difficulty rises when any player is perfect, and \"I'll vote for you\" is not a promise.",
         ],
-        "fingerprint": "5d1943a1127b662d",
+    },
+    {
+        "version": 7,
+        "since": "2026-11-25T14:30",
+        "title": "Survivor Index v5",
+        "changes": [
+            "No change to how the game plays. The score's voting part now counts the round a player was voted out in, as it voted then, and counts rounds with a vote, so an extra vote won at the auction is not a second round.",
+        ],
+        "fingerprint": "709ecff32281d456",
     },
 ]
 

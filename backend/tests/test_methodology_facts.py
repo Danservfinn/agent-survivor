@@ -65,7 +65,7 @@ class MethodologyFactsTest(unittest.TestCase):
             ref = methodology.reference_season(base)
         self.assertEqual(ref["season_id"], "20261125-150000-lab_mix_openrouter")
         self.assertFalse(ref["pinned"])
-        self.assertEqual(ref["rules_version"], 6)
+        self.assertEqual(ref["rules_version"], 7)
         pin = base / "reference.json"
         pin.write_text(json.dumps({"season_id": "20261124-175223-lab_mix_openrouter"}))
         with patch.object(methodology, "REFERENCE_PATH", pin):

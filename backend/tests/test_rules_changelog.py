@@ -32,6 +32,7 @@ class RulesChangelogTest(unittest.TestCase):
     def test_a_season_is_matched_to_the_rules_it_was_played_under(self) -> None:
         self.assertEqual(rules_changelog.version_for_season("20261124-175223-lab_mix_openrouter"), 1)
         self.assertEqual(rules_changelog.version_for_season("20261125-140000-lab_mix_openrouter"), 6)
+        self.assertEqual(rules_changelog.version_for_season("20261125-150000-lab_mix_openrouter"), 7)
         self.assertIsNone(rules_changelog.version_for_season("20261101-120000-lab_mix_openrouter"))
         self.assertIsNone(rules_changelog.version_for_season("not-a-season"))
 
