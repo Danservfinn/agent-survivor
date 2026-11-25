@@ -75,6 +75,21 @@ class InvalidModelReply(RuntimeError):
     vote) and the season goes on. Never raised for provider outages."""
 
 
+def error_category(exc: BaseException) -> str:
+    """A short public label for a failed call. A provider's error body can carry
+    account ids and request details, so it never reaches a vote reason, a
+    report or a downloadable file; the label names only the kind of failure."""
+    text = str(exc)
+    status = re.search(r"\bHTTP (\d{3})\b", text)
+    if status:
+        return f"provider error HTTP {status.group(1)}"
+    if isinstance(exc, InvalidModelReply):
+        return "unusable reply"
+    if isinstance(exc, TimeoutError) or "timed out" in text.lower():
+        return "timed out"
+    return "no usable reply"
+
+
 class SeasonInterrupted(BaseException):
     """The provider stayed unavailable past the hold window, or the account or
     model cannot be reached at all. A BaseException on purpose: no

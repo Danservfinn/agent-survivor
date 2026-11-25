@@ -43,6 +43,7 @@ from .llm_config import (
     should_use_live_llm,
 )
 from .openrouter_client import (
+    error_category,
     AgentAction,
     ChallengeSolution,
     HostNarration,
@@ -4236,7 +4237,7 @@ def _live_challenge_attempts(
             )
             return agent, solution, int((time.perf_counter() - started) * 1000), None
         except Exception as exc:
-            return agent, None, int((time.perf_counter() - started) * 1000), str(exc)
+            return agent, None, int((time.perf_counter() - started) * 1000), error_category(exc)
 
     max_workers = 1 if live_llm_provider() == "ollama" else max(1, len(players))
     executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -5086,7 +5087,7 @@ def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
                 allowed_targets=finalist_rows,
             )
         except Exception as exc:
-            last_error = str(exc)
+            last_error = error_category(exc)  # never the provider's own error text
             action = None
         if action and action.target_id:
             break
@@ -6551,7 +6552,7 @@ def _resolve_revote_decision(
                 allowed_targets=allowed,
             )
         except Exception as exc:
-            last_error = str(exc)
+            last_error = error_category(exc)  # never the provider's own error text
             action = None
         if action and action.target_id:
             break
@@ -6968,7 +6969,7 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
                 episode_context=attempt_context,
             )
         except Exception as exc:
-            last_error = str(exc)
+            last_error = error_category(exc)  # never the provider's own error text
             action = None
         if action and action.target_id:
             break
