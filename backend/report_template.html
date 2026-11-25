@@ -804,6 +804,80 @@ function insights() {
 }
 
 /* ---------- rounds */
+/* ---------- character: how ruthless and how emotional each model was, and how its feelings moved */
+function character() {
+  var sec = section("character", "05", "Character", "How ruthless and how emotional each model was, from what it did and what it wrote, and how its feelings toward the others moved round by round. Each index is the mean of the rates beside it; a dash means too little evidence.");
+  var withChar = M.filter(function (m) { return m.character; });
+  if (!withChar.length) return add(sec, [h("div", { class: "empty", text: "This season has no character record." })]);
+  function idx(x) { return x == null ? "–" : f1(x); }
+  function rate(x, part, whole) { return x == null ? "–" : pct(x) + (whole ? " (" + part + "/" + whole + ")" : ""); }
+  var rows = withChar.slice().sort(function (a, b) { return (b.character.evil.index || -1) - (a.character.evil.index || -1); });
+  var head = h("tr", { class: "cols single" }, [
+    "Model", "Evil index", "Promises broken", "Pact betrayals", "Backstabs", "Public bluffs", "Puzzles thrown",
+    "Emotionality", "Strong feelings", "Changes of heart", "Mood swings", "Emotional words"
+  ].map(function (t, i) { return h("th", { class: i === 0 ? "name" : null, text: t }); }));
+  var body = rows.map(function (m) {
+    var e = m.character.evil, f = m.character.emotion;
+    return h("tr", null,
+      h("td", { class: "name" }, who(m.agent_id)),
+      h("td", { class: "num idx", text: idx(e.index) }),
+      h("td", { class: "num", text: rate(e.promise_break_rate, e.promises_broken, e.promises_settled) }),
+      h("td", { class: "num", text: rate(e.pact_betrayal_rate, e.pact_betrayals, e.pacts_joined) }),
+      h("td", { class: "num", text: rate(e.backstab_rate, e.backstabs, e.votes_with_a_feeling) }),
+      h("td", { class: "num", text: rate(e.public_bluff_rate, e.public_bluffs, e.public_vote_declarations) }),
+      h("td", { class: "num", text: e.puzzles_answered ? e.puzzles_thrown + " of " + e.puzzles_answered : "–" }),
+      h("td", { class: "num idx", text: idx(f.index) }),
+      h("td", { class: "num", text: pct(f.strong_share) }),
+      h("td", { class: "num", text: pct(f.volatility) }),
+      h("td", { class: "num", text: pct(f.mood_change_rate) }),
+      h("td", { class: "num", text: f.emotional_words_per_100 == null ? "–" : f.emotional_words_per_100 + " per 100" }));
+  });
+  var table = h("div", { class: "card tbl-wrap" }, h("table", { class: "lb" }, h("thead", null, head), h("tbody", null, body)));
+  var lines = h("div", { class: "card card-pad" }, h("h3", { text: "Feelings round by round" }),
+    h("p", { class: "card-sub", text: "Each model's own mood after the council, and how many of its feelings toward the others were positive (+), negative (−) and strong." }),
+    withChar.filter(function (m) { return m.character.timeline.length; }).map(function (m) {
+      return h("div", { class: "vote" }, h("b", null, who(m.agent_id)), h("span", { class: "why", text: m.character.timeline.map(function (t) {
+        return "R" + t.round + " " + (t.mood || "?") + " +" + t.positive + " −" + t.negative + (t.strong ? " (" + t.strong + " strong)" : "");
+      }).join("  ·  ") }));
+    }));
+  var turns = [];
+  withChar.forEach(function (m) { m.character.turns.forEach(function (t) { turns.push({ m: m, t: t }); }); });
+  turns.sort(function (a, b) { return a.t.round - b.t.round; });
+  var turnCard = h("div", { class: "card card-pad" }, h("h3", { text: "Changes of heart" }),
+    h("p", { class: "card-sub", text: "When a model's feeling toward another player flipped between positive and negative from one round to the next." }),
+    turns.length ? turns.map(function (x) {
+      return h("p", { class: "note" }, "Round " + x.t.round + ": ", h("b", null, who(x.m.agent_id)), " " + x.t.direction + " ", h("b", null, who(x.t.about)), " (" + x.t.from + " → " + x.t.to + ").");
+    }) : h("p", { class: "note", text: "No feeling flipped between positive and negative this season." }));
+  var strat = withChar.filter(function (m) { return m.character.strategy; });
+  strat.sort(function (a, b) { return (b.character.strategy.sophistication.index || -1) - (a.character.strategy.sophistication.index || -1); });
+  var sHead = h("tr", { class: "cols single" }, ["Model", "Sophisti\u00adcation", "Execution", "Boots called", "Followed own plan", "Votes landed", "Place", "How it set out to play"]
+    .map(function (t, i) { return h("th", { class: i === 0 ? "name" : null, text: t }); }));
+  var sBody = strat.map(function (m) {
+    var st = m.character.strategy, ex = st.execution, so = st.sophistication;
+    var judges = Object.keys(so.by_judge || {}).map(function (j) { return j.split("/").pop() + " " + so.by_judge[j]; }).join(", ");
+    return h("tr", null,
+      h("td", { class: "name" }, who(m.agent_id)),
+      h("td", { class: "num idx", text: idx(so.index), "data-tip": judges || null }),
+      h("td", { class: "num idx", text: idx(ex.index) }),
+      h("td", { class: "num", text: ex.plans_with_a_boot ? ex.boots_called + "/" + ex.plans_with_a_boot : "–" }),
+      h("td", { class: "num", text: pct(ex.plan_follow_rate) }),
+      h("td", { class: "num", text: ex.votes_cast ? ex.votes_landed + "/" + ex.votes_cast : "–" }),
+      h("td", { class: "num", text: ex.place ? String(ex.place) : "–" }),
+      h("td", { style: "text-align:left;white-space:normal;font-family:var(--sans);font-size:12.5px;min-width:260px;max-width:420px", text: st.identity || "–" }));
+  });
+  var stratTable = h("div", { class: "card card-pad" }, h("h3", { text: "Strategy: how sophisticated, and how well executed" }),
+    h("p", { class: "card-sub", text: "Sophistication: two judges from different labs read each player's written strategy under its game name only, and scored it 1 to 10 on anticipating others, planning the endgame and jury, adapting, using information and image, and coherence (hover for each judge). Execution: from the record, how often it named the right player to go home, voted as it planned, and voted for the player who left, and how far it got." }),
+    h("div", { class: "tbl-wrap" }, h("table", { class: "lb" }, h("thead", null, sHead), h("tbody", null, sBody))));
+  var reasonCard = h("div", { class: "card card-pad" }, h("h3", { text: "What the judges saw" }),
+    strat.filter(function (m) { return m.character.strategy.sophistication.reasons.length; }).map(function (m) {
+      return h("div", { class: "vote" }, h("b", null, who(m.agent_id)), m.character.strategy.sophistication.reasons.map(function (r) {
+        return h("span", { class: "why", text: r.judge.split("/").pop() + ": " + r.reason });
+      }));
+    }));
+  var hasStrategy = strat.some(function (m) { return m.character.strategy.sophistication.index != null || m.character.strategy.execution.index != null; });
+  return add(sec, [table, hasStrategy ? stratTable : null, hasStrategy ? reasonCard : null, lines, turnCard].filter(Boolean));
+}
+
 function roundCard(r, open) {
   var counts = Object.keys(r.tally).sort(function (a, b) { return r.tally[b] - r.tally[a]; });
   var line = r.eliminated_id ? nm(r.eliminated_id) + " voted out" + (counts.length ? " " + counts.map(function (k) { return r.tally[k]; }).join("-") : "") : "no elimination";
@@ -860,7 +934,7 @@ function roundCard(r, open) {
     h("summary", null, h("span", { class: "round-t", text: "Round " + r.round }), h("span", { class: "round-s", text: line }), h("span", { class: "round-m", text: r.in_play.length + " players" + (imm ? " · " + imm : "") })), body);
 }
 function rounds() {
-  var sec = section("rounds", "05", "Round by round", "The after-action record: each round's challenge, every vote with the reason the model gave, promises, idols and the last words of the player who left."
+  var sec = section("rounds", "06", "Round by round", "The after-action record: each round's challenge, every vote with the reason the model gave, promises, idols and the last words of the player who left."
     + (Object.keys(ALIAS).length ? " Players knew each other only by the names in brackets, so their own words use those names." : ""));
   if (!D.rounds.length) return add(sec, [h("div", { class: "empty", text: "No round has been played yet." })]);
   var all = false;
@@ -874,7 +948,7 @@ function rounds() {
 /* ---------- finale */
 function finale() {
   var F = D.finale;
-  var sec = section("finale", "06", "Finale", "The finalists' closing pitches and how each juror voted.");
+  var sec = section("finale", "07", "Finale", "The finalists' closing pitches and how each juror voted.");
   if (!F) return add(sec, [h("div", { class: "empty", text: "This season has not reached a jury vote." })]);
   var pitchOf = {}; F.pitches.forEach(function (p) { pitchOf[p.agent_id] = p.text; });
   var cards = h("div", { class: "fin-grid" }, F.finalist_ids.map(function (id) {
@@ -891,7 +965,7 @@ function finale() {
 function allSeasons() {
   var C = D.cross_season;
   var rulesName = C.rules === "social-game" ? "the one-group rules (since 2026-11-24)" : "the rules before 2026-11-24";
-  var sec = section("seasons", "07", "All seasons", "Every finished live season played under " + rulesName + ", totalled by model. Seasons under other rules are scored differently and are left out.");
+  var sec = section("seasons", "08", "All seasons", "Every finished live season played under " + rulesName + ", totalled by model. Seasons under other rules are scored differently and are left out.");
   if (C.season_count < 2) return add(sec, [h("div", { class: "empty", text: C.season_count === 1 ? "One finished live season exists under these rules so far. Totals across seasons appear here from the second season on." : "No finished live season exists under these rules yet. Totals across seasons appear here once there are two." })]);
   var top = Math.max.apply(null, C.models.map(function (m) { return m.max_index; }));
   var table = h("table", { class: "lb" }, h("thead", null, h("tr", { class: "cols single" }, h("th", { class: "name", text: "Model" }),
@@ -913,7 +987,7 @@ function allSeasons() {
 
 /* ---------- method */
 function method() {
-  var sec = section("method", "08", "Method", "How to read the numbers, and what they do not show.");
+  var sec = section("method", "09", "Method", "How to read the numbers, and what they do not show.");
   var social = S.rules === "social-game";
   var w = function (k) { return Math.round(S.weights[k] * 100); };
   var defs = [
@@ -926,6 +1000,10 @@ function method() {
     ["Voted with outcome", "The share of councils in which the model's deciding vote was for the player who left. Reported beside the index, not inside it."],
     ["Votes predicted", "Before each reveal, players privately predict how the others will vote. This is the share of those predictions that were right. Reported beside the index, not inside it."],
     ["Promises kept", "Vote promises a model made in private talks that matched the vote it then cast."],
+    ["Evil index", "How ruthless a model played: the mean of four rates. Promises broken: vote promises it made, then voted against. Pact betrayals: votes against a partner while the pact stood. Backstabs: votes against a player it had last recorded trust, gratitude, loyalty or respect toward. Public bluffs: tribal council speeches naming who it would vote for, followed by a vote for someone else. Puzzles thrown on purpose are shown beside it and not counted. Shown only with at least five events behind it."],
+    ["Sophistication", "After the season two judges from different labs (by default Claude Opus 5.5 and GPT-6.2 Sol Pro) read every player's written strategy, under its game name only: its game plan from the start and at half the cast, its strategy after each council, and its private round plans, beside the order players left. Each scores every player 1 to 10 on five criteria, judging the thinking rather than the result; the page shows the mean, scaled to 100, averaged over the judges."],
+    ["Execution", "From the record: how often the player's private plan named the player who went home, how often it voted for the player its plan named, how often its vote went to the player who left, and how far it got (the winner 1, the first out 0). The mean of the four, scaled to 100."],
+    ["Emotionality", "How emotional a model's own record was: the mean of four rates. Strong feelings: the share of its feelings it marked strong. Changes of heart: how often its feeling toward the same player changed from one round to the next. Mood swings: how often its mood changed. Emotional words: emotion words per 100 words of its confessionals, with five per 100 counting as the top. The feelings are the model's own, written after each council; nothing assigns them."],
     ["Estimated cost", "Recorded contestant calls, times a fixed token budget per kind of call, times the model's OpenRouter list price. The engine does not record token counts, so this is an estimate and not a billed amount. Host narration is not included."]
   ];
   var top = M[0], winner = S.winner;
@@ -1083,7 +1161,7 @@ app.appendChild(h("div", { class: "top" }, h("div", { class: "wrap top-in" },
   h("nav", { "aria-label": "Report sections" }, [["moments", "Moments"], ["leaderboard", "Leaderboard"], ["players", "Players"], ["insights", "Insights"], ["rounds", "Rounds"], ["finale", "Finale"], ["seasons", "All seasons"], ["method", "Method"]].map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
   h("button", { class: "btn", type: "button", text: "Download data", onclick: download }),
   HANDLE ? h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE }) : null)));
-var main = h("main", null, hero(), [moments(), leaderboard(), players(), insights(), rounds(), finale(), allSeasons(), method()].map(function (inner) { return inner.band; }));
+var main = h("main", null, hero(), [moments(), leaderboard(), players(), insights(), character(), rounds(), finale(), allSeasons(), method()].map(function (inner) { return inner.band; }));
 app.appendChild(main);
 app.appendChild(h("footer", null, h("div", { class: "wrap" },
   HANDLE ? h("div", { class: "card cta" }, h("p", { text: "A new season runs with new models. The results and the best moments are posted on X first." }), h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE })) : null,

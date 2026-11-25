@@ -57,7 +57,11 @@ def get_llm_settings() -> LLMSettings:
         default_model_id=os.environ.get("OPENROUTER_DEFAULT_MODEL", "openai/gpt-4.1-mini"),
         zai_base_url=zai_base_url,
         zai_default_model_id=os.environ.get("ZAI_HOST_MODEL", "glm-4.5-flash"),
-        timeout_seconds=float(os.environ.get("OPENROUTER_TIMEOUT_SECONDS", "90")),
+        # Replies are not streamed, so the connection is silent until the model
+        # finishes. At high reasoning a frontier model on hard puzzles can think
+        # for minutes; at 90 s Gemini 4 timed out on every try and each retry
+        # was billed again (2026-11-25). Ten minutes covers it.
+        timeout_seconds=float(os.environ.get("OPENROUTER_TIMEOUT_SECONDS", "600")),
         site_url=os.environ.get("OPENROUTER_SITE_URL", "http://localhost:3001"),
         app_name=os.environ.get("OPENROUTER_APP_NAME", "LLM Survivor Local"),
         ollama_base_url=ollama_base_url,

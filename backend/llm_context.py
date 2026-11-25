@@ -146,6 +146,7 @@ def build_agent_episode_context(
         # private: this round's plan, and how well past vote predictions held up
         "your_plan_this_round": _your_plan(conn, actor_id, round_number),
         "your_game_plan": _your_game_plan(conn, actor_id),
+        "your_strategy": _your_strategy(conn, actor_id),
         **(
             {
                 "how_you_feel": _how_you_feel(conn, actor_id),
@@ -636,6 +637,14 @@ def _what_happened_to_you(conn, actor_id: str, round_number: int) -> list[str]:
         if left_out:
             events.append(f"Round {rnd}: {left_out} meeting{'s' if left_out != 1 else ''} went ahead without you.")
     return events
+
+
+def _your_strategy(conn, actor_id: str) -> dict[str, Any] | None:
+    """The strategy this player wrote after its last council."""
+    row = conn.execute(
+        "SELECT round, text FROM Strategies WHERE agent_id = ? ORDER BY round DESC, id DESC LIMIT 1", (actor_id,)
+    ).fetchone()
+    return {"written_after_round": row["round"], "strategy": row["text"]} if row else None
 
 
 def _your_game_plan(conn, actor_id: str) -> dict[str, Any] | None:

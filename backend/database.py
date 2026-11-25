@@ -210,6 +210,26 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- a player's overall strategy to win, restated after each council
+            -- with whether and why it changed; private, judged after the season
+            CREATE TABLE IF NOT EXISTS Strategies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- the post-season judges' scores for each player's strategy
+            CREATE TABLE IF NOT EXISTS StrategyRatings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT NOT NULL,
+                judge_model TEXT NOT NULL,
+                scores TEXT NOT NULL DEFAULT '{}',
+                reason TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- each player's private plan for a round, written before the challenge
             CREATE TABLE IF NOT EXISTS PrivatePlans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -534,6 +554,8 @@ def seed_demo(
         conn.execute("DELETE FROM GamePlans")
         conn.execute("DELETE FROM Confessionals")
         conn.execute("DELETE FROM Feelings")
+        conn.execute("DELETE FROM Strategies")
+        conn.execute("DELETE FROM StrategyRatings")
         conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
         conn.execute("DELETE FROM Alliances")
@@ -619,6 +641,8 @@ def _database_ready() -> bool:
             "GamePlans",
             "Confessionals",
             "Feelings",
+            "Strategies",
+            "StrategyRatings",
         }
         tables = {
             row["name"]

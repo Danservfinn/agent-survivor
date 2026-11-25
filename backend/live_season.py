@@ -156,6 +156,15 @@ def run_live_season(
             }
         )
         scorecard["report_url"] = f"/report/{season_dir.name}"
+        if scorecard["finished"]:
+            # judges score each player's strategy for the report; a failure here
+            # never fails the season
+            try:
+                from .strategy_judging import judge_season
+
+                scorecard["strategy_ratings"] = judge_season(db_path)
+            except Exception as exc:  # noqa: BLE001
+                print(f"strategy judging failed: {exc}")
         (season_dir / "scorecard.json").write_text(json.dumps(scorecard, indent=2))
         _write_season_report(season_dir)
         _current.update(status="done", report=scorecard)

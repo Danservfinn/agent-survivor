@@ -21,6 +21,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
+from .season_character import build_character
 from . import live_cost, season_story, season_video
 from .benchmark_scoring import LADDER_RUNGS, WEIGHTS, score_season
 
@@ -841,6 +842,10 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
     finale = _build_finale(data, names)
     models = _build_models(data, scorecard, rounds, finale, table)
     season_story.add_player_tags(models, rounds, finale)
+    # evil index, emotionality, and feelings round by round (season_character)
+    character = build_character(db, names)
+    for model in models:
+        model["character"] = character.get(model["agent_id"])
     rules = _rules_of(data["agents"])
 
     winner_id = data["game"].get("winner")

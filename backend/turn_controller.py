@@ -1789,16 +1789,16 @@ def _call_or_error(job: Any) -> tuple[Any, Exception | None]:
 def _write_notebook(conn, round_number: int, agent: dict[str, Any], eliminated_name: str, remaining: int) -> None:
     """The player rewrites its own private notebook after the council. It replaces
     the old memory and is capped so it cannot crowd out the game record."""
-    note = confessional = feelings = None
+    note = confessional = feelings = strategy = None
     if should_use_live_llm():
         context = build_agent_episode_context(
             conn, actor_id=agent["agent_id"], round_number=round_number, current_step="memory_update"
         )
         try:
-            note, confessional, feelings = _request_notebook(agent, context)
+            note, confessional, feelings, strategy = _request_notebook(agent, context)
         except Exception as exc:
             print(f"live notebook failed for {agent['agent_id']}: {exc}")
-    _store_notebook(conn, round_number, agent, note, eliminated_name, remaining, confessional, feelings)
+    _store_notebook(conn, round_number, agent, note, eliminated_name, remaining, confessional, feelings, strategy)
 
 
 CONFESSIONAL_FIELD = (
@@ -1817,7 +1817,15 @@ FEELINGS_FIELDS = {
 }
 
 
-def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> tuple[str | None, str | None, dict | None]:
+STRATEGY_FIELD = (
+    "your overall strategy to win the game as it stands now: your path to the final three and how you will "
+    "win the jury. Say whether it changed this round and why. A few sentences."
+)
+
+
+def _request_notebook(
+    agent: dict[str, Any], context: dict[str, Any]
+) -> tuple[str | None, str | None, dict | None, str | None]:
     """The model call for a notebook, the confessional and (when on) the
     player's feelings. Needs no database, so it can run in a worker. Returns
     (notebook, confessional, feelings)."""
@@ -1835,12 +1843,18 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> tuple[s
             fields={
                 "notebook": f"your new notebook, first person, at most {NOTEBOOK_MAX_CHARS} characters",
                 "confessional": CONFESSIONAL_FIELD,
+                "strategy": STRATEGY_FIELD,
                 **extra,
             },
             episode_context=context,
-            max_tokens=1000,
+            max_tokens=1200,
         )
-        return str(written.get("notebook") or "").strip() or None, _confessional_text(written), _feelings_from(written)
+        return (
+            str(written.get("notebook") or "").strip() or None,
+            _confessional_text(written),
+            _feelings_from(written),
+            _strategy_text(written),
+        )
     written = request_private_writing(
         actor=agent,
         task=(
@@ -1854,12 +1868,20 @@ def _request_notebook(agent: dict[str, Any], context: dict[str, Any]) -> tuple[s
             "lessons": "what you predicted vs what happened, and who lied to you",
             "plan": "your plan for next round",
             "confessional": CONFESSIONAL_FIELD,
+            "strategy": STRATEGY_FIELD,
             **extra,
         },
         episode_context=context,
-        max_tokens=1000,
+        max_tokens=1200,
     )
-    return _render_notebook(written), _confessional_text(written), _feelings_from(written)
+    return _render_notebook(written), _confessional_text(written), _feelings_from(written), _strategy_text(written)
+
+
+def _strategy_text(written: dict[str, Any]) -> str | None:
+    value = written.get("strategy")
+    if isinstance(value, dict):
+        value = " ".join(f"{key}: {str(text).strip()}" for key, text in value.items() if str(text).strip())
+    return str(value or "").strip()[:900] or None
 
 
 def _feelings_from(written: dict[str, Any]) -> dict[str, Any] | None:
@@ -1890,7 +1912,12 @@ def _store_notebook(
     remaining: int,
     confessional: str | None = None,
     feelings: dict[str, Any] | None = None,
+    strategy: str | None = None,
 ) -> None:
+    if strategy:
+        conn.execute(
+            "INSERT INTO Strategies (round, agent_id, text) VALUES (?, ?, ?)", (round_number, agent["agent_id"], strategy)
+        )
     if confessional:
         conn.execute(
             "INSERT INTO Confessionals (round, agent_id, text) VALUES (?, ?, ?)",
@@ -3487,8 +3514,8 @@ def _memory_update_event(conn, round_number: int, turn_id: int) -> dict[str, Any
         for agent, (written, error) in zip(active, results):
             if error is not None:
                 print(f"live notebook failed for {agent['agent_id']}: {error}")
-            note, confessional, feelings = written if written else (None, None, None)
-            _store_notebook(conn, round_number, agent, note, eliminated_name, len(active), confessional, feelings)
+            note, confessional, feelings, strategy = written if written else (None, None, None, None)
+            _store_notebook(conn, round_number, agent, note, eliminated_name, len(active), confessional, feelings, strategy)
     else:
         for agent in active:
             _write_notebook(conn, round_number, agent, eliminated_name, len(active))
