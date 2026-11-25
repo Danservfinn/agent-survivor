@@ -120,6 +120,54 @@ details.more .bench-table-wrap { box-shadow: none; }
 .bench-table td.finish { color: var(--muted); font-family: var(--mono); font-size: 13px; white-space: nowrap; }
 .feed-actions { margin-top: 14px; }
 
+/* ---------- the season circle (season-circle.tsx) */
+.hero-grid { display: grid; gap: 40px 56px; grid-template-columns: minmax(0, 1fr); align-items: center; }
+.hero-grid .steps { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 1040px) { .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 560px); } }
+.circle { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-md); padding: 18px 18px 16px; display: grid; gap: 8px; }
+.circle-title { color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; text-align: center; }
+.circle svg { display: block; width: 100%; height: auto; overflow: visible; }
+.circle-ring { fill: rgba(var(--accent-rgb), .03); stroke: var(--border-strong); stroke-width: 1.5; stroke-dasharray: 3 7; }
+.seat-body { transition: transform .6s ease; }
+.avatar-wrap, .seat .seat-name { transition: opacity .7s ease; }
+.seat.out .seat-name { opacity: .45; }
+.seat.won .seat-body { transform: scale(1.16); }
+.seat-name { fill: var(--ink); font-family: var(--sans); font-size: 14px; font-weight: 700; text-anchor: middle; }
+.seat-alias { fill: var(--muted); font-family: var(--mono); font-size: 11.5px; text-anchor: middle; }
+.seat.won .seat-alias { fill: var(--live); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.seat.out .seat-alias { fill: var(--danger); }
+.won-ring { fill: rgba(var(--live-rgb), .14); stroke: var(--live); stroke-width: 2.5; opacity: 0; transition: opacity .5s ease; }
+.won-ring.on { opacity: 1; }
+.out-ring { fill: none; stroke: var(--danger); stroke-width: 2; opacity: 0; }
+.out-ring.on { animation: outring 1.6s ease-out forwards; }
+@keyframes outring { from { opacity: 1; r: 30px; } to { opacity: 0; r: 52px; } }
+.av-face { fill: #fff; opacity: .92; }
+.av-eyes { fill: var(--ink); }
+.av-mouth { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linecap: round; }
+.av-body { opacity: .9; }
+.av-leaf { fill: var(--live); stroke: #fff; stroke-width: 1.5; }
+.av-leaf-t { fill: #fff; font-family: var(--mono); font-size: 9.5px; font-weight: 700; text-anchor: middle; }
+.torch-stick { stroke: #8a6a4a; stroke-width: 3; stroke-linecap: round; }
+.torch-cup { fill: #5c4630; }
+.torch-flame { transform-origin: 0 -6px; transition: transform .5s ease, opacity .5s ease; animation: flicker 1.3s ease-in-out infinite alternate; }
+.torch.dark .torch-flame { transform: scale(0); opacity: 0; animation: none; }
+.flame-outer { fill: #f59e0b; }
+.flame-inner { fill: #fde68a; }
+.fire-log { stroke: #8a6a4a; stroke-width: 7; stroke-linecap: round; }
+.fire-glow { fill: rgba(245, 158, 11, .16); }
+.fire-flame { transform-origin: 0 24px; animation: flicker 1.6s ease-in-out infinite alternate; transition: transform .6s ease; }
+.fire.big .fire-flame { transform: scale(1.25); }
+@keyframes flicker { from { transform: scale(1, 1); } 50% { transform: scale(.94, 1.06); } to { transform: scale(1.04, .96); } }
+.fire.big .fire-flame { animation: none; }
+.circle-caption { margin: 0; min-height: 3.2em; text-align: center; font-size: 15px; color: var(--ink); text-wrap: balance; }
+.circle-caption b { font-weight: 700; }
+.circle-controls { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.circle-dots { display: flex; gap: 8px; align-items: center; }
+.dot { width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 2px solid var(--border-strong); background: var(--surface); cursor: pointer; }
+.dot.past { background: var(--accent); border-color: var(--accent); opacity: .45; }
+.dot.on { background: var(--accent); border-color: var(--accent); transform: scale(1.25); }
+.dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* ---------- cards, sections */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
 .card-pad { padding: 18px 20px; }
@@ -316,6 +364,13 @@ h3 { font-size: 15px; font-weight: 700; margin: 0 0 3px; }
   .bench-table .mdl .al { flex-basis: 100%; padding-left: 17px; font-size: 12px; }
   .season-body { padding: 14px; }
   .card-pad, .tl, .run-card { padding: 16px; }
+}
+@media (max-width: 640px) {
+  .circle { padding: 12px 8px 14px; }
+  /* the drawing shrinks to about half size on a phone, so its text is set larger */
+  .seat-name { font-size: 21px; }
+  .seat-alias { font-size: 16px; }
+  .circle-caption { font-size: 15px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

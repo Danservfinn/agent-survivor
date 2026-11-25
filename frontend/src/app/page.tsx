@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { SeasonCircle } from "./season-circle";
 import { ScoreRow, ScoreTable, duration, friendlyDate, ordinal, orgColor, usd } from "./score-table";
 
 /** The parts of /api/live-season/report the console shows. */
@@ -362,7 +363,8 @@ export default function Benchmark() {
   return (
     <main>
       <header className="hero">
-        <div className="wrap">
+        <div className={report ? "wrap hero-grid" : "wrap"}>
+          <div className="hero-text">
           <p className="kicker">LLM Survivor</p>
           <h1>AI models play Survivor against each other.</h1>
           <p className="lead">
@@ -397,6 +399,19 @@ export default function Benchmark() {
               Start a new season
             </a>
           </div>
+          </div>
+          {report && (
+            <SeasonCircle
+              title={`Last season, replayed${report.season.date ? ` · ${friendlyDate(report.season.season_id)}` : ""}`}
+              players={[...report.models]
+                .sort((a, b) => a.agent_id.localeCompare(b.agent_id))
+                .map((m) => ({ id: m.agent_id, model: m.model, modelId: m.model_id, alias: m.alias }))}
+              eliminations={report.rounds
+                .filter((r) => r.eliminated_id)
+                .map((r) => ({ round: r.round, id: r.eliminated_id as string }))}
+              winnerId={report.finale?.winner_id ?? null}
+            />
+          )}
         </div>
       </header>
 
@@ -525,8 +540,6 @@ export default function Benchmark() {
                   </div>
                 </div>
               )}
-
-              {report && <EliminationOrder report={report} />}
 
               {latest?.rows && (
                 <details className="more">
@@ -662,37 +675,6 @@ function Podium({ report }: { report: ReportData }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function EliminationOrder({ report }: { report: ReportData }) {
-  const out = report.rounds.filter((r) => r.eliminated_id);
-  if (!out.length) return null;
-  const name = (id: string | null) => (id ? report.names[id] ?? id : "–");
-  return (
-    <div className="group">
-      <h3 className="group-h">Who was voted out, in order</h3>
-      <div className="card tl">
-        <div className="tl-scroll">
-          <div className="tl-track">
-            {out.map((r) => (
-              <div key={r.round} className="tl-stop">
-                <div className="r">Round {r.round}</div>
-                <div className="pt" />
-                <div className="who">{name(r.eliminated_id)}</div>
-              </div>
-            ))}
-            {report.finale?.winner_id && (
-              <div className="tl-stop end">
-                <div className="r">Winner</div>
-                <div className="pt" />
-                <div className="who">{name(report.finale.winner_id)}</div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
