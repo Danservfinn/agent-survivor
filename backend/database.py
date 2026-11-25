@@ -596,7 +596,7 @@ def _with_aliases(roster: list[dict[str, Any]], seed_value: int) -> list[dict[st
     return out
 
 
-def _shuffled_roster(roster_preset: str | None) -> list[dict[str, Any]]:
+def _shuffled_roster(roster_preset: str | None, agents: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Roster with seed-shuffled seat assignment.
 
     The season seed deterministically permutes seat order and reassigns
@@ -605,7 +605,8 @@ def _shuffled_roster(roster_preset: str | None) -> list[dict[str, Any]]:
     shuffle fixed roster position could systematically influence outcomes.
     Same seed -> same permutation; different seeds -> different seating.
     """
-    roster = agents_for_roster(roster_preset)
+    # a paid entry passes its own seat list (model_rosters.entry_agents)
+    roster = agents if agents is not None else agents_for_roster(roster_preset)
     seed_value = _season_seed_value()
     if not seed_value:
         return _with_aliases(roster, seed_value)
@@ -623,6 +624,7 @@ def seed_demo(
     reset: bool = False,
     path: Path | str | None = None,
     roster_preset: str | None = None,
+    agents: list[dict[str, Any]] | None = None,
 ) -> None:
     init_database(reset=reset, path=path)
     conn = get_db_connection(path)
@@ -693,7 +695,7 @@ def seed_demo(
                 :inject_canary, :canary_target_name
             )
             """,
-            _shuffled_roster(roster_preset),
+            _shuffled_roster(roster_preset, agents),
         )
         conn.commit()
     finally:

@@ -94,6 +94,27 @@ def _save_cache(table: dict[str, dict[str, float]]) -> None:
 _ACTIVE_TABLE: dict[str, dict[str, Any]] = {}
 
 
+# Routers (openrouter/auto, typesafe/jev-router, ...) list their price as -1:
+# it depends on the model they pick for each request. Read as a price, -1 per
+# token made every estimate hugely negative, which switched cost caps off.
+# They are priced at a frontier-flagship rate instead and marked variable.
+VARIABLE_PRICE_PER_M = (15.0, 75.0)
+
+
+def _sanitize(table: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
+    clean = {}
+    for model_id, entry in table.items():
+        if entry.get("prompt_per_m", 0) < 0 or entry.get("completion_per_m", 0) < 0:
+            entry = {
+                **entry,
+                "prompt_per_m": VARIABLE_PRICE_PER_M[0],
+                "completion_per_m": VARIABLE_PRICE_PER_M[1],
+                "variable": True,
+            }
+        clean[model_id] = entry
+    return clean
+
+
 def get_pricing_table(refresh: bool = False) -> dict[str, dict[str, float]]:
     table = _load_cache() if not refresh else None
     if table is None:
@@ -105,6 +126,7 @@ def get_pricing_table(refresh: bool = False) -> dict[str, dict[str, float]]:
             table = None
     if table is None:
         table = {k: {"prompt_per_m": v[0], "completion_per_m": v[1]} for k, v in FALLBACK_PRICING.items()}
+    table = _sanitize(table)
     _ACTIVE_TABLE.clear()
     _ACTIVE_TABLE.update(table)
     return table
@@ -182,3 +204,131 @@ def estimate_step_cost_usd(
         estimate_call_cost_usd(m, input_tokens=input_tokens, output_tokens=output_tokens, table=table)
         for m in model_ids
     )
+
+
+# ---------------------------------------------------------------- paid entries
+# Calls per seat in a season, by kind: the mean of a simulated nine-seat,
+# seven-round season with every mechanic on (measured 2026-11-25). A seat that
+# reaches the finale made about 1.55 times the mean; an entry is priced as if
+# it does. The host made 39 calls.
+SEASON_CALLS_PER_SEAT = {
+    "conversation": 15.7 + 15.3 + 4.3 + 4.3 + 0.9,  # speeches, talk lines, whispers, talk picks, gift/immunity
+    "vote": 7.1,
+    "jury_vote": 0.7,
+    "finale_pitch": 0.3,
+    "challenge": 2.3,
+    "confessional": 12.2,  # private writing: plans, notebooks, picks, bids
+}
+FINALIST_CALL_FACTOR = 1.55
+HOST_CALLS_PER_SEASON = 39
+
+
+def _profile_seat_usd(model_id: str, table: dict[str, dict[str, float]], factor: float = 1.0) -> float:
+    return factor * sum(
+        estimate_step_cost_usd([model_id], kind, table=table) * calls for kind, calls in SEASON_CALLS_PER_SEAT.items()
+    )
+
+
+def _recorded_usage(seasons_dir: Path) -> tuple[str, dict[str, dict[str, float]], dict[str, float]] | None:
+    """Token use per seat and for the host, from the newest finished lab_mix
+    house season that recorded its prompts: (season id, per-player usage,
+    host usage). Tokens are estimated from text (4 characters a token) plus
+    the hidden reasoning estimate per call, as the bill counts reasoning."""
+    import gzip
+
+    candidates = sorted(seasons_dir.glob("*-lab_mix_openrouter"), reverse=True) if seasons_dir.exists() else []
+    for season in candidates:
+        log = next((p for p in (season / "prompts.jsonl.gz", season / "prompts.jsonl") if p.exists()), None)
+        card = season / "scorecard.json"
+        if log is None or not card.exists():
+            continue
+        try:
+            if not json.loads(card.read_text()).get("finished"):
+                continue
+            opener = gzip.open if log.suffix == ".gz" else open
+            players: dict[str, dict[str, float]] = {}
+            host = {"calls": 0.0, "in": 0.0, "out": 0.0}
+            with opener(log, "rt", encoding="utf-8") as handle:
+                for line in handle:
+                    entry = json.loads(line)
+                    chars_in = sum(len(str(m.get("content") or "")) for m in entry.get("messages") or [])
+                    chars_out = len(json.dumps(entry.get("reply"))) if entry.get("reply") is not None else 0
+                    bucket = players.setdefault(entry["player"], {"calls": 0.0, "in": 0.0, "out": 0.0}) if entry.get("player") else host
+                    bucket["calls"] += 1
+                    bucket["in"] += chars_in / 4
+                    bucket["out"] += chars_out / 4 + ESTIMATED_REASONING_TOKENS
+        except (OSError, ValueError, KeyError):
+            continue
+        if players:
+            return season.name, players, host
+    return None
+
+
+def estimate_entry_season_cost(
+    model_id: str, roster: str = "lab_mix_openrouter", *, seasons_dir: Path | None = None
+) -> dict[str, Any]:
+    """What a season with a paid entry would cost us, in billed dollars.
+
+    house_usd: the eight house seats the entry leaves in place, plus the host.
+    entry_usd: the entry's seat, as if it plays to the finale.
+    basis "recorded" rests on the newest finished house season's recorded
+    prompts (season_id names it); "estimated" on the measured call profile.
+    entry_priced False: the model is not in OpenRouter's catalog, so refuse it.
+    """
+    from .model_rosters import LAB_MIX_OPENROUTER_MODELS
+    from .openrouter_client import _host_model_id
+    from .llm_config import get_llm_settings
+
+    if roster != "lab_mix_openrouter":
+        raise ValueError("entries play the lab_mix_openrouter roster")
+    table = get_pricing_table()
+    entry_priced = model_id in table or model_id.endswith(FREE_SUFFIX)
+    house = [m["model_id"] for m in LAB_MIX_OPENROUTER_MODELS]
+    lab = model_id.split("/", 1)[0]
+    same_lab = [m for m in house if m.split("/", 1)[0] == lab]
+    # the seat the entry takes: its own lab's, else (seed-chosen, unknown yet)
+    # the cheapest house seat, so the house share is never underestimated
+    if same_lab:
+        replaced = same_lab[0]
+    else:
+        replaced = min(house, key=lambda m: _profile_seat_usd(m, table))
+    remaining = list(house)
+    remaining.remove(replaced)
+    host_model = _host_model_id(get_llm_settings())
+
+    def price(model: str, tokens_in: float, tokens_out: float) -> float:
+        return BILL_FACTOR * estimate_call_cost_usd(model, input_tokens=int(tokens_in), output_tokens=int(tokens_out), table=table)
+
+    if seasons_dir is None:
+        seasons_dir = Path(__file__).resolve().parent.parent / "artifacts" / "seasons"
+    recorded = _recorded_usage(seasons_dir)
+    if recorded is not None:
+        season_id, players, host_use = recorded
+        seats = list(players.values())
+        mean = {k: sum(s[k] for s in seats) / len(seats) for k in ("calls", "in", "out")}
+        finalist = max(seats, key=lambda s: s["calls"])
+        house_usd = sum(price(m, mean["in"], mean["out"]) for m in remaining) + price(host_model, host_use["in"], host_use["out"])
+        entry_usd = price(model_id, finalist["in"], finalist["out"])
+        calls_per_seat = round(mean["calls"])
+        basis = {"basis": "recorded", "season_id": season_id}
+    else:
+        host_usd = BILL_FACTOR * HOST_CALLS_PER_SEASON * estimate_call_cost_usd(
+            host_model, input_tokens=TOKEN_BUDGETS["host"][0], output_tokens=TOKEN_BUDGETS["host"][1], table=table
+        )
+        house_usd = sum(_profile_seat_usd(m, table) for m in remaining) + host_usd
+        entry_usd = _profile_seat_usd(model_id, table, FINALIST_CALL_FACTOR)
+        calls_per_seat = round(sum(SEASON_CALLS_PER_SEAT.values()))
+        basis = {"basis": "estimated", "season_id": None}
+    return {
+        "model_id": model_id,
+        "entry_priced": entry_priced,
+        # a router's price depends on the model it picks; priced at VARIABLE_PRICE_PER_M
+        "variable_price": bool((table.get(model_id) or {}).get("variable")),
+        "replaced_model_id": replaced,
+        "replaced_because": "same lab" if same_lab else "cheapest seat (the real seat is chosen by the season seed)",
+        "house_usd": round(house_usd, 2),
+        "entry_usd": round(entry_usd, 2) if entry_priced else None,
+        "total_usd": round(house_usd + entry_usd, 2) if entry_priced else None,
+        "calls_per_seat": calls_per_seat,
+        **basis,
+    }

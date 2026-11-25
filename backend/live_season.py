@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from typing import Any
 from . import database, prompt_log, rules_changelog
 from .benchmark_scoring import score_season
 from .database import seed_demo
+from .model_rosters import EntryError, entry_agents, validate_entry
 from .demo_harness import _run_lock as _shared_run_lock
 from .llm_config import PROVIDER_OPENROUTER, live_llm_provider, should_use_live_llm
 from .turn_controller import FIRST_LEVEL_BY_ROSTER, auto_run_to_end
@@ -89,16 +91,48 @@ def _write_season_report(season_dir: Path) -> None:
         print(f"season report failed for {season_dir.name}: {exc}")
 
 
+def _entry_record(db_path: Path, record: dict[str, Any], season_seed: int) -> dict[str, Any]:
+    """entry.json: who the entry is and which seat it took, with the agent id
+    it got after seating (seats are shuffled by the seed)."""
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute(
+            "SELECT agent_id, pseudonym FROM Agents WHERE model_id = ? AND display_name = ?",
+            (record["model_id"], record["name"]),
+        ).fetchone()
+    finally:
+        conn.close()
+    return {**record, "agent_id": row[0] if row else None, "alias": row[1] if row else None, "season_seed": season_seed, "maker": "Community"}
+
+
 def run_live_season(
     *,
     roster: str = "frontier_live_8",
     season_seed: int | None = None,
     max_cost_cents: float | None = None,
     max_live_calls: int | None = None,
+    entry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run one full live season. Operator-only; never call from public routes."""
+    """Run one full live season. Operator-only; never call from public routes.
+
+    entry: a paid entry, {"model_id", "name", "entry_id"}: the buyer's
+    OpenRouter model takes one lab_mix seat (model_rosters.entry_agents).
+    The season folder ends in -lab_mix_entry and holds entry.json (no secrets).
+    """
     if roster not in ALLOWED_ROSTERS:
         return {"ok": False, "error": f"roster must be one of {ALLOWED_ROSTERS}"}
+    if entry is not None:
+        if roster != "lab_mix_openrouter":
+            return {"ok": False, "error": "an entry plays the lab_mix_openrouter roster"}
+        try:
+            validate_entry(entry)
+        except EntryError as exc:
+            return {"ok": False, "error": f"entry: {exc}"}
+        if season_seed is None:
+            # the seat an entry takes is chosen by the seed, so fix one now
+            season_seed = secrets.randbelow(2**31 - 1) + 1
 
     acquired = _run_lock.acquire(blocking=False)
     if not acquired:
@@ -119,7 +153,7 @@ def run_live_season(
             }
 
         season_id = time.strftime("%Y%m%d-%H%M%S")
-        season_dir = SEASONS_DIR / f"{season_id}-{roster}"
+        season_dir = SEASONS_DIR / f"{season_id}-{'lab_mix_entry' if entry is not None else roster}"
         season_dir.mkdir(parents=True, exist_ok=True)
         db_path = season_dir / "season.db"
 
@@ -130,7 +164,14 @@ def run_live_season(
             os.environ["SURVIVOR_FIRST_LADDER_LEVEL"] = str(FIRST_LEVEL_BY_ROSTER[roster])
 
         database.DATABASE_PATH = db_path
-        seed_demo(reset=True, path=db_path, roster_preset=roster)
+        entry_record = None
+        if entry is not None:
+            agents, entry_record = entry_agents(entry, season_seed)
+            seed_demo(reset=True, path=db_path, roster_preset=roster, agents=agents)
+            entry_record = _entry_record(db_path, entry_record, season_seed)
+            (season_dir / "entry.json").write_text(json.dumps(entry_record, indent=2))
+        else:
+            seed_demo(reset=True, path=db_path, roster_preset=roster)
 
         started = time.monotonic()
         # every model call's prompt and reply (never its private "think") goes
@@ -167,6 +208,8 @@ def run_live_season(
             }
         )
         scorecard["report_url"] = f"/report/{season_dir.name}"
+        if entry_record is not None:
+            scorecard["entry"] = entry_record
         if scorecard["finished"]:
             # judges score each player's strategy for the report; a failure here
             # never fails the season

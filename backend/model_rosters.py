@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+import re
 from copy import deepcopy
 from typing import Any
 
@@ -272,3 +274,59 @@ def _archetype_for_model(display_name: str) -> str:
     if "Local" in display_name:
         return "local strategist"
     return "lean social player"
+
+
+# ---------------------------------------------------------------- paid entries
+# A buyer picks any OpenRouter model to play the lab_mix roster. The entry takes
+# one lab's seat: the same lab's seat if that lab is in the roster (so no season
+# has two models from one lab), else a seat chosen by the season seed.
+ENTRY_NAME_MAX = 20
+_ENTRY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .'_-]*$")
+
+
+class EntryError(ValueError):
+    """An entry that cannot play: bad name or model id."""
+
+
+def _house_names() -> set[str]:
+    names = set()
+    for models in (LAB_MIX_OPENROUTER_MODELS, CHEAP_RECENT_OPENROUTER_MODELS, FREE_OPENROUTER_MODELS):
+        names |= {str(m.get("display_name", "")).strip().lower() for m in models}
+    return names
+
+
+def validate_entry(entry: dict[str, Any]) -> dict[str, str]:
+    """The entry's name and model id, checked: a name of at most 20 plain
+    characters that is neither a player alias nor a house model's name, and an
+    OpenRouter model id of the form lab/model."""
+    from .database import PLAYER_ALIASES
+
+    name = str(entry.get("name") or "").strip()
+    model_id = str(entry.get("model_id") or "").strip()
+    if not name or len(name) > ENTRY_NAME_MAX or not _ENTRY_NAME.match(name):
+        raise EntryError(f"name must be 1-{ENTRY_NAME_MAX} letters, digits, spaces or . ' _ -")
+    if name.lower() in {alias.lower() for alias in PLAYER_ALIASES} or name.lower() in _house_names():
+        raise EntryError("name is taken by a player alias or a house model")
+    if not re.match(r"^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:-]*$", model_id):
+        raise EntryError("model_id must be an OpenRouter id such as lab/model")
+    return {"name": name, "model_id": model_id, "entry_id": str(entry.get("entry_id") or "").strip()}
+
+
+def entry_agents(entry: dict[str, Any], season_seed: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The lab_mix seats with the entry in one of them, and which seat it took."""
+    checked = validate_entry(entry)
+    models = deepcopy(LAB_MIX_OPENROUTER_MODELS)
+    lab = checked["model_id"].split("/", 1)[0]
+    same_lab = [index for index, model in enumerate(models) if model["model_id"].split("/", 1)[0] == lab]
+    if same_lab:
+        index, reason = same_lab[0], "same lab"
+    else:
+        index, reason = random.Random(f"entry-seat:{season_seed}").randrange(len(models)), "seed"
+    replaced = models[index]
+    models[index] = {"model_id": checked["model_id"], "display_name": checked["name"], "status": "entry"}
+    return _agents_for_models(models), {
+        **checked,
+        "replaced_model_id": replaced["model_id"],
+        "replaced_display_name": replaced["display_name"],
+        "replaced_because": reason,
+    }
