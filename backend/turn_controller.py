@@ -3856,10 +3856,10 @@ def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
             f"{jury_standard()} Finalist records: {_dossiers_text(conn, finalist_rows)}"
         )
         if attempt > 0:
+            ballot = _target_roster_line(finalist_rows)
             scene = (
-                f"Your previous jury vote response was invalid (missing, illegal target, or "
-                f"unparseable JSON). The ONLY legal target_ids are: "
-                f"{_target_roster_line(finalist_rows)}. Respond with strict JSON whose "
+                f"{_why_invalid(action, last_error, ballot)} Only the finalists are on the ballot; jurors are "
+                f"not. The ONLY legal target_ids are: {ballot}. Respond with strict JSON whose "
                 "target_id is exactly one of those finalist ids. This vote decides the "
                 "winner of the entire competition."
             )
@@ -4939,7 +4939,7 @@ def _resolve_revote_decision(
         )
         if attempt > 0:
             scene = (
-                f"Your previous response was invalid. The ONLY legal target_ids are: "
+                f"{_why_invalid(action, last_error, roster_line)} The ONLY legal target_ids are: "
                 f"{roster_line}.{self_ban} Respond with strict JSON whose target_id is "
                 "exactly one of those ids. Any other value, including your own id, "
                 "is an illegal vote."
@@ -5301,6 +5301,17 @@ def _mark_alliance_betrayal(conn, round_number: int, voter_id: str, target_id: s
         )
 
 
+def _why_invalid(action: AgentAction | None, last_error: str | None, ballot: str) -> str:
+    """Say exactly what was wrong with the last reply, for the retry."""
+    if action is not None and action.rejected_target:
+        return f'You answered "{action.rejected_target}", who is not on the ballot.'
+    if action is not None:
+        return "Your reply had no target_id."
+    if last_error:
+        return "Your reply could not be read as one JSON object."
+    return "Your reply was missing."
+
+
 def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
     round_number = conn.execute("SELECT current_round FROM GameState WHERE season_id = 1").fetchone()["current_round"]
     fallback_target = _fallback_vote_target(conn, voter_id)
@@ -5334,8 +5345,7 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
             if legal_line is None:
                 legal_line = _target_roster_line(_eligible_targets(conn, voter_id))
             scene = (
-                f"Your previous vote response was invalid (missing, illegal target, or "
-                f"unparseable JSON). The ONLY legal target_ids are: {legal_line}. "
+                f"{_why_invalid(action, last_error, legal_line)} The ONLY legal target_ids are: {legal_line}. "
                 "Respond with strict JSON whose target_id is exactly one of those ids. "
                 "Choose one now and explain why."
             )

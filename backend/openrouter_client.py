@@ -4,6 +4,7 @@ import json
 import os
 import re
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -96,6 +97,9 @@ class AgentAction:
     inner_thought: str
     model_id: str
     target_id: str | None = None
+    # what the model wrote as its target when that was not a legal choice
+    # (a fellow juror, itself, an immune player); used to say what was wrong on a retry
+    rejected_target: str | None = None
     move_type: str | None = None
     intended_effect: str | None = None
     confidence: float | None = None
@@ -698,6 +702,7 @@ def _agent_prompt_v3(
     target_lines: str,
     response_kind: str,
     strategic_priorities: str,
+    allowed_targets: list[dict[str, Any]] | None = None,
 ) -> str:
     """Facts first, a strategist's checklist, private thinking before the
     decision, and only the reply fields the step needs."""
@@ -706,7 +711,20 @@ def _agent_prompt_v3(
     told = context.pop("what_others_told_you", None)
     fields = [("think", "your private reasoning, up to 150 words; never shown to other players or kept in the game record")]
     fields.append(("summary", "one private sentence: what you decided and why"))
-    fields += V3_REPLY_FIELDS.get(response_kind, [("target_id", "an allowed target id if your action names one, otherwise null")])
+    step_fields = V3_REPLY_FIELDS.get(response_kind, [("target_id", "an allowed target id if your action names one, otherwise null")])
+    if response_kind in {"vote", "jury_vote"} and allowed_targets:
+        # Small models named fellow jurors, themselves or immune players when
+        # the ballot was only listed further up (2026-11-24 probes); put it in
+        # the field itself.
+        ballot = ", ".join(f"{t['agent_id']} ({t['pseudonym']})" for t in allowed_targets)
+        who = "finalist" if response_kind == "jury_vote" else "player"
+        step_fields = [
+            ("target_id", f"the {who} you vote for: exactly one of {ballot}. Nobody else is on the ballot.")
+            if name == "target_id"
+            else (name, description)
+            for name, description in step_fields
+        ]
+    fields += step_fields
     fields += [("confidence", "0.0-1.0"), ("dialogue", "what you say aloud now, first person, written after you have decided")]
     reply = "{\n" + ",\n".join(f'  "{name}": "{description}"' for name, description in fields) + "\n}"
     return f"""
@@ -805,6 +823,7 @@ def _request_agent_action_with_model(
             target_lines=target_lines,
             response_kind=response_kind,
             strategic_priorities=strategic_priorities,
+            allowed_targets=allowed_targets,
         )
         system = (
             "Return only one valid JSON object with the fields in the order given. Think privately in the "
@@ -917,6 +936,7 @@ def _request_agent_action_with_model(
         inner_thought=strategic_summary,
         model_id=model_id,
         target_id=target_id,
+        rejected_target=_rejected_target(data.get("target_id"), target_id),
         move_type=move_type,
         intended_effect=intended_effect,
         confidence=confidence,
@@ -944,6 +964,13 @@ def _request_agent_action_with_model(
     )
 
 
+def _rejected_target(raw: Any, resolved: str | None) -> str | None:
+    if resolved or raw is None:
+        return None
+    text = str(raw).strip()
+    return text[:60] if text and text.lower() not in {"null", "none"} else None
+
+
 def _resolve_target_id(raw: Any, allowed_targets: list[dict[str, Any]]) -> str | None:
     """Resolve a model's vote to a legal agent id.
 
@@ -955,7 +982,7 @@ def _resolve_target_id(raw: Any, allowed_targets: list[dict[str, Any]]) -> str |
     if raw is None:
         return None
     raw_str = str(raw).strip()
-    if not raw_str:
+    if not raw_str or raw_str.lower() in {"null", "none"}:
         return None
     lowered = raw_str.lower()
     for target in allowed_targets:
@@ -1075,6 +1102,7 @@ Rules:
                 inner_thought=strategic_summary,
                 model_id=model_id,
                 target_id=target_id,
+                rejected_target=_rejected_target(data.get("target_id"), target_id),
                 move_type=move_type,
                 intended_effect=intended_effect,
                 confidence=confidence,
@@ -1452,6 +1480,28 @@ def _normalize_actor_first_person_text(text: str, actor: dict[str, Any], *, fall
     return text
 
 
+# Models seen to ignore the reasoning budget in this process (see _post_chat_completion).
+_RUNAWAY_REASONING_MODELS: set[str] = set()
+_RUNAWAY_LOCK = threading.Lock()
+
+
+_CONTEXT_LIMIT = re.compile(r"maximum context length is (\d+) tokens and your request has (\d+) input tokens")
+
+
+def _room_left_in_context(message: str) -> int | None:
+    """Tokens left for the reply, from a provider's context-length error."""
+    match = _CONTEXT_LIMIT.search(message)
+    if not match:
+        return None
+    return int(match.group(1)) - int(match.group(2)) - 32
+
+
+def _without_hidden_reasoning(outbound: dict[str, Any]) -> dict[str, Any]:
+    retry = dict(outbound)
+    retry["reasoning"] = {"enabled": False}
+    return retry
+
+
 def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[str, Any]:
     settings = get_llm_settings()
     if settings.provider == PROVIDER_OLLAMA:
@@ -1498,9 +1548,9 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
     # and it is not the player's fault, so the season stops as interrupted
     unreachable_codes = {401, 403, 404}
 
-    def _post_with_retries(outbound: dict[str, Any]) -> dict[str, Any]:
+    def _post_with_retries(outbound: dict[str, Any], *, may_drop_reasoning: bool = True) -> dict[str, Any]:
         last_exc: Exception | None = None
-        dropped_reasoning = False
+        dropped_reasoning = not may_drop_reasoning
         for attempt in range(4):
             try:
                 return _post(outbound)
@@ -1510,6 +1560,14 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
                 code = int(code_match.group(1)) if code_match else None
                 if code in unreachable_codes or (code == 402 and "in_flight" not in msg):
                     raise SeasonInterrupted(str(outbound.get("model")), msg[:300])
+                room = _room_left_in_context(msg) if code == 400 else None
+                if room is not None and room < int(outbound.get("max_tokens") or 0) and room >= 256:
+                    # the reply budget does not fit the model's context window
+                    # (Reka Edge: 16,384 tokens, a 12,675-token jury prompt);
+                    # ask for what fits instead of failing the call
+                    print(f"{outbound.get('model')}: reply budget {outbound.get('max_tokens')} does not fit; using {room}")
+                    outbound = dict(outbound, max_tokens=room)
+                    continue
                 if code == 400 and "reasoning" in msg.lower() and "reasoning" in outbound and not dropped_reasoning:
                     # this endpoint rejects the reasoning parameter itself; let
                     # the provider apply its own default instead of failing the season
@@ -1530,31 +1588,60 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
         raise ProviderOutage(str(last_exc or "OpenRouter request failed after retries")[:300])
 
     def _empty(response: dict[str, Any]) -> bool:
+        """No usable text: empty, or cut off at the token limit. A cut-off reply
+        is half a JSON object (Ling 3.0 Flash stopped mid-field after 4,400
+        reasoning tokens; a notebook came back as an unterminated string)."""
         choices = response.get("choices") or [{}]
         content = (choices[0].get("message") or {}).get("content")
         finish = choices[0].get("finish_reason")
-        return (content is None or (isinstance(content, str) and not content.strip())) and finish in (
-            "length",
-            "stop",
-            None,
-        )
+        if finish == "length":
+            return True
+        return (content is None or (isinstance(content, str) and not content.strip())) and finish in ("stop", None)
 
     held_s = 0.0
     wait_s = 5.0
     while True:
         try:
-            response_payload = _post_with_retries(outbound_payload)
+            model = str(outbound_payload.get("model"))
+
+            def _no_hidden_reasoning() -> dict[str, Any] | None:
+                """None when the model makes reasoning mandatory (HTTP 400)."""
+                try:
+                    return _post_with_retries(_without_hidden_reasoning(outbound_payload), may_drop_reasoning=False)
+                except RuntimeError as exc:
+                    if "HTTP 400" in str(exc) and "reasoning" in str(exc).lower():
+                        return None
+                    raise
+
+            response_payload = _no_hidden_reasoning() if model in _RUNAWAY_REASONING_MODELS else None
+            if response_payload is None:
+                response_payload = _post_with_retries(outbound_payload)
             if _empty(response_payload):
-                # The model spent the whole budget on reasoning and returned no visible
-                # text. Retry once with double the budget. Reasoning stays on: some
-                # models make it mandatory and reject a request that disables it.
+                # The model spent the whole budget on hidden reasoning and gave no
+                # visible text. First retry: double the room, reasoning still on.
+                # That is enough for a model that just thinks long (DeepSeek V4
+                # Flash on a notebook, 2026-11-24 probe).
                 retry = dict(outbound_payload)
                 retry["max_tokens"] = int(outbound_payload["max_tokens"]) * 2
-                # Still empty is the model's own answer, not an outage: on the
-                # 2026-11-24 test season one model went empty on every hard
-                # sudden-death prompt, and treating that as an outage stopped the
-                # whole season. The caller's parser turns it into a bad reply.
                 response_payload = _post_with_retries(retry)
+            if _empty(response_payload) and model not in _RUNAWAY_REASONING_MODELS:
+                # Some models ignore every reasoning budget (effort or max_tokens):
+                # Gemma 4 26B and Ling 3.0 Flash thought through 2,400 and 4,800
+                # tokens alike. Ask once more with hidden reasoning off; the
+                # reply's own "think" field is where it reasons then, as
+                # non-reasoning models always do. Remember the model for the run.
+                # A model that makes reasoning mandatory rejects this (HTTP 400)
+                # and keeps the empty reply.
+                retried = _no_hidden_reasoning()
+                if retried is not None and not _empty(retried):
+                    response_payload = retried
+                    with _RUNAWAY_LOCK:
+                        if model not in _RUNAWAY_REASONING_MODELS:
+                            _RUNAWAY_REASONING_MODELS.add(model)
+                            print(f"{model} ignores the reasoning budget; hidden reasoning off for this run")
+            # Still empty is the model's own answer, not an outage; the caller's
+            # parser turns it into a bad reply (2026-11-24: treating it as an
+            # outage stopped a whole season).
             return response_payload
         except ProviderOutage as outage:
             delay = max(wait_s, outage.retry_after)

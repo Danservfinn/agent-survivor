@@ -20,7 +20,7 @@ from backend.openrouter_client import AgentAction, InvalidModelReply
 ROUND = 1
 
 
-class ModelFailureTest(unittest.TestCase):
+class _Base(unittest.TestCase):
     def setUp(self) -> None:
         env = patch.dict(
             os.environ,
@@ -54,6 +54,8 @@ class ModelFailureTest(unittest.TestCase):
             item.start()
             self.addCleanup(item.stop)
 
+
+class ModelFailureTest(_Base):
     def test_an_unusable_talk_line_is_silence_and_the_talk_goes_on(self) -> None:
         a, b, *_ = self.players
 
@@ -144,3 +146,39 @@ class ModelFailureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BallotPromptTest(_Base):
+    def test_the_vote_field_lists_the_ballot_and_a_retry_says_what_was_wrong(self) -> None:
+        voter, *_ = self.players
+        scenes: list[str] = []
+        prompts: list[str] = []
+
+        def action(**kwargs):
+            scenes.append(kwargs["scene_context"])
+            if len(scenes) == 1:
+                return AgentAction(dialogue="x", inner_thought="", model_id="m", target_id=None, rejected_target="Holly")
+            return AgentAction(dialogue="x", inner_thought="", model_id="m", target_id=kwargs["allowed_targets"][0]["agent_id"])
+
+        self._live(action)
+        tc._resolve_vote_decision(self.conn, voter, f"vote_booth_{voter}")
+        self.assertIn('You answered "Holly", who is not on the ballot.', scenes[1])
+
+        import json as _json
+        from backend import openrouter_client
+
+        def fake_post(payload, api_key):
+            prompts.append(payload["messages"][1]["content"])
+            return {"choices": [{"message": {"content": _json.dumps({"think": "t", "summary": "s", "target_id": "Nobody Here", "confidence": 0.5, "dialogue": "d"})}, "finish_reason": "stop"}]}
+
+        actor = dict(self.conn.execute("SELECT * FROM Agents WHERE agent_id = ?", (voter,)).fetchone())
+        targets = [dict(r) for r in self.conn.execute("SELECT * FROM Agents WHERE agent_id != ? ORDER BY agent_id LIMIT 3", (voter,))]
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "k"}), patch.object(openrouter_client, "_post_chat_completion", side_effect=fake_post):
+            result = openrouter_client.request_agent_action(
+                actor=actor, step="jury_vote_x", scene_context="Vote.", allowed_targets=targets,
+                response_kind="jury_vote", episode_context={},
+            )
+        ballot = ", ".join(f"{t['agent_id']} ({t['pseudonym']})" for t in targets)
+        self.assertIn(f"the finalist you vote for: exactly one of {ballot}. Nobody else is on the ballot.", prompts[0])
+        self.assertIsNone(result.target_id)
+        self.assertEqual(result.rejected_target, "Nobody Here")
