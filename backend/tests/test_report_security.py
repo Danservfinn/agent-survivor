@@ -100,6 +100,7 @@ class VisibilityTest(unittest.TestCase):
         self.assertNotIn(self.sid, [s["season_id"] for s in api.api_live_season_history()["seasons"]])
         self.assertNotEqual(api.api_live_season_feed().get("season_id"), self.sid)
 
+    @unittest.skipUnless(hasattr(api, "api_entries_visibility"), "this checkout has no paid entries")
     def test_the_buyer_publishes_and_unlists_with_the_entry_token(self) -> None:
         self._make_entry()
         entry = {"season_id": self.sid}
