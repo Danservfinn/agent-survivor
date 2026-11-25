@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Avatar, Campfire, CirclePlayer, FIRE_CIRCLE, FIRE_FINALE, H, JURY_BOX, Point, Torch, W, seatLayout } from "./season-circle";
+import { Avatar, Campfire, CirclePlayer, FIRE_CIRCLE, FIRE_FINALE, H, JURY_BOX, Point, Torch, W, juryLines, seatLayout } from "./season-circle";
 import { orgColor } from "./score-table";
 
 /* ---------------------------------------------------------------- data */
@@ -344,6 +344,8 @@ export function SeasonStage({ report }: { report: StageReport }) {
     : players.map((p) => p.id).filter((id) => !elimOrder.includes(id));
   const layout = seatLayout(players, elimOrder, finalists);
   const at = (id: string): Point => (beat.finale ? layout.finale[id] : layout.circle[id]) ?? layout.circle[id];
+  const verdictLines =
+    beat.kind === "verdict" ? juryLines((beat.links ?? []).map((l) => ({ jurorId: l.from, finalistId: l.to })), layout.finale) : {};
   const jurors = new Set((report.finale?.jury ?? []).map((j) => j.juror_id));
   const nm = (id: string | null | undefined) => (id ? report.names[id] ?? id : "");
   const rounds = report.rounds.map((r) => r.round);
@@ -372,7 +374,8 @@ export function SeasonStage({ report }: { report: StageReport }) {
               const a = at(l.from);
               const b = at(l.to);
               if (!a || !b) return null;
-              return <LinkPath key={n} a={a} b={b} kind={l.kind} color={l.color} n={n} fromBox={beat.kind === "verdict"} />;
+              const exact = beat.kind === "verdict" ? verdictLines[l.from] : undefined;
+              return <LinkPath key={n} a={a} b={b} kind={l.kind} color={l.color} n={n} fromBox={beat.kind === "verdict"} exact={exact} />;
             })}
           </g>
 
@@ -534,6 +537,7 @@ function LinkPath({
   color,
   n,
   fromBox,
+  exact,
 }: {
   a: Point;
   b: Point;
@@ -541,13 +545,16 @@ function LinkPath({
   color?: string;
   n: number;
   fromBox: boolean;
+  // a jury vote's own start and end, so votes never share a line
+  exact?: { from: Point; to: Point };
 }) {
-  const start = fromBox ? { x: a.x, y: JURY_BOX.y + JURY_BOX.h } : a;
-  const dx = b.x - start.x;
-  const dy = b.y - start.y;
+  const start = exact ? exact.from : fromBox ? { x: a.x, y: JURY_BOX.y + JURY_BOX.h } : a;
+  const target = exact ? exact.to : b;
+  const dx = target.x - start.x;
+  const dy = target.y - start.y;
   const len = Math.hypot(dx, dy) || 1;
   // stop short of the avatar so the dot lands on its edge
-  const end = { x: b.x - (dx / len) * 42, y: b.y - (dy / len) * 42 };
+  const end = exact ? target : { x: b.x - (dx / len) * 42, y: b.y - (dy / len) * 42 };
   const from = { x: start.x + (dx / len) * (fromBox ? 0 : 36), y: start.y + (dy / len) * (fromBox ? 0 : 36) };
   const bend = kind === "vote" ? 26 : 0;
   const mid = { x: (from.x + end.x) / 2 - (dy / len) * bend, y: (from.y + end.y) / 2 + (dx / len) * bend };

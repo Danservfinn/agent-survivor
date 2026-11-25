@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { labMark } from "./lab-logos";
 import { orgColor } from "./score-table";
 
 export type CirclePlayer = {
@@ -128,6 +129,7 @@ export function SeasonCircle({
     finalists,
   );
   const pos = (id: string) => (finale ? finalePos[id] ?? circlePos[id] : circlePos[id]);
+  const voteLines = juryLines(juryVotes, finalePos);
   const fire = finale ? FIRE_FINALE : FIRE_CIRCLE;
 
   const left = players.length - Math.min(step, E);
@@ -185,17 +187,15 @@ export function SeasonCircle({
         {/* each juror's vote, drawn at the verdict */}
         <g className={`votes${verdict ? " on" : ""}`}>
           {juryVotes.map((v) => {
-            const a = finalePos[v.jurorId];
-            const b = finalePos[v.finalistId];
-            if (!a || !b) return null;
-            // from the foot of the jury box under the juror, so no line crosses a name
+            const line = voteLines[v.jurorId];
+            if (!line) return null;
             return (
               <line
                 key={v.jurorId}
-                x1={a.x}
-                y1={JURY_BOX.y + JURY_BOX.h}
-                x2={b.x}
-                y2={b.y - 44}
+                x1={line.from.x}
+                y1={line.from.y}
+                x2={line.to.x}
+                y2={line.to.y}
                 stroke={orgColor(byId[v.finalistId]?.modelId)}
                 className="vote-line"
               />
@@ -291,6 +291,43 @@ export function SeasonCircle({
 }
 
 /** Seat positions round the fire, and for the finale (jury box above, finalists by the fire). */
+/**
+ * One line per jury vote. Each line starts on the foot of the jury box under its
+ * juror (so no line crosses a name); jurors stacked in the same column start a
+ * little apart, and lines meeting the same finalist land a little apart, so six
+ * votes always show as six lines.
+ */
+export function juryLines(
+  votes: { jurorId: string; finalistId: string }[],
+  pos: Record<string, Point>,
+): Record<string, { from: Point; to: Point }> {
+  const lines: Record<string, { from: Point; to: Point }> = {};
+  const usable = votes.filter((v) => pos[v.jurorId] && pos[v.finalistId]);
+  const foot = JURY_BOX.y + JURY_BOX.h;
+  const columns = new Map<number, typeof usable>();
+  for (const v of usable) {
+    const key = Math.round(pos[v.jurorId].x);
+    columns.set(key, [...(columns.get(key) ?? []), v]);
+  }
+  const from: Record<string, Point> = {};
+  for (const [x, col] of columns) {
+    [...col]
+      .sort((a, b) => pos[a.jurorId].y - pos[b.jurorId].y)
+      .forEach((v, i) => (from[v.jurorId] = { x: x + (i - (col.length - 1) / 2) * 28, y: foot }));
+  }
+  const targets = new Map<string, typeof usable>();
+  for (const v of usable) targets.set(v.finalistId, [...(targets.get(v.finalistId) ?? []), v]);
+  for (const [id, group] of targets) {
+    const t = pos[id];
+    [...group]
+      .sort((a, b) => from[a.jurorId].x - from[b.jurorId].x)
+      .forEach((v, i) => {
+        lines[v.jurorId] = { from: from[v.jurorId], to: { x: t.x + (i - (group.length - 1) / 2) * 10, y: t.y - 44 } };
+      });
+  }
+  return lines;
+}
+
 export function seatLayout(
   players: CirclePlayer[],
   eliminatedInOrder: string[],
@@ -328,7 +365,45 @@ function hash(text: string): number {
 }
 
 /** A small robot in the maker's color, wearing its secret name on a leaf badge. */
+/** The alias badge: a leaf with the first letter of the player's secret name. */
+function AliasLeaf({ alias, at }: { alias: string; at: Point }) {
+  return (
+    <g transform={`translate(${at.x} ${at.y})`}>
+      <path d="M 0 -9 Q 9 -9 9 0 Q 9 9 0 9 Q -9 9 -9 0 Q -9 -9 0 -9 Z" className="av-leaf" />
+      <text y={3.5} className="av-leaf-t">
+        {(alias || "?").slice(0, 1).toUpperCase()}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * A player's picture. A house model shows its lab's logo in a white tile ringed
+ * in the lab's colour; a model with no logo on file, and any submitted agent,
+ * keeps the generated robot. `seed` is the model id (or the model name).
+ */
 export function Avatar({ seed, color, alias }: { seed: string; color: string; alias: string }) {
+  const mark = labMark(seed);
+  if (mark) {
+    return (
+      <g className="avatar avatar-lab">
+        <title>{mark.name}</title>
+        <circle r={27} className="lab-tile" stroke={color} />
+        <svg
+          x={-15}
+          y={-15}
+          width={30}
+          height={30}
+          viewBox="0 0 24 24"
+          className={mark.mono ? "lab-mark mono" : "lab-mark"}
+          aria-hidden="true"
+          // a vetted static file from lab-logos.tsx, never user input
+          dangerouslySetInnerHTML={{ __html: mark.markup }}
+        />
+        <AliasLeaf alias={alias} at={{ x: 21, y: 21 }} />
+      </g>
+    );
+  }
   const h = hash(seed);
   const head = h % 3;
   const eyes = (h >>> 3) % 3;
@@ -378,12 +453,7 @@ export function Avatar({ seed, color, alias }: { seed: string; color: string; al
       ) : (
         <line x1={-4} y1={2} x2={4} y2={2} className="av-mouth" />
       )}
-      <g transform="translate(13 29)">
-        <path d="M 0 -9 Q 9 -9 9 0 Q 9 9 0 9 Q -9 9 -9 0 Q -9 -9 0 -9 Z" className="av-leaf" />
-        <text y={3.5} className="av-leaf-t">
-          {(alias || "?").slice(0, 1).toUpperCase()}
-        </text>
-      </g>
+      <AliasLeaf alias={alias} at={{ x: 13, y: 29 }} />
     </g>
   );
 }

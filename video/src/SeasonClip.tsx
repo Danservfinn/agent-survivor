@@ -15,6 +15,7 @@ import {
   Point,
   Torch,
   W,
+  juryLines,
   seatLayout,
 } from "../../frontend/src/app/season-circle";
 import { friendlyDate, orgColor } from "../../frontend/src/app/score-table";
@@ -164,6 +165,8 @@ export const SeasonClip = ({ report, handle, site }: ClipProps) => {
   const speakerIdx = spoken.reduce((cur, _, n) => (t >= lineStart[n] ? n : cur), 0);
   const speaker = spoken.length ? spoken[speakerIdx].id : null;
 
+  const verdictLines =
+    beat?.kind === "verdict" ? juryLines((beat.links ?? []).map((l) => ({ jurorId: l.from, finalistId: l.to })), layout.finale) : {};
   const fire = { x: FIRE_CIRCLE.x + (FIRE_FINALE.x - FIRE_CIRCLE.x) * toFinale, y: FIRE_CIRCLE.y + (FIRE_FINALE.y - FIRE_CIRCLE.y) * toFinale };
   const appear = (delay: number) => interpolate(t, [delay, delay + 0.4 * fps], [0, 1], { ...clamp, easing: Easing.bezier(0.16, 1, 0.3, 1) });
   const leavingFade = interpolate(t, [0.3 * fps, 1.1 * fps], [1, 0.25], clamp);
@@ -215,11 +218,14 @@ export const SeasonClip = ({ report, handle, site }: ClipProps) => {
               const a = at(l.from);
               const b = at(l.to);
               if (!a || !b) return null;
-              const start = beat?.kind === "verdict" ? { x: a.x, y: JURY_BOX.y + JURY_BOX.h } : a;
-              const dx = b.x - start.x;
-              const dy = b.y - start.y;
+              // a jury vote has its own start and end, so six votes are six lines
+              const exact = beat?.kind === "verdict" ? verdictLines[l.from] : undefined;
+              const start = exact ? exact.from : a;
+              const target = exact ? exact.to : b;
+              const dx = target.x - start.x;
+              const dy = target.y - start.y;
               const L = Math.hypot(dx, dy) || 1;
-              const end = { x: b.x - (dx / L) * 42, y: b.y - (dy / L) * 42 };
+              const end = exact ? target : { x: b.x - (dx / L) * 42, y: b.y - (dy / L) * 42 };
               const from = beat?.kind === "verdict" ? start : { x: start.x + (dx / L) * 36, y: start.y + (dy / L) * 36 };
               const bend = l.kind === "vote" ? 26 : 0;
               const mid = { x: (from.x + end.x) / 2 - (dy / L) * bend, y: (from.y + end.y) / 2 + (dx / L) * bend };
@@ -412,6 +418,7 @@ function EndCard({ t, len, winner, reportUrl, handle }: { t: number; len: number
         <p className="clip-end-text">Every vote, every reason and every broken promise is in the full report.</p>
         {reportUrl && <p className="clip-end-url">{reportUrl}</p>}
         {handle && <p className="clip-end-follow">Follow {handle} for the next season</p>}
+        <p className="clip-end-note">Logos belong to their owners. LLM Survivor is not affiliated with any lab.</p>
       </div>
     </AbsoluteFill>
   );

@@ -41,4 +41,5 @@
 .clip-end-title { margin: 0 0 18px; font-size: 76px; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; }
 .clip-end-text { margin: 0 0 28px; font-size: 30px; color: var(--muted); line-height: 1.4; }
 .clip-end-url { margin: 0 0 18px; font-family: var(--mono); font-size: 26px; color: var(--accent); word-break: break-all; }
+.clip-end-note { margin: 22px 0 0; font-size: 17px; color: var(--faint); }
 .clip-end-follow { margin: 0; display: inline-block; background: var(--ink); color: #fff; border-radius: 999px; padding: 16px 32px; font-family: var(--mono); font-size: 26px; font-weight: 700; }

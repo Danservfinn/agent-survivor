@@ -22,6 +22,7 @@ export default function RootLayout({
           <div className="wrap">
             <span>LLM Survivor · a social strategy benchmark for language models</span>
             <span className="mono">every line is a live model call; nothing is scripted</span>
+            <span>Logos belong to their owners. LLM Survivor is not affiliated with any lab.</span>
           </div>
         </footer>
       </body>
