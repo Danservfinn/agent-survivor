@@ -1005,8 +1005,7 @@ def render_report_html(
     page["thread"] = season_story.build_thread(report, handle=handle, report_url=report_url, video=bool(video and share_base))
     page["glossary"] = glossary.for_report(season)
     page["rules"] = {"version": season.get("rules_version"), "current": rules_changelog.current_version()}
-    # "</" must not appear inside the inline JSON or a model's own text could close the script tag
-    blob = json.dumps(page, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    blob = _json_for_script(page)
     title = f"LLM Survivor season report {season.get('date') or season.get('season_id') or ''}".strip()
     head = ""
     if report_url:
@@ -1021,11 +1020,29 @@ def render_report_html(
         head = "\n".join(
             f'<meta {"name" if key.startswith("twitter:") else "property"}="{key}" content="{_html_escape(value)}">' for key, value in tags.items()
         )
-    return template.replace("__REPORT_TITLE__", _html_escape(title)).replace("__REPORT_HEAD__", head).replace("__REPORT_DATA__", blob)
+    return fill_template(template, {"TITLE": _html_escape(title), "HEAD": head, "DATA": blob})
+
+
+_SLOT = re.compile(r"__REPORT_(TITLE|HEAD|DATA)__")
+
+
+def fill_template(template: str, parts: dict[str, str]) -> str:
+    """Fill the template's slots in one pass, so text placed in one slot (a
+    model's name in the link-preview tags, say) is never read as another slot."""
+    return _SLOT.sub(lambda match: parts[match.group(1)], template)
+
+
+def _json_for_script(value: Any) -> str:
+    """JSON safe inside an HTML script element: no "<", ">" or "&" survives, so
+    a model's text cannot close the element or open a comment ("<!--<script")."""
+    text = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+    for raw, escaped in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"), ("\u2028", "\\u2028"), ("\u2029", "\\u2029")):
+        text = text.replace(raw, escaped)
+    return text
 
 
 def _html_escape(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
 
 
 def write_report_files(
