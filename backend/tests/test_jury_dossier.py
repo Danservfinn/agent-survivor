@@ -116,6 +116,7 @@ class JuryDossierTest(unittest.TestCase):
         ).fetchone()[0]
         self.assertIn("not counted", abstained)
 
+    @patch.dict(os.environ, {"SURVIVOR_JURY_RULE": "standard"})  # the strategic rule
     def test_jury_vote_prompt_carries_the_standard_and_every_dossier(self) -> None:
         seen: list[str] = []
 
@@ -161,8 +162,10 @@ class JuryDossierTest(unittest.TestCase):
             self.assertNotIn("clean record", text)
         # the verified record is still in front of the juror
         self.assertIn('"first_to_commit_to_the_elimination_in_rounds"', seen[0])
-        # default stays the strategic standard
-        self.assertIn("best strategic game", tc.jury_standard())
+        # own judgment is the default; the strategic standard is the switch
+        self.assertIn("by your own judgment", tc.jury_standard())
+        with patch.dict(os.environ, {"SURVIVOR_JURY_RULE": "standard"}):
+            self.assertIn("best strategic game", tc.jury_standard())
 
     def test_juror_questions_the_finalist_it_names(self) -> None:
         chosen = self.finalists[2]
