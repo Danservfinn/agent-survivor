@@ -815,6 +815,47 @@ def season_report_share_image(season_id: str, name: str) -> Response:
     return FileResponse(image, media_type=media_type, headers={"Cache-Control": ROOT_FILE_CACHE_CONTROL})
 
 
+# a finished season's raw data, linked from the Methodology page ("check it yourself")
+SEASON_DATA_FILES = {
+    "report.json": ("report.json", "application/json"),
+    "prompts.jsonl.gz": ("prompts.jsonl.gz", "application/gzip"),
+    "season.db": ("season.db", "application/vnd.sqlite3"),
+}
+_clean_files: dict[tuple[str, float], bool] = {}
+
+
+def _safe_to_publish(path: Path) -> bool:
+    """No key-shaped strings in the file (checked once per version of the file)."""
+    from .prompt_log import has_key_shapes
+
+    key = (str(path), path.stat().st_mtime)
+    if key not in _clean_files:
+        _clean_files[key] = not has_key_shapes(path)
+    return _clean_files[key]
+
+
+@app.api_route("/report/{season_id}/data/{name}", methods=["GET", "HEAD"], include_in_schema=False)
+def season_report_data(season_id: str, name: str) -> Response:
+    """Public: one data file of a finished season (report.json, prompts.jsonl.gz, season.db)."""
+    if name not in SEASON_DATA_FILES:
+        raise HTTPException(status_code=404, detail="Not Found")
+    season_dir = _report_season_dir(season_id)
+    try:
+        finished = bool(json.loads((season_dir / "scorecard.json").read_text()).get("finished"))
+    except (FileNotFoundError, ValueError):
+        finished = False
+    filename, media_type = SEASON_DATA_FILES[name]
+    path = season_dir / filename
+    if not finished or not path.is_file() or not _safe_to_publish(path):
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=f"llm-survivor-{season_dir.name}-{filename}",
+        headers={"Cache-Control": ROOT_FILE_CACHE_CONTROL},
+    )
+
+
 def _resolve_frontend_file(frontend_path: str) -> Path | None:
     if frontend_path.startswith(("api/", "media/")):
         return None

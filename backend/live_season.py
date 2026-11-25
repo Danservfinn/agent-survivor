@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import database, rules_changelog
+from . import database, prompt_log, rules_changelog
 from .benchmark_scoring import score_season
 from .database import seed_demo
 from .demo_harness import _run_lock as _shared_run_lock
@@ -133,12 +133,15 @@ def run_live_season(
         seed_demo(reset=True, path=db_path, roster_preset=roster)
 
         started = time.monotonic()
-        result = auto_run_to_end(
-            max_rounds=MAX_ROUNDS,
-            max_turns=MAX_TURNS,
-            max_live_calls=max_live_calls or MAX_LIVE_CALLS,
-            max_estimated_cost_cents=max_cost_cents if max_cost_cents is not None else MAX_COST_CENTS,
-        )
+        # every model call's prompt and reply (never its private "think") goes
+        # to prompts.jsonl.gz in the season folder, for the Methodology page
+        with prompt_log.recording(season_dir):
+            result = auto_run_to_end(
+                max_rounds=MAX_ROUNDS,
+                max_turns=MAX_TURNS,
+                max_live_calls=max_live_calls or MAX_LIVE_CALLS,
+                max_estimated_cost_cents=max_cost_cents if max_cost_cents is not None else MAX_COST_CENTS,
+            )
         elapsed = time.monotonic() - started
 
         scorecard = score_season(db_path)
