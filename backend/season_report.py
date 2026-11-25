@@ -634,6 +634,8 @@ def _takeaways(season: dict[str, Any], models: list[dict[str, Any]], finale: dic
         tied = len(ordered) > 1 and ordered[0][1] == max(n for _, n in ordered[1:])
         if tied:
             text = f"{winner['model']} won on the tiebreak after a {score} jury vote" + (f" against {others}." if others else ".")
+        elif not any(n for fid, n in ordered[1:]):
+            text = f"{winner['model']} won all {ordered[0][1]} jury votes" + (f" over {others}." if others else ".")
         else:
             text = f"{winner['model']} won the jury {score}" + (f" over {others}." if others else ".")
         cards.append({"label": "Winner", "text": text, "models": [winner["agent_id"]]})

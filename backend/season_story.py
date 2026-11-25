@@ -45,6 +45,16 @@ def _tally_text(tally: dict[str, int]) -> str:
     return "-".join(str(n) for n in sorted(tally.values(), reverse=True))
 
 
+def jury_phrase(tally: dict[str, int], winner_id: str) -> str:
+    """'won all 6 jury votes' for a unanimous jury, else 'won the jury 4-2'."""
+    votes = tally.get(winner_id, 0)
+    others = [n for fid, n in tally.items() if fid != winner_id]
+    if votes and not any(others):
+        return f"won all {votes} jury votes"
+    score = "-".join(str(n) for n in [votes] + sorted(others, reverse=True))
+    return f"won the jury {score}"
+
+
 def _fit(text: str, limit: int = POST_LIMIT) -> str:
     text = text.strip()
     return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
@@ -110,22 +120,20 @@ def build_moments(
     # --- the result
     winner = next((m for m in models if m["is_winner"]), None)
     if winner and season.get("finished"):
-        score = ""
+        won = "won the season"
         receipts = []
         if finale and finale.get("tally"):
-            ordered = sorted(finale["tally"].items(), key=lambda kv: (kv[0] != winner["agent_id"], -kv[1]))
-            score = "-".join(str(n) for _, n in ordered)
+            won = jury_phrase(finale["tally"], winner["agent_id"])
             for juror in finale.get("jury") or []:
                 if juror["finalist_id"] == winner["agent_id"] and juror.get("reason"):
                     receipts.append({"who": juror["juror_id"], "context": "voting as a juror", "text": juror["reason"]})
                     break
-        jury = f" {score}" if score else ""
         top = models[0]
         if winner["challenge_attempts"] and winner["challenge_correct"] == 0:
             add(
                 "result",
                 f"{winner['model']} won without solving a puzzle",
-                f"{winner['model']} got 0 of {winner['challenge_attempts']} puzzles right and still won the jury{jury}.",
+                f"{winner['model']} got 0 of {winner['challenge_attempts']} puzzles right and still {won}.",
                 actors=[winner["agent_id"]],
                 receipts=receipts,
             )
@@ -133,7 +141,7 @@ def build_moments(
             add(
                 "result",
                 "The winner was not the top scorer",
-                f"{winner['model']} won the jury{jury} but ranks #{winner['rank']} on the Survivor Index. "
+                f"{winner['model']} {won} but ranks #{winner['rank']} on the Survivor Index. "
                 f"{top['model']} scored highest ({top['survivor_index']:.1f}) and finished {_ordinal(top['place'])}.",
                 actors=[winner["agent_id"], top["agent_id"]],
                 receipts=receipts,
@@ -142,7 +150,7 @@ def build_moments(
             add(
                 "result",
                 f"{winner['model']} won and topped the index",
-                f"{winner['model']} won the jury{jury} and has the highest Survivor Index ({winner['survivor_index']:.1f}).",
+                f"{winner['model']} {won} and has the highest Survivor Index ({winner['survivor_index']:.1f}).",
                 actors=[winner["agent_id"]],
                 receipts=receipts,
             )

@@ -309,6 +309,7 @@ class SeasonStoryTest(unittest.TestCase):
     def test_moments_are_picked_and_carry_their_evidence(self) -> None:
         moments = {m["kind"]: m for m in self._report()["moments"]}
         self.assertEqual(moments["result"]["title"], "Model A won without solving a puzzle")
+        self.assertIn("still won all 2 jury votes", moments["result"]["text"])
         self.assertEqual(moments["result"]["receipts"][0], {"who": "c", "context": "voting as a juror", "text": "A controlled every vote."})
         promise = moments["promise"]
         self.assertEqual(promise["title"], "Model A broke its word to Model D")
@@ -320,6 +321,13 @@ class SeasonStoryTest(unittest.TestCase):
         self.assertIn("the 1 votes against it did not count", moments["idol"]["text"])
         self.assertEqual(moments["read"]["title"], "Model A called 3 of 4 votes in round 1")
         self.assertEqual(moments["target"]["title"], "Model A took 4 votes and survived 4")
+
+    def test_jury_phrase(self) -> None:
+        from backend.season_story import jury_phrase
+
+        self.assertEqual(jury_phrase({"a": 6, "b": 0, "c": 0}, "a"), "won all 6 jury votes")
+        self.assertEqual(jury_phrase({"a": 3, "b": 2, "c": 1}, "a"), "won the jury 3-2-1")
+        self.assertEqual(jury_phrase({"a": 2, "b": 2}, "a"), "won the jury 2-2")
 
     def test_moments_are_numbered_capped_and_fit_a_post(self) -> None:
         moments = self._report()["moments"]
