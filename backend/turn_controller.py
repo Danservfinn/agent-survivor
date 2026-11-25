@@ -2197,6 +2197,66 @@ def _record_promise(
         )
 
 
+def betrayal_record(conn, agent_id: str) -> list[dict[str, Any]]:
+    """Every betrayal this player made, once its vote is revealed, next to what
+    it achieved: broken vote promises and votes against a pact partner. Who went
+    home, whether the betraying vote sent them, and the votes the player drew the
+    next round (a public tally). For the player itself and for the jury."""
+    names = {row["agent_id"]: row["pseudonym"] for row in conn.execute("SELECT agent_id, pseudonym FROM Agents")}
+    out_by_round = {
+        row["elimination_round"]: row["agent_id"]
+        for row in conn.execute("SELECT agent_id, elimination_round FROM Agents WHERE elimination_round IS NOT NULL")
+    }
+
+    def drew_next_round(round_number: int) -> int | None:
+        if round_number + 1 not in out_by_round and not conn.execute(
+            "SELECT 1 FROM Votes WHERE round = ? AND revealed = 1", (round_number + 1,)
+        ).fetchone():
+            return None  # next council not held yet
+        return conn.execute(
+            "SELECT COUNT(*) AS n FROM Votes WHERE round = ? AND target_id = ? AND revealed = 1",
+            (round_number + 1, agent_id),
+        ).fetchone()["n"]
+
+    record = []
+    for entry in promise_record(conn, agent_id):
+        if entry["status"] != "broken":
+            continue
+        out = out_by_round.get(entry["round"])
+        record.append(
+            {
+                "round": entry["round"],
+                "move": f"broke a promise to {entry['promised_to']} to vote {entry['promised_vote']}",
+                "you_voted": entry["actual_vote"],
+                "who_went_home": names.get(out),
+                "your_vote_sent_them_home": bool(out and names.get(out) == entry["actual_vote"]),
+                "votes_against_you_next_round": drew_next_round(entry["round"]),
+            }
+        )
+    for row in conn.execute(
+        """
+        SELECT m.betrayed_round AS round, v.target_id
+        FROM AllianceMemberships m
+        JOIN Votes v ON v.round = m.betrayed_round AND v.voter_id = m.agent_id AND v.revealed = 1
+        WHERE m.agent_id = ? AND m.betrayed_round IS NOT NULL
+        ORDER BY m.betrayed_round
+        """,
+        (agent_id,),
+    ).fetchall():
+        out = out_by_round.get(row["round"])
+        record.append(
+            {
+                "round": row["round"],
+                "move": f"voted against pact partner {names.get(row['target_id'], row['target_id'])}",
+                "you_voted": names.get(row["target_id"], row["target_id"]),
+                "who_went_home": names.get(out),
+                "your_vote_sent_them_home": out == row["target_id"],
+                "votes_against_you_next_round": drew_next_round(row["round"]),
+            }
+        )
+    return sorted(record, key=lambda item: item["round"])
+
+
 def promise_record(conn, agent_id: str, *, as_listener: bool = False) -> list[dict[str, Any]]:
     """Vote promises the player made (or, with as_listener, received), and whether
     the promiser's revealed vote kept them. Open until that round's votes are revealed."""
@@ -3995,6 +4055,11 @@ def _strategic_record(
         },
         "survived_votes_against_in_rounds": survived,
         "broken_promises_and_what_they_achieved": broken_with_outcome,
+        # pact betrayals too, beside what each achieved, so a betrayal that won
+        # a vote reads as the move it was
+        "pact_betrayals_and_what_they_achieved": [
+            item for item in betrayal_record(conn, finalist_id) if item["move"].startswith("voted against pact partner")
+        ],
     }
 
 
@@ -5826,10 +5891,13 @@ def _mark_alliance_betrayal(conn, round_number: int, voter_id: str, target_id: s
         WHERE voter.agent_id = ?
           AND target.agent_id = ?
           AND voter.status = 'active'
-          AND target.status = 'active'
-          AND a.status = 'active'
+          -- partners who vote against each other in one round both betray it:
+          -- the first reveal marks the target and may fracture the alliance,
+          -- which used to hide the second betrayal (reveal order is shuffled)
+          AND (target.status = 'active' OR (target.status = 'betrayed' AND target.betrayed_round = ?))
+          AND a.status IN ('active', 'fractured')
         """,
-        (voter_id, target_id),
+        (voter_id, target_id, round_number),
     ).fetchall()
     for row in rows:
         new_strength = max(0, int(row["strength"]) - 30)

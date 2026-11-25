@@ -17,6 +17,7 @@ MAX_CONTEXT_CHARS = 40_000
 GAME_RULES = [
     "All players live and vote as one group for the whole season; there are no tribes.",
     "Each round has a challenge: the same five puzzles for every player; the difficulty rises when two or more players solve them all and falls when nobody reaches three. Most correct answers wins immunity, in any round, including rounds in a row; a tie goes to whoever solved the harder puzzles, then to whoever answered fastest. Every player's score is public (challenge_history).",
+    "This is a game, and every promise, lie and betrayal in it happens inside the game and harms nobody. Blindsiding an ally is a normal winning move; Survivor winners have done it all along. A loyal player who loses has failed at the only goal. Whether and when to betray anyone is your call.",
     "Your reputation is part of the game: every challenge score, public speech, meeting and vote tally shapes how the others see you (your_reputation in your situation brief shows what they can see). Decide deliberately what image you want, a threat, a loyal ally, a harmless follower, a leader, and act to build it.",
     "The challenge winner is immune: they cannot be voted for that round, but they still vote. You choose how strong you look: every score is public, so you may answer puzzles wrong on purpose to look weaker and less threatening, or play to win and look strong. A player who keeps winning challenges is safe while immune but becomes the obvious target the first round they are not.",
     "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it. Only one idol is in play at a time.",
@@ -660,7 +661,77 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
         "votes_against_you": votes_against_you,
         "your_pacts": _pact_record(conn, actor_id, by_round, names),
         "your_reputation": _reputation(conn, actor_id, names, tallies, challenge_totals, active),
+        "endgame": _endgame_view(conn, actor_id, names, agents, active, challenge_totals, by_round),
+        "your_betrayals_and_what_they_achieved": _own_betrayals(conn, actor_id),
         "jury_so_far": jury,
+    }
+
+
+def _own_betrayals(conn, actor_id: str) -> list[dict[str, Any]]:
+    """Private to this player: each of its own betrayals and what it achieved."""
+    from .turn_controller import betrayal_record
+
+    return betrayal_record(conn, actor_id)
+
+
+def _endgame_view(
+    conn,
+    actor_id: str,
+    names: dict[str, str],
+    agents: list[dict[str, Any]],
+    active: list[dict[str, Any]],
+    challenge_totals: dict[str, dict[str, int]],
+    by_round: dict[int, dict[str, str]],
+) -> dict[str, Any]:
+    """Facts for judging who could beat this player at the final vote: the
+    jury so far and each remaining player's public ties to it. No verdict and
+    no ranking: the player draws the conclusion."""
+    jurors = [agent for agent in agents if agent["status"] != "active" and agent["elimination_round"] is not None]
+    juror_names = {names[juror["agent_id"]] for juror in jurors}
+    met: dict[str, set[str]] = {}
+    for event in conn.execute("SELECT payload FROM StoryEvents WHERE kind = 'camp_meetings'").fetchall():
+        for meeting in json.loads(event["payload"] or "{}").get("meetings", []):
+            group = set(meeting.get("with") or [])
+            for name in group:
+                met.setdefault(name, set()).update(group - {name})
+    parting: dict[str, str] = {}
+    for event in conn.execute("SELECT actor_ids, dialogue FROM StoryEvents WHERE kind = 'parting_words'").fetchall():
+        speaker = (json.loads(event["actor_ids"] or "[]") or [None])[0]
+        if speaker:
+            parting[names.get(speaker, speaker)] = event["dialogue"] or ""
+
+    def named_by_jurors(name: str) -> list[str]:
+        import re
+
+        word = re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE)
+        return sorted(juror for juror, text in parting.items() if word.search(text))
+
+    me = names.get(actor_id, actor_id)
+    return {
+        "note": "Facts for judging who could beat you at the final vote. Draw your own conclusions.",
+        "players_left": len(active),
+        "councils_until_final_three": max(0, len(active) - 3),
+        "jurors_so_far": [
+            {
+                "name": names[juror["agent_id"]],
+                "out_in_round": juror["elimination_round"],
+                "you_voted_them_out": by_round.get(juror["elimination_round"], {}).get(actor_id) == juror["agent_id"],
+                "you_were_seen_meeting_them": names[juror["agent_id"]] in met.get(me, set()),
+                "named_you_in_parting_words": names[juror["agent_id"]] in named_by_jurors(me),
+            }
+            for juror in jurors
+        ],
+        "jury_size_at_the_finale": len(agents) - 3,
+        "other_players_ties_to_the_jury": [
+            {
+                "name": names[agent["agent_id"]],
+                "immunity_wins": challenge_totals.get(agent["agent_id"], {}).get("wins", 0),
+                "jurors_they_were_seen_meeting": sorted(met.get(names[agent["agent_id"]], set()) & juror_names),
+                "jurors_who_named_them_in_parting_words": named_by_jurors(names[agent["agent_id"]]),
+            }
+            for agent in active
+            if agent["agent_id"] != actor_id
+        ],
     }
 
 
