@@ -61,6 +61,12 @@ type Beat = {
 };
 
 const BUBBLE_CHARS = 150;
+const NO_BUBBLES: { id: string; text: string }[] = [];
+
+/** How long one bubble stays up: a second to find it, then about 30 characters a second. */
+export function readMs(text: string): number {
+  return Math.max(2500, 1000 + text.length * 33);
+}
 const QUOTE_CHARS = 520;
 
 function clip(text: string, n: number): string {
@@ -166,7 +172,8 @@ export function buildBeats(report: StageReport): Beat[] {
         links: ids.slice(1).map((id) => ({ from: ids[0], to: id, kind: "talk" as const })),
         bubbles: speakers.map((id) => ({ id, text: clip(best[id], BUBBLE_CHARS) })),
         immune,
-        ms: 6200,
+        // long enough for every speaker's bubble, one after another
+        ms: Math.max(6200, speakers.reduce((n, id) => n + readMs(clip(best[id], BUBBLE_CHARS)), 0)),
       });
     }
 
@@ -314,6 +321,17 @@ export function SeasonStage({ report }: { report: StageReport }) {
   const [fast, setFast] = useState(false);
   const started = useRef(false);
   const beat = beats[Math.min(i, beats.length - 1)];
+  // speakers take turns: one bubble at a time, so two never overlap
+  const [turnAt, setTurnAt] = useState({ beat: 0, n: 0 });
+  const turn = turnAt.beat === i ? turnAt.n : 0;
+  const speaking = beat?.bubbles ?? NO_BUBBLES;
+
+  useEffect(() => {
+    if (turn >= speaking.length - 1) return;
+    const share = readMs(speaking[turn].text);
+    const t = setTimeout(() => setTurnAt({ beat: i, n: turn + 1 }), fast ? share / 2 : share);
+    return () => clearTimeout(t);
+  }, [i, turn, speaking, fast]);
 
   // start on its own unless the viewer asked for less motion
   useEffect(() => {
@@ -432,7 +450,7 @@ export function SeasonStage({ report }: { report: StageReport }) {
 
         {/* speech bubbles are HTML so long lines wrap */}
         <div className="bubbles" key={`bubbles-${i}`}>
-          {(beat.bubbles ?? []).map((b) => {
+          {speaking.slice(turn, turn + 1).map((b) => {
             const pos = at(b.id);
             if (!pos) return null;
             const above = pos.y > H * 0.45;
