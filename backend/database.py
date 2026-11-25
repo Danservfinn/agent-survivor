@@ -588,6 +588,11 @@ def _database_ready() -> bool:
         }
         if not required_tables.issubset(tables):
             return False
+        # newer columns too: an older database gets them from init_database
+        # (_ensure_column, additive) without a reseed
+        for table, column in (("AllianceMemberships", "left_round"),):
+            if column not in {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}:
+                return False
         game = conn.execute("SELECT 1 FROM GameState WHERE season_id = 1").fetchone()
         return game is not None
     finally:
