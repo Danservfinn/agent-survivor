@@ -198,7 +198,15 @@ def build_moments(
         add(
             "vote",
             f"Round {r['round']} tied and went to a revote",
-            f"The first ballot split {_tally_text(r['tally'])}. On the second, {nm(r['eliminated_id'])} was voted out {_tally_text(r['revote_tally'])}.",
+            f"The first ballot split {_tally_text(r['tally'])}. "
+            + (
+                f"On the second, {nm(r['eliminated_id'])} was voted out {_tally_text(r['revote_tally'])}."
+                if not r.get("deadlock")
+                else f"The revote tied {_tally_text(r['revote_tally'])} too, and "
+                + {"unanimous": f"the players agreed unanimously to send {nm(r['eliminated_id'])} home.",
+                   "rocks": f"{nm(r['eliminated_id'])} drew the odd rock.",
+                   "tiebreak": f"the challenge record sent {nm(r['eliminated_id'])} home."}[r["deadlock"]["how"]]
+            ),
             round_=r["round"],
             actors=[r["eliminated_id"]],
             receipts=[{"who": r["eliminated_id"], "context": "last words", "text": r.get("exit_words") or ""}],
@@ -207,7 +215,9 @@ def build_moments(
         tight = []
         for r in councils:
             ranked = sorted(r["tally"].items(), key=lambda kv: -kv[1])
-            if len(ranked) > 1 and ranked[0][1] - ranked[1][1] == 1 and ranked[0][0] == r["eliminated_id"]:
+            # one vote the other way names a single other player only when the runner-up is alone
+            runner_up_alone = len(ranked) < 3 or ranked[1][1] != ranked[2][1]
+            if len(ranked) > 1 and ranked[0][1] - ranked[1][1] == 1 and ranked[0][0] == r["eliminated_id"] and runner_up_alone:
                 tight.append((r, ranked))
         if tight:
             r, ranked = max(tight, key=lambda item: sum(item[0]["tally"].values()))

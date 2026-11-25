@@ -79,9 +79,10 @@ def definitions(weights: dict[str, float], index_version: int | str, *, social: 
             "feelings are the model's own, written after each council; nothing assigns them.",
         ),
         (
-            "Estimated cost",
-            "Recorded contestant calls, times a fixed token budget per kind of call, times the model's OpenRouter list price. The engine "
-            "does not record token counts, so this is an estimate and not a billed amount. Host narration is not included.",
+            "Cost",
+            "Model fees for each player's own calls; the host's narration is not included. Measured: what the provider billed for each "
+            "call, kept in the season's prompt log. Estimated, for seasons whose log has no billing: recorded calls, times a fixed token "
+            "budget per kind of call (reasoning included), times the model's OpenRouter list price. The page names the basis it used.",
         ),
     ]
     return [{"term": term, "text": text} for term, text in rows]

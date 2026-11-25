@@ -150,3 +150,23 @@ def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EntrySeasonTest(unittest.TestCase):
+    """A paid entry's report: no run cost anywhere."""
+
+    def test_entry_report_carries_no_cost(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            season_dir = copy_season(Path(tmp))
+            conn = sqlite3.connect(season_dir / "season.db")
+            agent_id, alias = conn.execute("SELECT agent_id, pseudonym FROM Agents ORDER BY agent_id LIMIT 1").fetchone()
+            conn.close()
+            (season_dir / "entry.json").write_text(json.dumps({"entry_id": "e1", "name": "Test Entry", "model_id": "lab/model", "agent_id": agent_id, "alias": alias}))
+            report = build_season_report(season_dir)
+        self.assertEqual(report["season"]["entry"]["agent_id"], agent_id)
+        for key in ("contestant_est_cost_usd", "cost_basis", "cost_complete"):
+            self.assertIsNone(report["season"][key])
+        for model in report["models"]:
+            self.assertIsNone(model["est_cost_usd"])
+            self.assertIsNone(model["est_cost_per_round_usd"])
+        self.assertFalse(any(card["label"] == "Cost" for card in report["takeaways"]))

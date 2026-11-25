@@ -9,7 +9,8 @@ season folder. At the end the file is compressed to prompts.jsonl.gz.
 
 What is kept: the model, the messages sent, the reply with its `think` field
 removed (players are told their private reasoning is never kept), the finish
-reason and the model's answering time. A reply that cannot be parsed is not
+reason, the model's answering time, and the provider's usage record (token
+counts and cost, numbers only) with the call id. A reply that cannot be parsed is not
 kept, only its length, because it could hold the private reasoning. Any API
 key that appears is replaced with [redacted]. Nothing is written to the season
 database, so the game itself is unchanged by recording.
@@ -86,7 +87,28 @@ def _entry(payload: dict[str, Any], response: dict[str, Any] | None, error: Base
     entry.update(_clean_reply((choice.get("message") or {}).get("content")))
     entry["finish_reason"] = choice.get("finish_reason")
     entry["model_ms"] = (response or {}).get("_model_ms")
+    # what the provider billed for the call, so a report can show measured cost
+    usage = (response or {}).get("usage")
+    if isinstance(usage, dict):
+        entry["usage"] = _numbers(usage)
+    if isinstance((response or {}).get("id"), str):
+        entry["id"] = response["id"][:120]
     return entry
+
+
+def _numbers(value: dict[str, Any]) -> dict[str, Any]:
+    """Only the numeric parts of a usage record (token counts, cost), nested one level."""
+    out: dict[str, Any] = {}
+    for key, item in value.items():
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, (int, float)):
+            out[key] = item
+        elif isinstance(item, dict):
+            inner = {k: v for k, v in item.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+            if inner:
+                out[key] = inner
+    return out
 
 
 def _write(path: Path, entry: dict[str, Any]) -> None:
