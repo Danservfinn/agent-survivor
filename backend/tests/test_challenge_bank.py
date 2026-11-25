@@ -162,7 +162,7 @@ class Ladder(unittest.TestCase):
     def test_levels_rise_in_difficulty_and_keep_level_zero_unchanged(self) -> None:
         from backend.challenge_bank import LADDER_LEVELS
 
-        order = ("easy", "medium", "hard", "frontier", "extreme")
+        order = ("easy", "medium", "hard", "frontier", "extreme", "master")
         for level, tiers in enumerate(LADDER_LEVELS):
             ladder = ladder_for_round(3, 9, level)
             self.assertEqual(tuple(p["difficulty"] for p in ladder), tiers)
@@ -260,3 +260,90 @@ class ExtremeGridTest(unittest.TestCase):
             answer = generate_puzzle(family, "extreme", 3)["answer"]
             self.assertLessEqual(sum(len(row) for row in answer), 100)
             self.assertLess(sum(len(row) for row in answer), old_cells)
+
+
+class MasterTierTest(unittest.TestCase):
+    """Master puzzles: each key re-derived from the puzzle text alone, by brute force."""
+
+    def test_mastermind_has_exactly_one_code_and_it_is_the_key(self) -> None:
+        import re
+        from itertools import product
+
+        def score(secret: str, guess: str) -> tuple[int, int]:
+            exact = sum(a == b for a, b in zip(secret, guess))
+            return exact, sum(min(secret.count(c), guess.count(c)) for c in set(guess)) - exact
+
+        for seed in range(4):  # 262,144 codes each: a few seeds keep the test quick
+            puzzle = generate_puzzle("mastermind", "master", seed)
+            clues = [(g, (int(e), int(n))) for g, e, n in re.findall(r"([A-H]{6}) -> (\d) right color in the right place, (\d) right", puzzle["prompt"])]
+            self.assertTrue(clues)
+            fits = ["".join(c) for c in product("ABCDEFGH", repeat=6) if all(score("".join(c), g) == f for g, f in clues)]
+            self.assertEqual(fits, [puzzle["answer"]])
+
+    def test_knights_and_knaves_has_exactly_one_assignment_and_it_is_the_key(self) -> None:
+        import re
+        from itertools import product
+
+        people = "ABCDEFGHIJKL"
+        for seed in range(25):
+            puzzle = generate_puzzle("knights_knaves", "master", seed)
+            claims = []
+            for speaker, text in re.findall(r'([A-L]) says: "([^"]+)"', puzzle["prompt"]):
+                s = people.index(speaker)
+                if m := re.fullmatch(r"([A-L]) is a (knight|knave)\.", text):
+                    j, k = people.index(m[1]), m[2] == "knight"
+                    claims.append((s, lambda w, j=j, k=k: w[j] == k))
+                elif m := re.fullmatch(r"([A-L]) and ([A-L]) are the same kind\.", text):
+                    j, k = people.index(m[1]), people.index(m[2])
+                    claims.append((s, lambda w, j=j, k=k: w[j] == w[k]))
+                elif m := re.fullmatch(r"Exactly (\d) of ([A-L, ]+) are knights\.", text):
+                    group = [people.index(x.strip()) for x in m[2].split(",")]
+                    claims.append((s, lambda w, g=tuple(group), n=int(m[1]): sum(w[i] for i in g) == n))
+                elif m := re.fullmatch(r"At least one of ([A-L]) and ([A-L]) is a knave\.", text):
+                    j, k = people.index(m[1]), people.index(m[2])
+                    claims.append((s, lambda w, j=j, k=k: not (w[j] and w[k])))
+                elif m := re.fullmatch(r"An odd number of ([A-L, ]+) are knights\.", text):
+                    group = [people.index(x.strip()) for x in m[1].split(",")]
+                    claims.append((s, lambda w, g=tuple(group): sum(w[i] for i in g) % 2 == 1))
+                elif m := re.fullmatch(r"If ([A-L]) is a knight, then ([A-L]) is a knave\.", text):
+                    j, k = people.index(m[1]), people.index(m[2])
+                    claims.append((s, lambda w, j=j, k=k: (not w[j]) or (not w[k])))
+                else:
+                    self.fail(f"unparsed statement: {text}")
+            fits = ["".join("K" if x else "N" for x in w) for w in product((True, False), repeat=12)
+                    if all(claim(w) == w[s] for s, claim in claims)]
+            self.assertEqual(fits, [puzzle["answer"]])
+
+    def test_order_count_matches_an_independent_count(self) -> None:
+        import re
+        from itertools import permutations
+
+        names = ["Ava", "Ben", "Cy", "Dee", "Eli", "Fay", "Gus", "Hal", "Ivy"]
+        for seed in range(6):
+            puzzle = generate_puzzle("order_count", "master", seed)
+            rules_text = puzzle["prompt"].split("Rules: ")[1].split(" How many")[0]
+            checks = []
+            for sentence in re.findall(r"[^.]+\.", rules_text):
+                sentence = sentence.strip()
+                if m := re.fullmatch(r"(\w+) stands somewhere before (\w+)\.", sentence):
+                    checks.append(lambda o, a=m[1], b=m[2]: o.index(a) < o.index(b))
+                elif m := re.fullmatch(r"(\w+) stands next to (\w+)\.", sentence):
+                    checks.append(lambda o, a=m[1], b=m[2]: abs(o.index(a) - o.index(b)) == 1)
+                elif m := re.fullmatch(r"(\w+) does not stand next to (\w+)\.", sentence):
+                    checks.append(lambda o, a=m[1], b=m[2]: abs(o.index(a) - o.index(b)) != 1)
+                elif m := re.fullmatch(r"(\w+) is not at either end of the line\.", sentence):
+                    checks.append(lambda o, a=m[1]: o.index(a) not in (0, 8))
+                elif m := re.fullmatch(r"Exactly two people stand between (\w+) and (\w+)\.", sentence):
+                    checks.append(lambda o, a=m[1], b=m[2]: abs(o.index(a) - o.index(b)) == 3)
+                else:
+                    self.fail(f"unparsed rule: {sentence}")
+            count = sum(1 for o in permutations(names) if all(c(o) for c in checks))
+            self.assertEqual(count, puzzle["answer"])
+            self.assertGreater(count, 0)
+
+    def test_level_three_uses_the_master_tier(self) -> None:
+        from backend.challenge_bank import LADDER_LEVELS
+
+        self.assertEqual(LADDER_LEVELS[3].count("master"), 4)
+        for puzzle in ladder_for_round(5, 3, 3):
+            self.assertTrue(grade_answer(puzzle["answer"], puzzle["answer"]))

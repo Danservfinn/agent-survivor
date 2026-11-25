@@ -25,7 +25,7 @@ from .benchmark_scoring import score_season
 from .database import seed_demo
 from .demo_harness import _run_lock as _shared_run_lock
 from .llm_config import PROVIDER_OPENROUTER, live_llm_provider, should_use_live_llm
-from .turn_controller import auto_run_to_end
+from .turn_controller import FIRST_LEVEL_BY_ROSTER, auto_run_to_end
 
 SEASONS_DIR = Path(__file__).resolve().parent.parent / "artifacts" / "seasons"
 
@@ -107,6 +107,7 @@ def run_live_season(
     _current.update(status="running", started_at=time.time(), report=None)
     original_path = database.DATABASE_PATH
     original_seed = os.environ.get("SURVIVOR_SEASON_SEED")
+    original_level = os.environ.get("SURVIVOR_FIRST_LADDER_LEVEL")
     try:
         if not should_use_live_llm() or live_llm_provider() != PROVIDER_OPENROUTER:
             return {
@@ -124,6 +125,9 @@ def run_live_season(
 
         if season_seed is not None:
             os.environ["SURVIVOR_SEASON_SEED"] = str(season_seed)
+        # a frontier roster starts the challenge ladder at its top level
+        if roster in FIRST_LEVEL_BY_ROSTER and original_level is None:
+            os.environ["SURVIVOR_FIRST_LADDER_LEVEL"] = str(FIRST_LEVEL_BY_ROSTER[roster])
 
         database.DATABASE_PATH = db_path
         seed_demo(reset=True, path=db_path, roster_preset=roster)
@@ -179,6 +183,8 @@ def run_live_season(
             else:
                 os.environ["SURVIVOR_SEASON_SEED"] = original_seed
         database.DATABASE_PATH = original_path
+        if roster in FIRST_LEVEL_BY_ROSTER and original_level is None:
+            os.environ.pop("SURVIVOR_FIRST_LADDER_LEVEL", None)
         if _current["status"] == "running":
             _current.update(status="idle")
         _run_lock.release()

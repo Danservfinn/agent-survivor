@@ -302,3 +302,14 @@ class IdolGiftTest(_SeasonDb):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FirstLevelTest(unittest.TestCase):
+    def test_a_frontier_roster_starts_at_the_top_level(self) -> None:
+        from backend.challenge_bank import LADDER_LEVELS
+
+        self.assertEqual(tc.FIRST_LEVEL_BY_ROSTER["lab_mix_openrouter"], len(LADDER_LEVELS) - 1)
+        with patch.dict(os.environ, {"SURVIVOR_FIRST_LADDER_LEVEL": "3"}):
+            self.assertEqual(tc.first_ladder_level(), 3)
+        with patch.dict(os.environ, {"SURVIVOR_FIRST_LADDER_LEVEL": ""}):
+            self.assertEqual(tc.first_ladder_level(), tc.FIRST_LADDER_LEVEL)

@@ -3596,6 +3596,19 @@ def _round_ladder(conn, round_number: int) -> list[dict[str, Any]]:
 
 
 FIRST_LADDER_LEVEL = 1
+# Frontier models solved every rung of levels 1 and 2 in a few seconds
+# (2026-11-25), so a frontier season starts at the top level instead of
+# spending its first rounds on a speed race decided by provider latency.
+FIRST_LEVEL_BY_ROSTER = {"lab_mix_openrouter": 3, "frontier_live_8": 3, "frontier_live": 3}
+
+
+def first_ladder_level() -> int:
+    """SURVIVOR_FIRST_LADDER_LEVEL if set (the season runner sets it from the
+    roster), else FIRST_LADDER_LEVEL."""
+    raw = os.environ.get("SURVIVOR_FIRST_LADDER_LEVEL", "").strip()
+    if raw.isdigit():
+        return max(0, min(int(raw), len(LADDER_LEVELS) - 1))
+    return FIRST_LADDER_LEVEL
 
 
 def _ladder_level(conn, round_number: int) -> int:
@@ -3610,7 +3623,7 @@ def _ladder_level(conn, round_number: int) -> int:
     if previous is None:
         # the first round starts one level up: at level 0 four players scored
         # 5/5 in the first live season and answer speed decided it
-        return FIRST_LADDER_LEVEL
+        return first_ladder_level()
     payload = json.loads(previous["result_payload"] or "{}")
     level = int(payload.get("ladder_level", 0))
     scores = [score["correct"] for score in (payload.get("scores") or {}).values()]

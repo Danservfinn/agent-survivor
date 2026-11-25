@@ -28,9 +28,12 @@ import random
 from hashlib import sha256
 from typing import Any
 
-FAMILIES = ("grid_fill_border", "grid_row_copy", "grid_line_cross", "sequence_next", "instruction_exact", "chain_two_step")
+FAMILIES = (
+    "grid_fill_border", "grid_row_copy", "grid_line_cross", "sequence_next", "instruction_exact", "chain_two_step",
+    "mastermind", "knights_knaves", "order_count",
+)
 
-DIFFICULTY_TIERS = ("easy", "medium", "hard", "frontier", "extreme")
+DIFFICULTY_TIERS = ("easy", "medium", "hard", "frontier", "extreme", "master")
 
 _EASY_FAMILIES = ("grid_fill_border", "sequence_next")
 _MEDIUM_FAMILIES = ("grid_row_copy", "instruction_exact", "sequence_next")
@@ -41,6 +44,10 @@ _FRONTIER_FAMILIES = ("grid_line_cross", "chain_two_step")
 # extreme: added 2026-11-24 after frontier models solved 97% of frontier-tier
 # rungs; only families whose size or depth scales cleanly
 _EXTREME_FAMILIES = ("grid_line_cross", "grid_row_copy", "sequence_next")
+# master (2026-11-25): frontier models solved every extreme rung. These need
+# search or deduction rather than pattern spotting, keep answers short, and
+# every key is checked by brute force so exactly one answer is right.
+_MASTER_FAMILIES = ("mastermind", "knights_knaves", "order_count")
 
 _PROMPT_BY_FAMILY = {
     "grid_fill_border": (
@@ -511,9 +518,169 @@ def _chain_two_step_puzzle(difficulty: str, seed: int) -> dict[str, Any]:
 # ------------------------------------------------------------------- public API
 
 
+# ---------------------------------------------------------------- master tier
+
+_PEGS = "ABCDEFGH"
+MASTERMIND_PEGS = 6
+KNIGHTS_PEOPLE = 12
+ORDER_PEOPLE = 9
+ORDER_RULES = 7
+
+
+def _mastermind_feedback(secret: str, guess: str) -> tuple[int, int]:
+    exact = sum(1 for a, b in zip(secret, guess) if a == b)
+    common = sum(min(secret.count(c), guess.count(c)) for c in set(guess))
+    return exact, common - exact
+
+
+def _mastermind_puzzle(seed: int) -> dict[str, Any]:
+    """Find a 6-peg code over 8 colors from guesses and their feedback. Guesses
+    are added until exactly one code of the 262,144 fits. (5 pegs, 2026-11-25
+    first try: every frontier model solved it.)"""
+    from itertools import product
+
+    rng = _rng("mastermind", "master", seed)
+    secret = "".join(rng.choice(_PEGS) for _ in range(MASTERMIND_PEGS))
+    candidates = ["".join(code) for code in product(_PEGS, repeat=MASTERMIND_PEGS)]
+    clues: list[tuple[str, tuple[int, int]]] = []
+    while len(candidates) > 1:
+        guess = "".join(rng.choice(_PEGS) for _ in range(MASTERMIND_PEGS))
+        if guess == secret or any(guess == g for g, _ in clues):
+            continue
+        feedback = _mastermind_feedback(secret, guess)
+        narrowed = [code for code in candidates if _mastermind_feedback(code, guess) == feedback]
+        if len(narrowed) == len(candidates):
+            continue  # a guess that rules nothing out
+        candidates = narrowed
+        clues.append((guess, feedback))
+    lines = "; ".join(f"{guess} -> {exact} right color in the right place, {near} right color in the wrong place" for guess, (exact, near) in clues)
+    prompt = (
+        f"Code-breaking puzzle. A secret code is {MASTERMIND_PEGS} pegs long; each peg is one of the colors A, B, C, D, E, F, G, H, "
+        "and colors may repeat. Each guess below was scored with how many pegs are the right color in the right "
+        f"place, and how many more are a right color in the wrong place. Guesses: {lines}. Exactly one code fits "
+        f"every score. Return it as a JSON string of {MASTERMIND_PEGS} letters, e.g. \"ABCDEF\"."
+    )
+    return {
+        "puzzle_id": f"mastermind-master-{seed:04d}", "family": "mastermind", "prompt": prompt, "examples": [],
+        "test_input": [g for g, _ in clues], "answer": secret, "answer_kind": "string", "difficulty": "master",
+        "eligibility": "both",
+    }
+
+
+def _knights_knaves_puzzle(seed: int) -> dict[str, Any]:
+    """Twelve islanders, each a knight (always truthful) or a knave (always
+    lies), making statements, including parity and if-then claims, until
+    exactly one of the 4,096 assignments is consistent. (Eight islanders with
+    simple claims, the first try, were solved by every frontier model.)"""
+    from itertools import product
+
+    rng = _rng("knights_knaves", "master", seed)
+    people = list("ABCDEFGHIJKL"[:KNIGHTS_PEOPLE])
+    n = len(people)
+    truth = [rng.random() < 0.5 for _ in range(n)]
+
+    def make_statement(speaker: int) -> tuple[str, Any]:
+        others = [i for i in range(n) if i != speaker]
+        kind = rng.choice(("is", "same", "count", "either", "odd", "implies", "implies"))
+        if kind == "is":
+            j = rng.choice(others)
+            claim_knight = rng.random() < 0.5
+            return f"{people[j]} is a {'knight' if claim_knight else 'knave'}.", lambda w, j=j, c=claim_knight: w[j] == c
+        if kind == "same":
+            j, k = rng.sample(others, 2)
+            return f"{people[j]} and {people[k]} are the same kind.", lambda w, j=j, k=k: w[j] == w[k]
+        if kind == "count":
+            group = sorted(rng.sample(range(n), 4))
+            m = rng.randint(1, 3)
+            names = ", ".join(people[i] for i in group)
+            return f"Exactly {m} of {names} are knights.", lambda w, g=tuple(group), m=m: sum(w[i] for i in g) == m
+        if kind == "odd":
+            group = sorted(rng.sample(range(n), 5))
+            names = ", ".join(people[i] for i in group)
+            return f"An odd number of {names} are knights.", lambda w, g=tuple(group): sum(w[i] for i in g) % 2 == 1
+        if kind == "implies":
+            j, k = rng.sample(others, 2)
+            return (
+                f"If {people[j]} is a knight, then {people[k]} is a knave.",
+                lambda w, j=j, k=k: (not w[j]) or (not w[k]),
+            )
+        j, k = rng.sample(others, 2)
+        return f"At least one of {people[j]} and {people[k]} is a knave.", lambda w, j=j, k=k: not (w[j] and w[k])
+
+    statements: list[tuple[int, str, Any]] = []
+    worlds = list(product((True, False), repeat=n))
+    tries = 0
+    while True:
+        tries += 1
+        speaker = rng.randrange(n)
+        text, claim = make_statement(speaker)
+        # a knight's statement is true and a knave's is false, in the real world
+        if claim(truth) != truth[speaker]:
+            continue
+        statements.append((speaker, text, claim))
+        consistent = [w for w in worlds if all(claim_(w) == w[sp] for sp, _, claim_ in statements)]
+        if len(consistent) == 1 and len(statements) >= n:
+            break
+        if tries > 2000:  # restart on a pathological draw
+            return _knights_knaves_puzzle(seed + 100_000)
+    lines = " ".join(f"{people[sp]} says: \"{text}\"" for sp, text, _ in statements)
+    answer = "".join("K" if t else "N" for t in truth)
+    prompt = (
+        "Logic puzzle. On an island, every person is a knight, who always tells the truth, or a knave, who always "
+        f"lies. {n} people, {people[0]} to {people[-1]}, make these statements: {lines} Exactly one assignment fits. "
+        f"Return it as a JSON string of {n} letters for {people[0]} to {people[-1]} in order, K for knight and N for "
+        "knave, e.g. \"" + "KN" * (n // 2) + "\"."
+    )
+    return {
+        "puzzle_id": f"knights_knaves-master-{seed:04d}", "family": "knights_knaves", "prompt": prompt, "examples": [],
+        "test_input": [text for _, text, _ in statements], "answer": answer, "answer_kind": "string",
+        "difficulty": "master", "eligibility": "both", "_statements": [(sp, text) for sp, text, _ in statements],
+    }
+
+
+def _order_count_puzzle(seed: int) -> dict[str, Any]:
+    """How many orderings of nine people satisfy seven rules: an exact count,
+    found by checking all 362,880 orderings. (Seven people and five rules, the
+    first try, were solved by every frontier model.)"""
+    from itertools import permutations
+
+    rng = _rng("order_count", "master", seed)
+    people = ["Ava", "Ben", "Cy", "Dee", "Eli", "Fay", "Gus", "Hal", "Ivy"][:ORDER_PEOPLE]
+    last = ORDER_PEOPLE - 1
+    rules: list[tuple[str, Any]] = []
+    kinds = [rng.choice(["before", "adjacent", "not_adjacent", "not_end", "gap"]) for _ in range(ORDER_RULES)]
+    for kind in kinds:
+        a, b, c = rng.sample(range(ORDER_PEOPLE), 3)
+        if kind in ("before", "before2"):
+            rules.append((f"{people[a]} stands somewhere before {people[b]}.", lambda o, a=a, b=b: o.index(a) < o.index(b)))
+        elif kind == "adjacent":
+            rules.append((f"{people[a]} stands next to {people[b]}.", lambda o, a=a, b=b: abs(o.index(a) - o.index(b)) == 1))
+        elif kind == "not_adjacent":
+            rules.append((f"{people[a]} does not stand next to {people[b]}.", lambda o, a=a, b=b: abs(o.index(a) - o.index(b)) != 1))
+        elif kind == "not_end":
+            rules.append((f"{people[a]} is not at either end of the line.", lambda o, a=a: o.index(a) not in (0, last)))
+        else:
+            rules.append((f"Exactly two people stand between {people[a]} and {people[c]}.", lambda o, a=a, c=c: abs(o.index(a) - o.index(c)) == 3))
+    count = sum(1 for order in permutations(range(ORDER_PEOPLE)) if all(rule(order) for _, rule in rules))
+    if count == 0:
+        return _order_count_puzzle(seed + 100_000)
+    prompt = (
+        f"Counting puzzle. {len(people)} people, {', '.join(people)}, stand in a line. Rules: "
+        + " ".join(text for text, _ in rules)
+        + " How many different orders of the line satisfy every rule? Return the exact count as a JSON number."
+    )
+    return {
+        "puzzle_id": f"order_count-master-{seed:04d}", "family": "order_count", "prompt": prompt, "examples": [],
+        "test_input": [text for text, _ in rules], "answer": count, "answer_kind": "number", "difficulty": "master",
+        "eligibility": "both",
+    }
+
+
 def generate_puzzle(family: str, difficulty: str, seed: int) -> dict[str, Any]:
     if difficulty not in DIFFICULTY_TIERS:
         raise ValueError(f"difficulty must be one of {DIFFICULTY_TIERS}")
+    if difficulty == "master" and family not in _MASTER_FAMILIES:
+        difficulty = "extreme"  # the older families top out at extreme
     if family in ("grid_fill_border", "grid_row_copy", "grid_line_cross"):
         return _grid_family_puzzle(family, difficulty, seed)
     if family == "sequence_next":
@@ -522,6 +689,12 @@ def generate_puzzle(family: str, difficulty: str, seed: int) -> dict[str, Any]:
         return _instruction_puzzle(difficulty, seed)
     if family == "chain_two_step":
         return _chain_two_step_puzzle(difficulty, seed)
+    if family == "mastermind":
+        return _mastermind_puzzle(seed)
+    if family == "knights_knaves":
+        return _knights_knaves_puzzle(seed)
+    if family == "order_count":
+        return _order_count_puzzle(seed)
     raise ValueError(f"unknown family {family}")
 
 
@@ -532,6 +705,7 @@ def families_for_difficulty(difficulty: str) -> tuple[str, ...]:
         "hard": _HARD_FAMILIES,
         "frontier": _FRONTIER_FAMILIES,
         "extreme": _EXTREME_FAMILIES,
+        "master": _MASTER_FAMILIES,
     }[difficulty]
 
 
@@ -547,6 +721,8 @@ LADDER_LEVELS = (
     ("medium", "hard", "hard", "frontier", "frontier"),
     ("hard", "frontier", "frontier", "extreme", "extreme"),
     ("frontier", "extreme", "extreme", "extreme", "extreme"),
+    # frontier models solved all of level 2 (2026-11-25); level 3 needs search
+    ("extreme", "master", "master", "master", "master"),
 )
 LADDER_TIERS = LADDER_LEVELS[0]
 # Weighted tiebreak: a harder rung counts for more.
