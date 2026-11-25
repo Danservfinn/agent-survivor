@@ -55,6 +55,10 @@ class VisibilityTest(unittest.TestCase):
         patcher = patch.object(live_season, "SEASONS_DIR", self.seasons)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # never reach Cloudflare from a test: no purge token here
+        no_token = patch.object(season_visibility, "PURGE_TOKEN_FILE", Path(self.tmp.name) / "no-token")
+        no_token.start()
+        self.addCleanup(no_token.stop)
         self.sid = self.season_dir.name
 
     def _make_entry(self) -> str:
@@ -144,6 +148,56 @@ class VisibilityTest(unittest.TestCase):
         self.assertGreater(votes, 0)
         response = api.season_report_data(self.sid, "season.db")
         self.assertTrue(str(response.path).endswith("season.public.db"))
+
+
+class PurgeTest(unittest.TestCase):
+    def test_withdrawing_purges_every_cached_address_in_batches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            season_dir = copy_season(Path(tmp))
+            (season_dir / "share").mkdir()
+            for i in range(20):
+                (season_dir / "share" / f"model-{i}.png").write_bytes(b"x")
+            token = Path(tmp) / "token"
+            token.write_text("secret-token\n")
+            calls = []
+
+            class Reply:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    return False
+
+                def read(self):
+                    return b'{"success": true}'
+
+            def fake_urlopen(request, timeout):
+                calls.append((request.full_url, request.headers.get("Authorization"), json.loads(request.data)["files"]))
+                return Reply()
+
+            with patch.object(season_visibility, "PURGE_TOKEN_FILE", token), patch.object(season_visibility.urllib.request, "urlopen", fake_urlopen):
+                record = season_visibility.set_state(season_dir, "withdrawn")
+        urls = [u for _, _, files in calls for u in files]
+        self.assertTrue(record["purge"]["ok"])
+        self.assertEqual(record["purge"]["purged"], len(urls))
+        self.assertTrue(all(len(files) <= 30 for _, _, files in calls))
+        self.assertTrue(all(auth == "Bearer secret-token" for _, auth, _ in calls))
+        self.assertIn(f"https://agentsurvivor.kurult.ai/report/{season_dir.name}", urls)
+        self.assertIn(f"https://llmsurvivor.kurult.ai/report/{season_dir.name}/share/model-3.png", urls)
+        self.assertTrue(calls[0][0].endswith(f"/zones/{season_visibility.ZONE_ID}/purge_cache"))
+
+    def test_no_token_no_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            season_dir = copy_season(Path(tmp))
+            with patch.object(season_visibility, "PURGE_TOKEN_FILE", Path(tmp) / "none"), patch.object(season_visibility.urllib.request, "urlopen", side_effect=AssertionError("no network")):
+                self.assertEqual(season_visibility.set_state(season_dir, "withdrawn")["purge"], {"ok": False, "reason": "no purge token on this machine"})
+
+    def test_the_not_found_page_has_a_strict_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(live_season, "SEASONS_DIR", Path(tmp)):
+            page = api.season_report_page("20990101-000000-none")
+        self.assertEqual(page.status_code, 404)
+        self.assertIn("default-src 'none'", page.headers["content-security-policy"])
+        self.assertIn("frame-ancestors 'none'", page.headers["content-security-policy"])
 
 
 class PublicTextTest(unittest.TestCase):

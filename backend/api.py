@@ -1116,6 +1116,8 @@ def _report_season_dir(season_id: str | None, key: str | None = None) -> Path:
     return season_dir
 
 
+# the not-found page has no script at all
+NOT_FOUND_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 _NOT_FOUND_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Report not found · Agent Survivor</title>
@@ -1151,7 +1153,7 @@ def _report_page(season_id: str | None, key: str | None = None, request_etag: st
         season_dir = _report_season_dir(season_id, key)
     except HTTPException:
         return Response(content=_NOT_FOUND_PAGE, status_code=404, media_type="text/html; charset=utf-8",
-                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": NOT_FOUND_CSP})
     has_cards = (season_dir / "share" / "season.png").is_file()
     has_video = (season_dir / "share" / "season.mp4").is_file()
     html = render_report_html(

@@ -22,11 +22,19 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 import secrets
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 FILE = "visibility.json"
+# Cloudflare edge cache: share images and data files are cached for hours, so a
+# withdrawn season is purged there too. The token can purge cache and nothing
+# else (minted 2026-11-25); the zone id is not secret.
+PURGE_TOKEN_FILE = Path(os.environ.get("SURVIVOR_CF_PURGE_TOKEN_FILE") or Path.home() / ".kublai" / "secrets" / "agent-survivor-cf-purge-token")
+ZONE_ID = os.environ.get("SURVIVOR_CF_ZONE_ID") or "5d7354c125785eca7b769bae72ce0515"
+SITE_HOSTS = ("agentsurvivor.kurult.ai", "llmsurvivor.kurult.ai")
 STATES = ("public", "unlisted", "withdrawn")
 
 
@@ -72,11 +80,55 @@ def set_state(season_dir: Path, new_state: str) -> dict[str, Any]:
     if new_state not in STATES:
         raise ValueError(f"state must be one of {', '.join(STATES)}")
     record = dict(ensure(season_dir))
+    was = record["state"]
     record["state"] = new_state
     if new_state == "unlisted" and not record.get("token"):
         record["token"] = secrets.token_urlsafe(18)
     _write(season_dir, record)
+    if new_state != "public" and was != new_state:
+        # what the edge cached while it was reachable must go too
+        record = {**record, "purge": purge_edge_cache(season_dir)}
     return record
+
+
+def season_urls(season_dir: Path) -> list[str]:
+    """Every public address of a season's files, on both hostnames."""
+    sid = Path(season_dir).name
+    paths = [f"/report/{sid}", f"/api/live-season/report/{sid}", f"/watch?season={sid}"]
+    share = Path(season_dir) / "share"
+    if share.is_dir():
+        paths += [f"/report/{sid}/share/{f.name}" for f in sorted(share.iterdir()) if f.is_file()]
+    paths += [f"/report/{sid}/data/{name}" for name in ("report.json", "prompts.jsonl.gz", "season.db", "entry-calls.jsonl.gz")]
+    return [f"https://{host}{path}" for host in SITE_HOSTS for path in paths]
+
+
+def purge_edge_cache(season_dir: Path) -> dict[str, Any]:
+    """Ask Cloudflare to drop its cached copies of the season's files. Never
+    raises: the result says what happened. Cached image URLs that carried a
+    ?v= query are separate entries and expire on their own within hours."""
+    try:
+        token = PURGE_TOKEN_FILE.read_text().strip()
+    except OSError:
+        return {"ok": False, "reason": "no purge token on this machine"}
+    urls = season_urls(season_dir)
+    purged = 0
+    for start in range(0, len(urls), 30):  # Cloudflare takes at most 30 files a call
+        batch = urls[start:start + 30]
+        request = urllib.request.Request(
+            f"https://api.cloudflare.com/client/v4/zones/{ZONE_ID}/purge_cache",
+            data=json.dumps({"files": batch}).encode(),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                body = json.loads(response.read().decode() or "{}")
+        except Exception as exc:  # noqa: BLE001 - reported, not raised
+            return {"ok": False, "reason": type(exc).__name__, "purged": purged}
+        if not body.get("success"):
+            return {"ok": False, "reason": "cloudflare refused the purge", "purged": purged}
+        purged += len(batch)
+    return {"ok": True, "purged": purged}
 
 
 def set_embargo(season_dir: Path, on: bool) -> None:
@@ -130,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no season in {season_dir}")
         return 1
     record = set_state(season_dir, args[1]) if len(args) > 1 else ensure(season_dir)
-    print(json.dumps({"state": record["state"], "has_token": bool(record.get("token")), "embargo": record.get("embargo", False)}))
+    print(json.dumps({"state": record["state"], "has_token": bool(record.get("token")), "embargo": record.get("embargo", False), "purge": record.get("purge")}))
     return 0
 
 
