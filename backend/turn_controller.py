@@ -21,6 +21,7 @@ from .database import (
     row_to_dict,
     seed_demo,
 )
+from .advantages import find_talk, line_stamps, overheard_text, receipts_for, spy_caught, with_stamps
 from .inner_life import record_lie, record_thought
 from .llm_context import add_open_promise, build_agent_episode_context, build_host_episode_context, context_digest
 from .challenge_bank import LADDER_LEVELS, LADDER_TIERS, RUNG_WEIGHTS, grade_answer, ladder_for_round
@@ -28,6 +29,7 @@ from .live_cost import estimate_step_cost_usd, get_pricing_table
 from .llm_config import (
     PROVIDER_OLLAMA,
     failed_llm_provider,
+    advantages_enabled,
     get_llm_settings,
     feelings_enabled,
     inner_life_enabled,
@@ -2017,11 +2019,18 @@ def _followup_events(conn, round_number: int, turn_id: int) -> list[dict[str, An
             print(f"live follow-up failed for {agent['agent_id']}: {exc}")
             continue
         legal = {other["agent_id"] for other in others}
+        spied = _resolve_player(conn, action.spy_on) if action and advantages_enabled() else None
+        if spied in legal:
+            events += _spy_events(conn, round_number, turn_id, agent["agent_id"], spied)
+            continue  # listening in uses the whisper
         if not action or action.target_id not in legal or not action.dialogue:
             continue  # passed
         recipient = action.target_id
         message = action.dialogue[:400]
         record_lie(conn, round_number, agent["agent_id"], "camp_followup", action, [recipient])
+        stamps = line_stamps(
+            action, receipts_for(conn, agent["agent_id"]), _holds_idol(conn, agent["agent_id"]), agent["pseudonym"]
+        )
         events.append(
             _insert_story_event(
                 conn,
@@ -2042,13 +2051,57 @@ def _followup_events(conn, round_number: int, turn_id: int) -> list[dict[str, An
                 payload={
                     "privacy": "participants_only",
                     "participant_ids": [agent["agent_id"], recipient],
-                    "speaker_lines": [{"agent_id": agent["agent_id"], "text": message}],
+                    "speaker_lines": [
+                        {"agent_id": agent["agent_id"], "text": message, **({"stamped": stamps} if stamps else {})}
+                    ],
                     "group_summary": f"{agent['pseudonym']} sent {_agent_name(conn, recipient)} a private message.",
                     "host_narration": "A last private word before the vote.",
                     "llm_provider": live_llm_provider(),
                     "llm_model_id": action.model_id,
                 },
             )
+        )
+    return events
+
+
+def _spy_events(conn, round_number: int, turn_id: int, spy_id: str, target_id: str) -> list[dict[str, Any]]:
+    """A player listens in on this round's talk with target_id: it hears the
+    whole talk, and on a seeded 1 in 3 the talk's members learn who listened."""
+    talk = find_talk(conn, round_number, spy_id, target_id)
+    caught = bool(talk) and spy_caught(_season_seed(), round_number, spy_id)
+    conn.execute(
+        "INSERT INTO Spying (round, spy_id, target_id, event_id, caught) VALUES (?, ?, ?, ?, ?)",
+        (round_number, spy_id, target_id, talk["event_id"] if talk else None, int(caught)),
+    )
+    spy_name, target_name = _agent_name(conn, spy_id), _agent_name(conn, target_id)
+    heard = overheard_text(conn, talk) if talk else f"{target_name} held no private talk you could listen in on."
+
+    def private(actor_ids: list[str], title: str, summary: str) -> dict[str, Any]:
+        return _insert_story_event(
+            conn,
+            turn_id=turn_id,
+            round_number=round_number,
+            phase="camp",
+            kind="spying",
+            scene="camp",
+            shot="private_two_shot",
+            actor_ids=actor_ids,
+            target_ids=[],
+            visibility="private",
+            title=title,
+            dialogue=summary,
+            subtitle="Private",
+            duration_ms=5000,
+            animation="camp_strategy",
+            # no speaker_lines: what was overheard is not something said to the spy
+            payload={"privacy": "participants_only", "participant_ids": actor_ids, "group_summary": summary},
+        )
+
+    events = [private([spy_id], f"{spy_name} Listens In", heard)]
+    if caught:
+        members = [agent_id for agent_id in talk["members"] if agent_id != spy_id]
+        events.append(
+            private(members, f"{spy_name} Was Seen Listening", f"{spy_name} was seen listening in on your talk with {target_name}.")
         )
     return events
 
@@ -2278,6 +2331,10 @@ def _prepare_talk(conn, round_number: int, number: int, pair: list[str], asks: d
             for agent_id in pair
         },
         "targets": {agent_id: _eligible_targets(conn, agent_id) for agent_id in pair},
+        # what each speaker could forward or show, read before the talk: nothing
+        # said during a talk becomes a receipt until the talk is written
+        "receipts": {agent_id: receipts_for(conn, agent_id) for agent_id in pair},
+        "idols": {agent_id: _holds_idol(conn, agent_id) for agent_id in pair},
         "scene_base": _dialogue_context_base(conn, stage, list(pair), []),
         "asks": {agent_id: ask for agent_id, ask in asks.items() if agent_id in pair},
         # the names promise_record would show (_agent_name)
@@ -2350,8 +2407,11 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
                 promises.append((agent_id, action.promised_vote_target))
             actions.append((agent_id, action))
             text = action.dialogue if action else SILENT_LINE
-            previous_line = _add_to_transcript(previous_line, names.get(agent_id, agent_id), text)
-            lines.append({"agent_id": agent_id, "text": text})
+            stamps = line_stamps(
+                action, prep["receipts"][agent_id], prep["idols"][agent_id], names.get(agent_id, agent_id)
+            )
+            previous_line = _add_to_transcript(previous_line, names.get(agent_id, agent_id), with_stamps(text, stamps))
+            lines.append({"agent_id": agent_id, "text": text, **({"stamped": stamps} if stamps else {})})
             metadata.append(
                 {
                     "agent_id": agent_id,
@@ -2676,6 +2736,7 @@ def _group_speaker_lines(
         for agent_id in participant_ids:
             agent = _agent_row(conn, agent_id)
             action = None
+            stamps: list[dict[str, Any]] = []
             agent_context = build_agent_episode_context(
                 conn,
                 actor_id=agent_id,
@@ -2709,6 +2770,9 @@ def _group_speaker_lines(
                 if action.promised_vote_target:
                     _record_promise(conn, round_number, agent_id, participant_ids, action.promised_vote_target, step)
                 record_lie(conn, round_number, agent_id, step, action, participant_ids)
+                stamps = line_stamps(
+                    action, receipts_for(conn, agent_id), _holds_idol(conn, agent_id), _agent_name(conn, agent_id)
+                )
             elif should_use_live_llm():
                 # no usable reply: the player says nothing; no line is written for it
                 text = SILENT_LINE
@@ -2723,8 +2787,8 @@ def _group_speaker_lines(
                 # no model: a simulated pact, half the time (both sides must declare one)
                 join_intent = "reinforce" if _stable_index(f"{step}:{agent_id}:reinforce", 2) == 0 else "none"
                 end_pact = False
-            previous_line = _add_to_transcript(previous_line, _agent_name(conn, agent_id), text)
-            lines.append({"agent_id": agent_id, "text": text})
+            previous_line = _add_to_transcript(previous_line, _agent_name(conn, agent_id), with_stamps(text, stamps))
+            lines.append({"agent_id": agent_id, "text": text, **({"stamped": stamps} if stamps else {})})
             metadata.append(
                 {
                     "agent_id": agent_id,

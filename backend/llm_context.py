@@ -4,8 +4,9 @@ import json
 from typing import Any
 
 from .database import row_to_dict
+from .advantages import receipt_id
 from .inner_life import context_entries as inner_life_entries
-from .llm_config import feelings_enabled, jury_rule, prompt_profile, secret_ballot
+from .llm_config import advantages_enabled, feelings_enabled, jury_rule, prompt_profile, secret_ballot
 
 MAX_CONTEXT_EVENTS = 60
 # Upper bound on a serialized contestant context. When over it, the oldest
@@ -315,7 +316,7 @@ def _actor_group_event(event: dict[str, Any]) -> dict[str, Any]:
     summary["participant_ids"] = _participant_ids(event)
     summary["group_summary"] = payload.get("group_summary")
     summary["speaker_lines"] = [
-        {"agent_id": line.get("agent_id"), "text": line.get("text")}
+        {"agent_id": line.get("agent_id"), "text": line.get("text"), **({"stamped": line["stamped"]} if line.get("stamped") else {})}
         for line in payload.get("speaker_lines", [])
         if isinstance(line, dict) and isinstance(line.get("agent_id"), str) and isinstance(line.get("text"), str)
     ]
@@ -1121,7 +1122,7 @@ def _claims_to_you(
             continue
         if actor_id not in _participant_ids(event):
             continue
-        for line in (event.get("payload") or {}).get("speaker_lines", []):
+        for index, line in enumerate((event.get("payload") or {}).get("speaker_lines", [])):
             speaker = line.get("agent_id")
             if not isinstance(speaker, str) or speaker == actor_id or not line.get("text"):
                 continue
@@ -1131,6 +1132,9 @@ def _claims_to_you(
                     "from": names.get(speaker, speaker),
                     "said": str(line["text"])[:300],
                     **record_of(speaker),
+                    # forwardable with the game's stamp (advantages on)
+                    **({"receipt_id": receipt_id(event["id"], index)} if advantages_enabled() and "id" in event else {}),
+                    **({"stamped_by_the_game": line["stamped"]} if line.get("stamped") else {}),
                 }
             )
     return claims[-16:]

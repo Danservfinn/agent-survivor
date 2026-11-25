@@ -256,6 +256,18 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- a player who gave up its last whisper to listen in on a talk;
+            -- caught means the talk's members were told who listened
+            CREATE TABLE IF NOT EXISTS Spying (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                spy_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                event_id INTEGER,
+                caught INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- each player's private plan for a round, written before the challenge
             CREATE TABLE IF NOT EXISTS PrivatePlans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -585,6 +597,7 @@ def seed_demo(
         conn.execute("DELETE FROM Strategies")
         conn.execute("DELETE FROM RoundThoughts")
         conn.execute("DELETE FROM Lies")
+        conn.execute("DELETE FROM Spying")
         conn.execute("DELETE FROM StrategyRatings")
         conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
@@ -675,6 +688,7 @@ def _database_ready() -> bool:
             "StrategyRatings",
             "RoundThoughts",
             "Lies",
+            "Spying",
         }
         tables = {
             row["name"]

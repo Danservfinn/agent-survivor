@@ -70,6 +70,7 @@ class _Stub:
             raise InvalidModelReply("stub: unusable vote")
         targets = kwargs.get("allowed_targets") or []
         target = targets[h % len(targets)]["agent_id"] if targets else None
+        claims = (kwargs.get("episode_context") or {}).get("what_others_told_you") or []
         promise = targets[(h >> 3) % len(targets)]["agent_id"] if kind == "group_conversation" and targets and h % 3 == 0 else None
         return AgentAction(
             dialogue=f"line {h % 100000}",
@@ -99,6 +100,10 @@ class _Stub:
             lie_purpose=f"purpose {h % 37}" if h % 3 else None,
             lie_goal_vote=target if h % 3 else None,
             expected_of_me={t["agent_id"]: target for t in targets[1:4]} if kind == "vote" and target else None,
+            # forward a heard line now and then (stamped only if really heard),
+            # and sometimes spend the whisper listening in on a talk
+            receipt_id=claims[h % len(claims)].get("receipt_id") if claims and h % 4 == 1 else None,
+            spy_on=target if kind == "followup" and h % 7 == 0 else None,
         )
 
     def challenge(self, **kwargs) -> ChallengeSolution:
@@ -207,6 +212,8 @@ class ParallelEquivalenceTest(unittest.TestCase):
         self.assertTrue(sequential_dump["Confessionals"])
         self.assertTrue(sequential_dump["RoundThoughts"])
         self.assertTrue(sequential_dump["Lies"])
+        self.assertTrue(sequential_dump["Spying"])
+        self.assertTrue(any('"stamped"' in str(cell) for row in sequential_dump["StoryEvents"] for cell in row))
         # group talks of three or more happened (column 5 is target_size, the talk's size)
         self.assertTrue(any(row[5] > 2 for row in sequential_dump["GroupDiscussions"]))
         self.assertIn("(says nothing)", json.dumps(sequential_dump["StoryEvents"]))

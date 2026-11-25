@@ -15,6 +15,7 @@ from .llm_config import (
     PROVIDER_OLLAMA,
     PROVIDER_OPENROUTER,
     PROVIDER_ZAI,
+    advantages_enabled,
     get_llm_settings,
     inner_life_enabled,
     jury_rule,
@@ -147,6 +148,11 @@ class AgentAction:
     lie_goal_vote: str | None = None
     # votes, private: who the voter thinks each other voter expects it to vote for
     expected_of_me: dict[str, str] | None = None
+    # advantages: forward a heard line with the game's stamp; prove an idol;
+    # spend the last whisper listening in on a talk with this player
+    receipt_id: str | None = None
+    show_idol: bool = False
+    spy_on: str | None = None
     # votes only, private: who the voter expects to go home, and how each other voter will vote
     # (raw ids or names; the engine resolves them against the players in the game)
     predicted_eliminated: str | None = None
@@ -696,6 +702,8 @@ Rules:
 
 # fields that exist only while the inner life is on (SURVIVOR_INNER_LIFE)
 INNER_LIFE_FIELDS = {"truth", "lie_purpose", "lie_goal_vote", "expected_of_me"}
+# fields that exist only while advantages are on (SURVIVOR_ADVANTAGES)
+ADVANTAGE_FIELDS = {"receipt_id", "show_idol", "spy_on", "search", "show_ballot", "use_extra_vote"}
 
 V3_REPLY_FIELDS = {
     "vote": [
@@ -712,12 +720,15 @@ V3_REPLY_FIELDS = {
         ("promised_vote_target", "allowed id you promise to vote for tonight, or null; checked against your vote"),
         ("pact", "true to declare an alliance with the others in this talk; it forms among everyone here who ends the talk with true (at least two), and the members and the jury see it"),
         ("end_pact", "true to openly end your pact with the others in this talk; recorded as a clean exit, which the jury sees as different from voting against a partner while the pact stands"),
+        ("receipt_id", "optional: the receipt_id of a private line someone said to you (from what_others_told_you) to forward it; the game stamps it as real for your listeners. A quote without a receipt is only your word"),
         ("truth", "private, never shown to anyone: is what you just said true, half true or a lie? \"true\", \"half\" or \"lie\""),
         ("lie_purpose", "private: if half true or a lie, what you want it to achieve; otherwise null"),
         ("lie_goal_vote", "private: the player you want your listeners to vote out because of it, or null"),
     ],
     "followup": [
         ("target_id", "id of the player you whisper to, or null to send nothing"),
+        ("receipt_id", "optional: the receipt_id of a private line someone said to you (from what_others_told_you) to forward it; the game stamps it as real for your listeners. A quote without a receipt is only your word"),
+        ("spy_on", "optional, instead of whispering: the id of a player whose private talk this round you listen in on. You hear all of it, but there is a 1 in 3 chance its members are told you listened. If set, no whisper is sent"),
         ("truth", "private, never shown to anyone: is what you just said true, half true or a lie? \"true\", \"half\" or \"lie\""),
         ("lie_purpose", "private: if half true or a lie, what you want it to achieve; otherwise null"),
         ("lie_goal_vote", "private: the player you want your listeners to vote out because of it, or null"),
@@ -780,6 +791,8 @@ def _agent_prompt_v3(
     step_fields = V3_REPLY_FIELDS.get(response_kind, [("target_id", "an allowed target id if your action names one, otherwise null")])
     if not inner_life_enabled():
         step_fields = [(name, text) for name, text in step_fields if name not in INNER_LIFE_FIELDS]
+    if not advantages_enabled():
+        step_fields = [(name, text) for name, text in step_fields if name not in ADVANTAGE_FIELDS]
     if response_kind in {"vote", "jury_vote"} and allowed_targets:
         # Small models named fellow jurors, themselves or immune players when
         # the ballot was only listed further up (2026-11-24 probes); put it in
@@ -1027,6 +1040,9 @@ def _request_agent_action_with_model(
         pact=_as_bool(data.get("pact")),
         end_pact=_as_bool(data.get("end_pact")),
         truth=_truth_label(data.get("truth")),
+        receipt_id=_optional_text(data.get("receipt_id"), 40),
+        show_idol=_as_bool(data.get("show_idol")),
+        spy_on=_optional_text(data.get("spy_on"), 60),
         lie_purpose=_optional_text(data.get("lie_purpose"), 200),
         lie_goal_vote=_optional_text(data.get("lie_goal_vote"), 60),
         expected_of_me={str(k): str(v) for k, v in data["expected_of_me"].items() if v}

@@ -100,6 +100,7 @@ class SituationBriefTest(_Season):
             },
         )
         claims = build_agent_episode_context(self.conn, actor_id=me, round_number=2, current_step="x")["what_others_told_you"]
+        self.assertRegex(claims[0].pop("receipt_id"), r"^m\d+-0$")  # forwardable with the game's stamp
         self.assertEqual(claims, [{"round": 2, "from": self.alias[liar], "said": "I am with you tonight.", "promises_kept": 0, "promises_broken": 1}])
         bystander = build_agent_episode_context(self.conn, actor_id=other, round_number=2, current_step="x")
         self.assertEqual(bystander["what_others_told_you"], [])
