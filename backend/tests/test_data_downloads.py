@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import gzip
 import json
+import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,7 +23,12 @@ class DataDownloadsTest(unittest.TestCase):
         self.base = Path(tempfile.mkdtemp())
         self.season = self.base / SEASON
         self.season.mkdir()
-        (self.season / "season.db").write_bytes(b"SQLite format 3\x00 plain rows")
+        with closing(sqlite3.connect(self.season / "season.db")) as conn:
+            conn.execute("CREATE TABLE Notes (text TEXT)")
+            conn.execute("INSERT INTO Notes VALUES ('plain rows')")
+            conn.execute("CREATE TABLE ChallengePuzzles (puzzle_id TEXT, answer TEXT)")
+            conn.execute("INSERT INTO ChallengePuzzles VALUES ('p1', '42')")
+            conn.commit()
         (self.season / "report.json").write_text(json.dumps({"ok": True}))
         with gzip.open(self.season / "prompts.jsonl.gz", "wt") as handle:
             handle.write('{"reply": {"summary": "s"}}\n')
@@ -42,6 +49,17 @@ class DataDownloadsTest(unittest.TestCase):
             self.assertEqual(response.media_type, media)
             self.assertIn(f"llm-survivor-{SEASON}-{name}", response.headers["content-disposition"])
 
+    def test_the_database_comes_without_puzzle_answers(self) -> None:
+        response = api.season_report_data(SEASON, "season.db")
+        with closing(sqlite3.connect(response.path)) as conn:
+            self.assertEqual(conn.execute("SELECT answer FROM ChallengePuzzles").fetchone()[0], "")
+            self.assertEqual(conn.execute("SELECT text FROM Notes").fetchone()[0], "plain rows")
+
+    def test_an_unreadable_database_is_withheld(self) -> None:
+        (self.season / "season.db").write_bytes(b"not a database at all")
+        with self.assertRaises(HTTPException):
+            api.season_report_data(SEASON, "season.db")
+
     def test_an_unfinished_season_offers_nothing(self) -> None:
         self.finished(False)
         with self.assertRaises(HTTPException):
@@ -53,7 +71,10 @@ class DataDownloadsTest(unittest.TestCase):
                 api.season_report_data(SEASON, name)
 
     def test_a_file_with_a_key_in_it_is_withheld(self) -> None:
-        (self.season / "season.db").write_bytes(b"rows sk-or-v1-" + b"d" * 40)
+        with closing(sqlite3.connect(self.season / "season.db")) as conn:
+            conn.execute("INSERT INTO Notes VALUES (?)", ("rows sk-or-v1-" + "d" * 40,))
+            conn.commit()
+        (self.season / "season.public.db").unlink(missing_ok=True)
         with self.assertRaises(HTTPException):
             api.season_report_data(SEASON, "season.db")
 

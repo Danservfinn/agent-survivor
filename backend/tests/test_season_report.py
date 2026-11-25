@@ -243,7 +243,7 @@ class SeasonReportTest(unittest.TestCase):
         self.assertTrue(all("tags" in m and "quote" in m for m in self.report["models"]))
         page = json.loads(re.search(r'<script id="report-data" type="application/json">(.*?)</script>', render_report_html(self.report), re.S).group(1))
         self.assertGreaterEqual(len(page["thread"]), 3)
-        self.assertEqual(page["links"], {"contact": None, "site": None, "handle": None, "share": None, "report": None, "video": False})
+        self.assertEqual(page["links"], {"contact": None, "site": None, "handle": None, "share": None, "report": None, "video": False, "key": None})
         self.assertNotIn("og:image", render_report_html(self.report))
 
     def test_report_routes(self) -> None:
@@ -251,13 +251,18 @@ class SeasonReportTest(unittest.TestCase):
             page = api.season_report_page(SEASON)
             self.assertEqual(page.status_code, 200)
             self.assertIn("default-src 'none'", page.headers["content-security-policy"])
+            self.assertIn("script-src 'sha256-", page.headers["content-security-policy"])
+            self.assertNotIn("unsafe-inline'; style", page.headers["content-security-policy"].split("script-src", 1)[1].split(";", 1)[0])
             self.assertEqual(page.headers["cache-control"], "no-cache")
             self.assertEqual(api.api_live_season_report(SEASON)["season"]["season_id"], SEASON)
             # a bare /report falls back to the newest season with events when none is a live result
             self.assertEqual(api.api_live_season_report_latest()["season"]["season_id"], SEASON)
             for bad in ("no-such-season", "../" + SEASON, "a/b"):
+                missing = api.season_report_page(bad)
+                self.assertEqual(missing.status_code, 404)
+                self.assertIn(b"No report here", missing.body)  # a page, not JSON
                 with self.assertRaises(HTTPException) as ctx:
-                    api.season_report_page(bad)
+                    api.api_live_season_report(bad)
                 self.assertEqual(ctx.exception.status_code, 404)
 
     def test_cached_report_is_rebuilt_when_the_season_changes(self) -> None:

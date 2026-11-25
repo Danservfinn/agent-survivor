@@ -10,6 +10,7 @@ import threading
 import time
 from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -234,8 +235,18 @@ def api_live_season_status() -> dict:
     if inproc.get("status") == "running":
         return inproc
     if flag and flag.get("status") == "done":
-        return {"status": "done", "started_at": None, "report": flag.get("report")}
-    return inproc
+        return {"status": "done", "started_at": None, "report": _public_scorecard(flag.get("report"))}
+    return {**inproc, "report": _public_scorecard(inproc.get("report"))} if isinstance(inproc, dict) and inproc.get("report") else inproc
+
+
+def _public_scorecard(report: Any) -> Any:
+    """A scorecard for the public: no file paths, no entry id."""
+    if not isinstance(report, dict):
+        return report
+    out = {k: v for k, v in report.items() if k != "db"}
+    if isinstance(out.get("entry"), dict):
+        out["entry"] = {k: v for k, v in out["entry"].items() if k != "entry_id"}
+    return out
 
 
 @app.post("/api/live-season/public-run")
@@ -304,7 +315,7 @@ def api_live_season_public_run(payload: dict | None = Body(default=None)) -> dic
 
 
 @app.get("/api/live-season/feed")
-def api_live_season_feed(after: int = 0, season: str | None = None) -> dict:
+def api_live_season_feed(after: int = 0, season: str | None = None, k: str | None = None) -> dict:
     """Public: live event feed for the running (or just-finished) season.
 
     Reads the newest season db read-only. `after` is the last event id the
@@ -313,13 +324,16 @@ def api_live_season_feed(after: int = 0, season: str | None = None) -> dict:
     """
     import sqlite3
     from pathlib import Path
-    from .live_season import latest_season_dir, SEASONS_DIR
+    from . import season_visibility
+    from .live_season import SEASONS_DIR
 
     if season is not None:
         cand = Path(SEASONS_DIR) / season
-        season_dir = cand if _SEASON_ID.fullmatch(season) and (cand / "season.db").exists() else None
+        season_dir = cand if _SEASON_ID.fullmatch(season) and (cand / "season.db").exists() and season_visibility.can_view(cand, _link_key(k)) else None
     else:
-        season_dir = latest_season_dir()
+        # the newest season anyone may see: an unlisted entry's season is never the live default
+        dirs = sorted((p for p in Path(SEASONS_DIR).iterdir() if p.is_dir()), reverse=True) if Path(SEASONS_DIR).exists() else []
+        season_dir = next((p for p in dirs if season_visibility.listed(p)), None)
     if season_dir is None or not (season_dir / "season.db").exists():
         return {"ok": True, "season_id": None, "running": False, "events": []}
     db = season_dir / "season.db"
@@ -394,14 +408,15 @@ def api_live_season_feed(after: int = 0, season: str | None = None) -> dict:
 def api_live_season_history() -> dict:
     """Public: every recorded live season, freshest first, rescored to current index."""
     from pathlib import Path
+    from . import season_visibility
     from .live_season import SEASONS_DIR
     from .benchmark_scoring import score_season
 
     out = []
     for season_dir in sorted(Path(SEASONS_DIR).iterdir(), reverse=True):
         db = season_dir / "season.db"
-        if not db.exists():
-            continue
+        if not db.exists() or not season_visibility.listed(season_dir):
+            continue  # an unlisted or withdrawn season is never listed
         try:
             # sqlite3's context manager commits but does not close; close explicitly
             # or every request leaks one file handle per season
@@ -439,11 +454,15 @@ def api_live_season_history() -> dict:
 
 
 @app.get("/api/live-season/narrative/{season_id}")
-def api_live_season_narrative(season_id: str) -> dict:
+def api_live_season_narrative(season_id: str, k: str | None = None) -> dict:
     """Public: per-round written narrative for one season, from recorded events."""
+    from . import live_season, season_visibility
     from .season_narrative import season_narrative
 
     if not _SEASON_ID.fullmatch(season_id):
+        return {"ok": False, "error": "season not found"}
+    season_dir = Path(live_season.SEASONS_DIR) / season_id
+    if season_dir.exists() and not season_visibility.can_view(season_dir, _link_key(k)):
         return {"ok": False, "error": "season not found"}
     try:
         return season_narrative(season_id)
@@ -745,25 +764,63 @@ def api_frontier_roster_lock(_: None = Depends(require_operator)) -> dict:
 
 # ---------------------------------------------------------- season report
 # The report page shows text the models wrote, so it runs under a policy that
-# allows only its own inline script and style and no network requests at all.
-REPORT_CSP = (
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-    "img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-)
+# allows only its own inline script (by hash) and no network requests at all.
+def _report_csp() -> str:
+    from .season_report import report_csp
+
+    return report_csp(header=True)
 
 
-def _report_season_dir(season_id: str | None) -> Path:
+REPORT_CSP = _report_csp()
+# seasons moved out of the live folder keep working links
+ARCHIVE_DIRS = [
+    Path(p).expanduser()
+    for p in (os.environ.get("SURVIVOR_ARCHIVE_DIRS") or str(Path.home() / "projects" / "llm_survivor_archive" / "seasons-until-2026-11-24")).split(os.pathsep)
+    if p
+]
+
+
+def _find_season(season_id: str) -> Path | None:
     from . import live_season
+
+    if not _SEASON_ID.fullmatch(season_id):
+        return None
+    for root in [Path(live_season.SEASONS_DIR), *ARCHIVE_DIRS]:
+        candidate = root / season_id
+        if (candidate / "season.db").exists():
+            return candidate
+    return None
+
+
+def _link_key(key: Any) -> str | None:
+    """The `k` query value, if it is a plausible key (and not a FastAPI default object)."""
+    return key if isinstance(key, str) and 8 <= len(key) <= 64 and _SEASON_ID.fullmatch(key) else None
+
+
+def _report_season_dir(season_id: str | None, key: str | None = None) -> Path:
+    from . import live_season, season_visibility
+
+    key = _link_key(key)
     from .season_report import reportable_season_dir
 
-    seasons_dir = Path(live_season.SEASONS_DIR)
     if season_id is None:
-        season_dir = reportable_season_dir(seasons_dir)
+        season_dir = reportable_season_dir(Path(live_season.SEASONS_DIR))
     else:
-        season_dir = seasons_dir / season_id if _SEASON_ID.fullmatch(season_id) else None
-    if season_dir is None or not (season_dir / "season.db").exists():
+        season_dir = _find_season(season_id)
+    # a withdrawn season, or an unlisted one without its key, looks like no season at all
+    if season_dir is None or not (season_dir / "season.db").exists() or not season_visibility.can_view(season_dir, key):
         raise HTTPException(status_code=404, detail="season not found")
     return season_dir
+
+
+_NOT_FOUND_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report not found · LLM Survivor</title>
+<style>body{margin:0;background:#f6f8fc;color:#14213d;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:560px;margin:18vh auto;padding:0 20px}h1{font-size:28px;margin:0 0 8px}p{color:#5a6b85}a{color:#2f54eb}
+@media (prefers-color-scheme:dark){body{background:#0f1522;color:#e8edf7}p{color:#a3b0c7}a{color:#6f8dff}}</style></head>
+<body><main><h1>No report here</h1><p>This season does not exist, has been withdrawn, or needs the private link it was shared with.</p>
+<p><a href="/history">All seasons</a> · <a href="/">LLM Survivor</a></p></main></body></html>"""
 
 
 @app.get("/api/live-season/report")
@@ -775,17 +832,23 @@ def api_live_season_report_latest() -> dict:
 
 
 @app.get("/api/live-season/report/{season_id}")
-def api_live_season_report(season_id: str) -> dict:
-    """Public: full report data for one season (scores, votes, challenges, jury)."""
+def api_live_season_report(season_id: str, k: str | None = None) -> dict:
+    """Public: full report data for one season (scores, votes, challenges, jury).
+    An unlisted season needs its link key `k`."""
     from .season_report import cached_season_report
 
-    return cached_season_report(_report_season_dir(season_id))
+    return cached_season_report(_report_season_dir(season_id, k))
 
 
-def _report_page(season_id: str | None) -> Response:
+def _report_page(season_id: str | None, key: str | None = None) -> Response:
+    from . import season_visibility
     from .season_report import cached_season_report, render_report_html
 
-    season_dir = _report_season_dir(season_id)
+    try:
+        season_dir = _report_season_dir(season_id, key)
+    except HTTPException:
+        return Response(content=_NOT_FOUND_PAGE, status_code=404, media_type="text/html; charset=utf-8",
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
     has_cards = (season_dir / "share" / "season.png").is_file()
     has_video = (season_dir / "share" / "season.mp4").is_file()
     html = render_report_html(
@@ -795,12 +858,12 @@ def _report_page(season_id: str | None) -> Response:
         handle=os.environ.get("SURVIVOR_X_HANDLE"),
         share_base=f"/report/{season_dir.name}/share/" if has_cards else None,
         video=has_video,
+        link_key=season_visibility.link_key(season_dir),
     )
-    return Response(
-        content=html,
-        media_type="text/html; charset=utf-8",
-        headers={"Cache-Control": PAGE_CACHE_CONTROL, "Content-Security-Policy": REPORT_CSP, "X-Content-Type-Options": "nosniff"},
-    )
+    headers = {"Cache-Control": PAGE_CACHE_CONTROL, "Content-Security-Policy": REPORT_CSP, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
+    if season_visibility.link_key(season_dir):
+        headers["X-Robots-Tag"] = "noindex"  # an unlisted report stays out of search engines
+    return Response(content=html, media_type="text/html; charset=utf-8", headers=headers)
 
 
 @app.api_route("/report", methods=["GET", "HEAD"], include_in_schema=False)
@@ -809,23 +872,24 @@ def season_report_latest_page() -> Response:
 
 
 @app.api_route("/report/{season_id}", methods=["GET", "HEAD"], include_in_schema=False)
-def season_report_page(season_id: str) -> Response:
-    return _report_page(season_id)
+def season_report_page(season_id: str, k: str | None = None) -> Response:
+    return _report_page(season_id, k)
 
 
 @app.api_route("/report/{season_id}/share/{name}", methods=["GET", "HEAD"], include_in_schema=False)
-def season_report_share_image(season_id: str, name: str) -> Response:
+def season_report_share_image(season_id: str, name: str, k: str | None = None) -> Response:
     """One share file of a season: an image (season.png, leaderboard.png, moment-1.png,
     model-<id>.png) or the season clip (season.mp4)."""
     from .season_story import SHARE_NAME
 
     if not SHARE_NAME.fullmatch(name):
         raise HTTPException(status_code=404, detail="Not Found")
-    image = _report_season_dir(season_id) / "share" / name
+    image = _report_season_dir(season_id, k) / "share" / name
     if not image.is_file():
         raise HTTPException(status_code=404, detail="Not Found")
     media_type = "video/mp4" if image.suffix == ".mp4" else "image/png"
-    return FileResponse(image, media_type=media_type, headers={"Cache-Control": ROOT_FILE_CACHE_CONTROL})
+    cache = ROOT_FILE_CACHE_CONTROL if not _link_key(k) else "private, max-age=300"
+    return FileResponse(image, media_type=media_type, headers={"Cache-Control": cache, "X-Content-Type-Options": "nosniff"})
 
 
 # a finished season's raw data, linked from the Methodology page ("check it yourself")
@@ -848,24 +912,32 @@ def _safe_to_publish(path: Path) -> bool:
 
 
 @app.api_route("/report/{season_id}/data/{name}", methods=["GET", "HEAD"], include_in_schema=False)
-def season_report_data(season_id: str, name: str) -> Response:
-    """Public: one data file of a finished season (report.json, prompts.jsonl.gz, season.db)."""
+def season_report_data(season_id: str, name: str, k: str | None = None) -> Response:
+    """Public: one data file of a finished season (report.json, prompts.jsonl.gz, season.db).
+    The database is served with puzzle answers blanked (season.public.db)."""
+    from .season_report import public_season_db
+
     if name not in SEASON_DATA_FILES:
         raise HTTPException(status_code=404, detail="Not Found")
-    season_dir = _report_season_dir(season_id)
+    season_dir = _report_season_dir(season_id, k)
     try:
         finished = bool(json.loads((season_dir / "scorecard.json").read_text()).get("finished"))
     except (FileNotFoundError, ValueError):
         finished = False
     filename, media_type = SEASON_DATA_FILES[name]
     path = season_dir / filename
+    if finished and name == "season.db" and path.is_file():
+        try:
+            path = public_season_db(season_dir)
+        except sqlite3.DatabaseError:
+            raise HTTPException(status_code=404, detail="Not Found") from None  # never the raw file instead
     if not finished or not path.is_file() or not _safe_to_publish(path):
         raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(
         path,
         media_type=media_type,
         filename=f"llm-survivor-{season_dir.name}-{filename}",
-        headers={"Cache-Control": ROOT_FILE_CACHE_CONTROL},
+        headers={"Cache-Control": ROOT_FILE_CACHE_CONTROL if not _link_key(k) else "private, max-age=300", "X-Content-Type-Options": "nosniff"},
     )
 
 
