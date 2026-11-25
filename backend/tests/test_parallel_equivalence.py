@@ -62,8 +62,12 @@ class _Stub:
         kind = kwargs["response_kind"]
         # some replies are unusable: silent talk lines and spoiled votes must
         # come out the same sequential or parallel
-        if kind in {"group_conversation", "vote"} and h % 17 == 0:
+        if kind == "group_conversation" and h % 17 == 0:
             raise InvalidModelReply("stub: unusable reply")
+        # one seat fails every retry of every ballot, so the season always has
+        # spoiled votes to compare (a hash of the call varies across retries)
+        if kind == "vote" and kwargs["actor"]["agent_id"] == "agent-05":
+            raise InvalidModelReply("stub: unusable vote")
         targets = kwargs.get("allowed_targets") or []
         target = targets[h % len(targets)]["agent_id"] if targets else None
         promise = targets[(h >> 3) % len(targets)]["agent_id"] if kind == "group_conversation" and targets and h % 3 == 0 else None
