@@ -13,6 +13,7 @@ The API allows one season at a time (see api.api_live_season_public_run).
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -85,6 +86,8 @@ def public_run_caps() -> dict[str, Any]:
     """Server-side caps for a public run."""
     return {
         "roster": PUBLIC_ROSTER,
-        "season_seed": int(time.time()) % 100000,
+        # random, not the start time: a seed someone can predict lets them work out
+        # the season's puzzles and seating before it starts
+        "season_seed": secrets.randbelow(99999) + 1,
         "max_cost_cents": float(PUBLIC_RUN_MAX_COST_CENTS),
     }
