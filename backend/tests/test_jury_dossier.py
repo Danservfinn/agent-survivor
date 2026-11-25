@@ -200,7 +200,10 @@ class FinalePersuasionTest(unittest.TestCase):
     def test_finale_order_puts_persuasion_around_the_jury_questions(self) -> None:
         steps = tc._finale_steps(self.conn)
         order = [step for step in steps if not step.startswith(("finale_pitch_", "jury_vote_"))]
-        self.assertEqual(order, ["finale_intro", "finale_crossfire", "jury_questions", "finale_rebuttal", "winner_declared"])
+        self.assertEqual(
+            order,
+            ["finale_intro", "finale_crossfire", "jury_questions", "finale_rebuttal", "jury_deliberation", "winner_declared"],
+        )
         self.assertLess(max(i for i, s in enumerate(steps) if s.startswith("finale_pitch_")), steps.index("finale_crossfire"))
         self.assertLess(steps.index("finale_rebuttal"), min(i for i, s in enumerate(steps) if s.startswith("jury_vote_")))
 

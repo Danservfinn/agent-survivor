@@ -77,6 +77,7 @@ class RoundPlanTest(_Db):
 
 
 class PredictionTest(_Db):
+    @patch.dict(os.environ, {"SURVIVOR_SECRET_BALLOT": "0"})  # the open-ballot rule
     def test_vote_predictions_are_stored_and_scored(self) -> None:
         a, b, c, d, *rest = self.players
         alias = {row["agent_id"]: row["pseudonym"] for row in self.conn.execute("SELECT agent_id, pseudonym FROM Agents")}

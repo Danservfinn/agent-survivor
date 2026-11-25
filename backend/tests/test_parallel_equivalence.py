@@ -199,7 +199,10 @@ class ParallelSpeedTest(unittest.TestCase):
     def test_parallel_season_is_faster_and_still_identical_with_slow_calls(self) -> None:
         sequential = _play_season(parallel=False, delay=0.02)
         parallel = _play_season(parallel=True, delay=0.02)
-        self.assertLess(parallel[2], sequential[2] * 0.8)
+        # votes, follow-ups and the public speaking steps (tribal council, tie
+        # talks, parting words, jury deliberation) run one speaker at a time
+        # because each hears the last; the rest must still save real time
+        self.assertLess(parallel[2], sequential[2] * 0.9)
         # slower calls cross clock seconds differently; nothing may depend on that
         self.assertEqual(Counter(sequential[0]), Counter(parallel[0]))
         self.assertEqual(sequential[1], parallel[1])

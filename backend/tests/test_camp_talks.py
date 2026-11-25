@@ -77,6 +77,8 @@ class CampTalksTest(unittest.TestCase):
         self.assertIn(frozenset((c, a)), pairs)
         self.assertEqual(len(talks), 2)
 
+    @patch.dict(os.environ, {"SURVIVOR_SECRET_BALLOT": "0"})  # the open-ballot rule
+
     def test_live_talk_records_promises_and_marks_them_kept_or_broken(self) -> None:
         a, b, target, other, *_ = self.players
 

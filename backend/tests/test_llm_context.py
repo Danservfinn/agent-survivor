@@ -80,6 +80,8 @@ class LLMContextBoundaryTest(unittest.TestCase):
                 return
         self.fail("no elimination within 120 turns")
 
+    @patch.dict(os.environ, {"SURVIVOR_SECRET_BALLOT": "0"})  # the open-ballot rule
+
     def test_players_see_who_voted_for_whom_after_the_council(self) -> None:
         self._run_until_elimination()
         conn = database.get_db_connection()
@@ -103,6 +105,8 @@ class LLMContextBoundaryTest(unittest.TestCase):
         self.assertTrue(any("jury" in rule for rule in context["game_rules"]))
         self.assertEqual(context["challenge_history"][0]["round"], 1)
         self.assertTrue(context["challenge_history"][0]["winner"])
+
+    @patch.dict(os.environ, {"SURVIVOR_SECRET_BALLOT": "0"})  # the open-ballot rule
 
     def test_revote_ballots_stay_hidden_until_the_elimination(self) -> None:
         conn = database.get_db_connection()

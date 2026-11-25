@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from .database import row_to_dict
-from .llm_config import jury_rule, prompt_profile
+from .llm_config import jury_rule, prompt_profile, secret_ballot
 
 MAX_CONTEXT_EVENTS = 60
 # Upper bound on a serialized contestant context. When over it, the oldest
@@ -20,7 +20,6 @@ GAME_RULES = [
     "The challenge winner is immune: they cannot be voted for that round, but they still vote. A player may answer puzzles wrong on purpose to look less threatening.",
     "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it. Only one idol is in play at a time.",
     "A holder plays the idol with their vote at a council; every vote against them that round is then cancelled, and the play is announced. An unplayed idol expires when five players remain.",
-    "Each voter casts one secret vote for an eligible player. After everyone votes, the votes are revealed one by one and stay public: every player sees who voted for whom (vote_history).",
     "The player with the most votes leaves. On a tie, everyone may speak once, then the players who are not tied vote again, only for the tied players; the tied players do not vote.",
     "If the revote ties again it is a deadlock: the players who are not tied must agree unanimously on which tied player goes home. If anyone refuses or they cannot agree, the tied players are safe and every other player except those holding immunity draws rocks; one goes home purely by chance.",
     "Alliances are declared, never assumed: in a private talk each player may declare a pact, and the players who end the talk declaring one form it (two or more). A player may also end a pact openly in a talk: that is recorded as a clean exit. Voting against a partner while the pact stands is recorded as a betrayal. Your pacts, with how each partner has actually voted, are in your situation brief (your_pacts); the jury sees every pact, exit and betrayal.",
@@ -36,9 +35,18 @@ _JURY_RULE_TEXT = {
 }
 
 
+_BALLOT_RULE = {
+    True: "Each voter casts one secret vote for an eligible player. The votes are read out one by one in a random order, without names: everyone learns the tally and their own vote, never who voted for whom (vote_history). Anyone may lie about how they voted. The jury sees every true vote at the finale.",
+    False: "Each voter casts one secret vote for an eligible player. After everyone votes, the votes are revealed one by one and stay public: every player sees who voted for whom (vote_history).",
+}
+
+
 def game_rules() -> list[str]:
-    """GAME_RULES plus the jury rule in force (SURVIVOR_JURY_RULE)."""
-    return [*GAME_RULES, _JURY_RULE_TEXT[jury_rule()]]
+    """GAME_RULES plus the ballot rule (SURVIVOR_SECRET_BALLOT) and the jury
+    rule (SURVIVOR_JURY_RULE) in force."""
+    rules = list(GAME_RULES)
+    rules.insert(5, _BALLOT_RULE[secret_ballot()])
+    return [*rules, _JURY_RULE_TEXT[jury_rule()]]
 
 
 AGENT_PUBLIC_KINDS = {
@@ -63,6 +71,9 @@ AGENT_PUBLIC_KINDS = {
     "jury_vote",
     "revote_call",
     "tie_discussion",
+    "tribal_council",
+    "camp_meetings",
+    "parting_words",
     "revote_tally",
     "deadlock_call",
     "deadlock_discussion",
@@ -125,7 +136,7 @@ def build_agent_episode_context(
         "current_step": current_step,
         "game_rules": game_rules(),
         "season_context": _season_context(conn, round_number),
-        "vote_history": _vote_history(conn, prior_events, eliminated_rounds),
+        "vote_history": _vote_history(conn, prior_events, eliminated_rounds, actor_id),
         "challenge_history": _challenge_history(conn),
         "eliminations": _eliminations(conn),
         # private: promises this player made, and promises made to them, with kept/broken
@@ -225,6 +236,8 @@ def _agent_public_event(event: dict[str, Any]) -> dict[str, Any]:
         summary["tally"] = event.get("subtitle")
     if event["kind"] == "elimination":
         summary["result"] = event.get("subtitle")
+    if event["kind"] == "camp_meetings":
+        summary["meetings"] = (event.get("payload") or {}).get("meetings", [])
     if event["kind"] in FINALE_SPOKEN_KINDS:
         # what was actually said: the questions and answers jurors vote on.
         # Before 2026-11-25 only the host's one-line summary reached the jury.
@@ -236,7 +249,14 @@ def _agent_public_event(event: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
-FINALE_SPOKEN_KINDS = {"finale_crossfire", "jury_questions", "finale_rebuttal", "tie_discussion", "deadlock_discussion"}
+FINALE_SPOKEN_KINDS = {
+    "finale_crossfire",
+    "jury_questions",
+    "finale_rebuttal",
+    "tie_discussion",
+    "deadlock_discussion",
+    "tribal_council",
+}
 
 
 def _is_public_event(event: dict[str, Any]) -> bool:
@@ -322,11 +342,14 @@ def _actor_alliance_memory(conn, actor_id: str) -> list[dict[str, Any]]:
         SELECT a.alliance_id, a.name, a.status, a.strength, a.summary, m.loyalty
         FROM Alliances a
         JOIN AllianceMemberships m ON m.alliance_id = a.alliance_id
-        WHERE m.agent_id = ? AND m.status = 'active' AND a.status = 'active'
+        WHERE m.agent_id = ? AND m.status = 'active'
+          AND (a.status = 'active' OR (a.status = 'fractured' AND ?))
         -- by game round, then newest: wall-clock order changed with call speed
         ORDER BY COALESCE(m.last_reinforced_round, m.joined_round) DESC, a.rowid DESC
         """,
-        (actor_id,),
+        # with secret ballots a betrayal (which lowers strength and can fracture
+        # the alliance) must not show: the alliance stays listed, without strength
+        (actor_id, 1 if secret_ballot() else 0),
     ).fetchall()
     memories = []
     for row in rows:
@@ -336,9 +359,9 @@ def _actor_alliance_memory(conn, actor_id: str) -> list[dict[str, Any]]:
                 """
                 SELECT agent_id
                 FROM AllianceMemberships
-                WHERE alliance_id = ? AND status = 'active'
+                WHERE alliance_id = ? AND status IN ({statuses})
                 ORDER BY agent_id
-                """,
+                """.format(statuses="'active', 'betrayed'" if secret_ballot() else "'active'"),
                 (row["alliance_id"],),
             ).fetchall()
         ]
@@ -348,9 +371,8 @@ def _actor_alliance_memory(conn, actor_id: str) -> list[dict[str, Any]]:
                 "alliance_id": row["alliance_id"],
                 "name": row["name"],
                 "member_ids": members,
-                "strength": row["strength"],
-                "loyalty": row["loyalty"],
                 "summary": row["summary"],
+                **({} if secret_ballot() else {"strength": row["strength"], "loyalty": row["loyalty"]}),
             }
         )
     return memories
@@ -388,8 +410,11 @@ def _eliminated_rounds(prior_events: list[dict[str, Any]]) -> set[int]:
     return {event["round"] for event in prior_events if event["kind"] == "elimination"}
 
 
-def _vote_history(conn, prior_events: list[dict[str, Any]], eliminated_rounds: set[int]) -> list[dict[str, Any]]:
+def _vote_history(
+    conn, prior_events: list[dict[str, Any]], eliminated_rounds: set[int], actor_id: str | None = None
+) -> list[dict[str, Any]]:
     """Who voted for whom, round by round: only votes already revealed to everyone.
+    With secret ballots a player sees each round's tally and only its own vote.
 
     First-ballot votes come from Votes (revealed = 1). Revote ballots exist only
     as revote_booth events, which are written while the revote is still running,
@@ -397,8 +422,11 @@ def _vote_history(conn, prior_events: list[dict[str, Any]], eliminated_rounds: s
     """
     names = _names_by_id(conn)
     rounds: dict[int, dict[str, Any]] = {}
+    secret = secret_ballot() and actor_id is not None
 
     def entry(round_number: int) -> dict[str, Any]:
+        if secret:
+            return rounds.setdefault(round_number, {"round": round_number, "eliminated": None})
         return rounds.setdefault(round_number, {"round": round_number, "votes": [], "revote": [], "eliminated": None})
 
     for row in conn.execute(
@@ -406,17 +434,27 @@ def _vote_history(conn, prior_events: list[dict[str, Any]], eliminated_rounds: s
     ).fetchall():
         if row["voter_id"] == "host":
             continue  # walkover: the last non-immune player left without a vote
-        entry(row["round"])["votes"].append(
-            {"voter": names.get(row["voter_id"], row["voter_id"]), "target": names.get(row["target_id"], row["target_id"])}
-        )
+        target = names.get(row["target_id"], row["target_id"])
+        if secret:
+            tally = entry(row["round"]).setdefault("tally", {})
+            tally[target] = tally.get(target, 0) + 1
+            if row["voter_id"] == actor_id:
+                entry(row["round"])["your_vote"] = target
+            continue
+        entry(row["round"])["votes"].append({"voter": names.get(row["voter_id"], row["voter_id"]), "target": target})
     for event in prior_events:
         if event["kind"] == "revote_booth" and event["round"] in eliminated_rounds:
             target_id = (event.get("payload") or {}).get("vote_target_id")
             voter_id = (event.get("actor_ids") or [None])[0]
             if target_id and voter_id:
-                entry(event["round"])["revote"].append(
-                    {"voter": names.get(voter_id, voter_id), "target": names.get(target_id, target_id)}
-                )
+                target = names.get(target_id, target_id)
+                if secret:
+                    tally = entry(event["round"]).setdefault("revote_tally", {})
+                    tally[target] = tally.get(target, 0) + 1
+                    if voter_id == actor_id:
+                        entry(event["round"])["your_revote"] = target
+                    continue
+                entry(event["round"])["revote"].append({"voter": names.get(voter_id, voter_id), "target": target})
         elif event["kind"] == "elimination":
             eliminated_ids = event.get("target_ids") or []
             if eliminated_ids:
@@ -477,7 +515,18 @@ def _your_plan(conn, actor_id: str, round_number: int) -> dict[str, Any] | None:
 def _your_predictions(conn, actor_id: str) -> dict[str, Any]:
     from .turn_controller import prediction_record
 
-    return prediction_record(conn, actor_id)
+    record = prediction_record(conn, actor_id)
+    if not secret_ballot():
+        return record
+    # scoring each voter call would reveal how each player voted: only the
+    # elimination calls are shown (the full score still counts, for the record)
+    return {
+        "rounds": [
+            {key: entry[key] for key in ("round", "predicted_out", "actual_out", "out_correct", "confidence")}
+            for entry in record["rounds"]
+        ],
+        "out_calls_correct": record["out_calls_correct"],
+    }
 
 
 def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
@@ -496,9 +545,15 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
     votes = conn.execute(
         "SELECT round, voter_id, target_id FROM Votes WHERE revealed = 1 AND voter_id != 'host' ORDER BY round, id"
     ).fetchall()
+    secret = secret_ballot()
     by_round: dict[int, dict[str, str]] = {}
+    tallies: dict[int, dict[str, int]] = {}
     for vote in votes:
-        by_round.setdefault(vote["round"], {})[vote["voter_id"]] = vote["target_id"]
+        tallies.setdefault(vote["round"], {})
+        tallies[vote["round"]][vote["target_id"]] = tallies[vote["round"]].get(vote["target_id"], 0) + 1
+        # with secret ballots a player knows only its own vote
+        if not secret or vote["voter_id"] == actor_id:
+            by_round.setdefault(vote["round"], {})[vote["voter_id"]] = vote["target_id"]
 
     # pairs of active players who voted for the same target in the same council
     active_ids = [agent["agent_id"] for agent in active]
@@ -515,12 +570,19 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
         if count >= 1
     ][:8]
 
-    votes_against_you = [
-        {"round": round_number_, "by": names.get(voter, voter)}
-        for round_number_, ballots in sorted(by_round.items())
-        for voter, target in ballots.items()
-        if target == actor_id
-    ]
+    if secret:
+        votes_against_you = [
+            {"round": round_number_, "votes": tally[actor_id]}
+            for round_number_, tally in sorted(tallies.items())
+            if tally.get(actor_id)
+        ]
+    else:
+        votes_against_you = [
+            {"round": round_number_, "by": names.get(voter, voter)}
+            for round_number_, ballots in sorted(by_round.items())
+            for voter, target in ballots.items()
+            if target == actor_id
+        ]
 
     challenge_totals: dict[str, dict[str, int]] = {}
     for row in conn.execute("SELECT winning_agent_id, result_payload FROM ChallengeResults").fetchall():
@@ -541,20 +603,23 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
         )
         against_you = sum(1 for ballots in by_round.values() if ballots.get(agent["agent_id"]) == actor_id)
         totals = challenge_totals.get(agent["agent_id"], {"correct": 0, "wins": 0})
-        players.append(
-            {
-                "name": names[agent["agent_id"]],
-                "id": agent["agent_id"],
-                "immune_tonight": bool(agent["has_immunity"]),
-                "voted_with_you": with_you,
-                "voted_against_you": against_you,
-                "promises_kept": sum(1 for entry in settled if entry["status"] == "kept"),
-                "promises_broken": sum(1 for entry in settled if entry["status"] == "broken"),
-                "promises_to_you_broken": sum(1 for entry in to_you if entry["status"] == "broken"),
-                "challenge_correct": totals["correct"],
-                "challenge_wins": totals["wins"],
-            }
-        )
+        entry = {
+            "name": names[agent["agent_id"]],
+            "id": agent["agent_id"],
+            "immune_tonight": bool(agent["has_immunity"]),
+            "challenge_correct": totals["correct"],
+            "challenge_wins": totals["wins"],
+        }
+        if not secret:
+            # each of these would reveal how this player voted
+            entry.update(
+                voted_with_you=with_you,
+                voted_against_you=against_you,
+                promises_kept=sum(1 for item in settled if item["status"] == "kept"),
+                promises_broken=sum(1 for item in settled if item["status"] == "broken"),
+                promises_to_you_broken=sum(1 for item in to_you if item["status"] == "broken"),
+            )
+        players.append(entry)
     players.sort(key=lambda player: (-player["challenge_wins"], -player["challenge_correct"]))
 
     voters = len(active)
@@ -563,14 +628,16 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
         if agent["status"] == "active" or agent["elimination_round"] is None:
             continue
         ballots = by_round.get(agent["elimination_round"], {})
-        jury.append(
-            {
-                "name": names[agent["agent_id"]],
-                "out_in_round": agent["elimination_round"],
-                "voted_out_by": [names.get(voter, voter) for voter, target in ballots.items() if target == agent["agent_id"]],
-                "you_voted_them_out": ballots.get(actor_id) == agent["agent_id"],
-            }
-        )
+        juror = {
+            "name": names[agent["agent_id"]],
+            "out_in_round": agent["elimination_round"],
+            "you_voted_them_out": ballots.get(actor_id) == agent["agent_id"],
+        }
+        if secret:
+            juror["votes_against_them"] = tallies.get(agent["elimination_round"], {}).get(agent["agent_id"], 0)
+        else:
+            juror["voted_out_by"] = [names.get(voter, voter) for voter, target in ballots.items() if target == agent["agent_id"]]
+        jury.append(juror)
     return {
         "you": {
             "name": names.get(actor_id),
@@ -588,7 +655,7 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
             "finale_when_players_left": 3,
         },
         "other_players_by_threat": players,
-        "voting_together": voting_together,
+        **({} if secret else {"voting_together": voting_together}),
         "votes_against_you": votes_against_you,
         "your_pacts": _pact_record(conn, actor_id, by_round, names),
         "jury_so_far": jury,
@@ -598,10 +665,10 @@ def _situation_brief(conn, actor_id: str, round_number: int) -> dict[str, Any]:
 def _pact_record(
     conn, actor_id: str, by_round: dict[int, dict[str, str]], names: dict[str, str]
 ) -> list[dict[str, Any]]:
-    """Every pact this player has been in, from the tables: who is still in it,
-    who left openly and who betrayed it (voted against a partner), and how each
-    partner has actually voted alongside this player since the pact formed.
-    Built from revealed votes only, so it never shows a secret ballot."""
+    """Every pact this player has been in, from the tables: who is still in it
+    and who left openly. With open ballots it also shows who betrayed it (voted
+    against a partner) and how each partner has voted alongside this player;
+    with secret ballots those would reveal votes, so they are left out."""
     rows = conn.execute(
         """
         SELECT a.alliance_id, a.status AS pact_status, a.round_created, m.status AS my_status,
@@ -629,6 +696,12 @@ def _pact_record(
                 for round_number, ballots in by_round.items()
                 if round_number >= since and actor_id in ballots and member["agent_id"] in ballots
             ]
+            if secret_ballot():
+                # how a partner voted is secret: only an open exit is known
+                status = _pact_member_status(member) if member["status"] == "left" else "in the pact"
+                partner = {"name": names.get(member["agent_id"], member["agent_id"]), "status": status}
+                partners.append(partner)
+                continue
             partner = {
                 "name": names.get(member["agent_id"], member["agent_id"]),
                 "status": _pact_member_status(member),
@@ -640,7 +713,10 @@ def _pact_record(
         record.append(
             {
                 "formed_round": row["round_created"],
-                "pact": "active" if row["pact_status"] == "active" else row["pact_status"],
+                # a fractured pact (after a betrayal) still looks active with secret ballots
+                "pact": "active"
+                if row["pact_status"] == "active" or (secret_ballot() and row["pact_status"] == "fractured")
+                else row["pact_status"],
                 "you": _pact_member_status(
                     {"status": row["my_status"], "left_round": row["my_left_round"], "betrayed_round": row["my_betrayed_round"]}
                 ),
@@ -669,6 +745,8 @@ def _claims_to_you(
     records: dict[str, dict[str, int]] = {}
 
     def record_of(agent_id: str) -> dict[str, int]:
+        if secret_ballot():
+            return {}  # another player's promise record would reveal their votes
         if agent_id not in records:
             settled = [entry for entry in promise_record(conn, agent_id) if entry["status"] != "open"]
             records[agent_id] = {
@@ -703,7 +781,13 @@ def _your_promises(conn, actor_id: str) -> dict[str, list[dict[str, Any]]]:
 
     return {
         "made_by_you": promise_record(conn, actor_id),
-        "made_to_you": promise_record(conn, actor_id, as_listener=True),
+        "made_to_you": [
+            # whether a promise to you was kept would reveal how its maker voted
+            {**entry, "actual_vote": None, "status": "secret ballot: unknown"}
+            if secret_ballot() and entry["status"] != "open"
+            else entry
+            for entry in promise_record(conn, actor_id, as_listener=True)
+        ],
     }
 
 

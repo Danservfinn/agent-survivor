@@ -86,6 +86,14 @@ PROMPT_PROFILES = ("v2", "v3")
 JURY_RULES = ("standard", "own_judgment")
 
 
+def secret_ballot() -> bool:
+    """Secret ballots (default since 2026-11-25), as in Survivor: players learn
+    each round's tally and their own vote, never who voted for whom. The jury
+    sees the true votes at the finale. SURVIVOR_SECRET_BALLOT=0 shows every
+    vote to every player, the earlier rule, for comparisons."""
+    return os.environ.get("SURVIVOR_SECRET_BALLOT", "1").strip() != "0"
+
+
 def jury_rule() -> str:
     value = os.environ.get("SURVIVOR_JURY_RULE", "standard").strip().lower()
     return value if value in JURY_RULES else "standard"

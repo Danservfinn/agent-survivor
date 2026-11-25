@@ -4,6 +4,8 @@ and each player's pact record in its situation brief."""
 from __future__ import annotations
 
 import json
+import os
+from unittest.mock import patch
 
 from backend import turn_controller as tc
 from backend.llm_context import build_agent_episode_context
@@ -90,6 +92,8 @@ class PactTest(_Base):
         self.assertEqual(self._members(pact)[a], "active")
         tc._vote_reveal_event(self.conn, ROUND, 1, 1)
         self.assertEqual(self._members(pact)[a], "betrayed")
+
+    @patch.dict(os.environ, {"SURVIVOR_SECRET_BALLOT": "0"})  # the open-ballot rule
 
     def test_the_pact_record_shows_how_each_partner_voted(self) -> None:
         a, b, c, x, y, *_ = self.players

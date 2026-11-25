@@ -31,6 +31,7 @@ from .llm_config import (
     jury_rule,
     live_llm_provider,
     prompt_profile,
+    secret_ballot,
     should_use_live_llm,
 )
 from .openrouter_client import (
@@ -1052,7 +1053,21 @@ def _apply_step(
 
     if step == "camp_talks":
         events = _camp_talk_events(conn, round_number, turn_id)
+        if events:
+            events.append(_camp_meetings_event(conn, round_number, turn_id, events))
         return events, {"camp_talks": len(events)}, f"{len(events)} private talks"
+
+    if step == "tribal_council":
+        event = _tribal_council_event(conn, round_number, turn_id)
+        return [event], {"tribal_council": True}, event["title"]
+
+    if step == "parting_words":
+        event = _parting_words_event(conn, round_number, turn_id)
+        return ([event] if event else []), {"parting_words": bool(event)}, "Parting words" if event else "Nobody left"
+
+    if step == "jury_deliberation":
+        event = _jury_deliberation_event(conn, round_number, turn_id)
+        return [event], {"jury_deliberation": True}, event["title"]
 
     if step == "challenge_gift":
         events = _challenge_gift_events(conn, round_number, turn_id)
@@ -1157,9 +1172,13 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
             # one short private message to react to what the talks revealed
             "camp_followup",
             "tribal_vote_call",
+            # everyone speaks once in front of everyone before the vote
+            "tribal_council",
             *vote_booth_steps,
             *vote_reveal_steps,
             "elimination",
+            # the player voted out speaks once, in public, before joining the jury
+            "parting_words",
             "memory_update",
         ]
     return [*ROUND_OPENING_STEPS, *PRE_VOTE_STEPS, *vote_booth_steps, *vote_reveal_steps, *POST_VOTE_STEPS]
@@ -1184,6 +1203,8 @@ def _finale_steps(conn) -> list[str]:
         "finale_crossfire",
         "jury_questions",
         "finale_rebuttal",
+        # jurors talk among themselves before voting; the finalists do not hear it
+        "jury_deliberation",
         *[f"jury_vote_{agent_id}" for agent_id in jurors],
         "winner_declared",
     ]
@@ -4893,11 +4914,23 @@ def _vote_booth_event(
     )
 
 
+def _reveal_order(conn, round_number: int) -> list[int]:
+    """Vote ids in the order they are read out. With secret ballots the order is
+    shuffled (fixed by season and round): reading them in casting order, which
+    follows the voter order, would tell everyone who cast each vote."""
+    ids = [row["id"] for row in conn.execute("SELECT id FROM Votes WHERE round = ? ORDER BY id", (round_number,))]
+    if secret_ballot():
+        random.Random(f"reveal:{_season_seed()}:{round_number}").shuffle(ids)
+    return ids
+
+
 def _vote_reveal_event(conn, round_number: int, turn_id: int, reveal_index: int) -> dict[str, Any]:
-    vote_row = conn.execute(
-        "SELECT * FROM Votes WHERE round = ? ORDER BY id LIMIT 1 OFFSET ?",
-        (round_number, reveal_index - 1),
-    ).fetchone()
+    order = _reveal_order(conn, round_number)
+    vote_row = (
+        conn.execute("SELECT * FROM Votes WHERE id = ?", (order[reveal_index - 1],)).fetchone()
+        if reveal_index <= len(order)
+        else None
+    )
     if vote_row is None:
         raise RuntimeError("Cannot reveal vote before it is cast")
 
@@ -5086,9 +5119,19 @@ def _maybe_run_revote(
 
 
 def _tie_talk(
-    conn, round_number: int, turn_id: int, *, speakers: list[str], kind: str, title: str, scene: str
+    conn,
+    round_number: int,
+    turn_id: int,
+    *,
+    speakers: list[str],
+    kind: str,
+    title: str,
+    scene: str,
+    phase: str = "tribal",
+    private_to: list[str] | None = None,
 ) -> list[dict[str, str]]:
-    """One public line from each speaker, in order; each hears what was said before."""
+    """One line from each speaker, in order; each hears what was said before.
+    Public, unless private_to names the only players who hear it."""
     lines: list[dict[str, str]] = []
     for speaker in speakers:
         if should_use_live_llm():
@@ -5108,26 +5151,153 @@ def _tie_talk(
             text = "I will vote for whoever keeps this group strongest."
         if text:
             lines.append({"agent_id": speaker, "text": text})
+    payload: dict[str, Any] = {"speaker_lines": lines}
+    if private_to is not None:
+        payload.update(privacy="participants_only", participant_ids=list(private_to))
     _insert_story_event(
         conn,
         turn_id=turn_id,
         round_number=round_number,
-        phase="tribal",
+        phase=phase,
         kind=kind,
-        scene="tribal",
+        scene="tribal" if phase == "tribal" else phase,
         shot="group_huddle",
         actor_ids=speakers,
         target_ids=[],
         visibility="audience",
         title=title,
-        dialogue=f"{len(lines)} players spoke before the decision.",
+        dialogue=f"{len(lines)} players spoke.",
         subtitle=title,
         duration_ms=10000,
         animation="revote",
         spoiler_group="elimination",
-        payload={"speaker_lines": lines},
+        payload=payload,
     )
     return lines
+
+
+def _seeded_order(agent_ids: list[str], label: str, round_number: int) -> list[str]:
+    """A speaking order fixed by season and round, so nobody always speaks first or last."""
+    order = sorted(agent_ids)
+    random.Random(f"{label}:{_season_seed()}:{round_number}").shuffle(order)
+    return order
+
+
+def _tribal_council_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
+    """Before the vote everyone speaks once, in front of everyone: to signal,
+    bluff, call someone out or make a last pitch for votes."""
+    players = [agent["agent_id"] for agent in _active_agent_rows(conn)]
+    _tie_talk(
+        conn,
+        round_number,
+        turn_id,
+        speakers=_seeded_order(players, "council", round_number),
+        kind="tribal_council",
+        title="Tribal Council",
+        scene=(
+            "Tribal council, right before the vote. Everyone is here and hears everything you say. Speak once, "
+            "in under 80 words: signal where you stand, bluff, call someone out, or make a last pitch for votes. "
+            "Remember that the ballot is secret and anyone may say one thing here and vote another way."
+        ),
+    )
+    return row_to_dict(conn.execute("SELECT * FROM StoryEvents WHERE kind = 'tribal_council' ORDER BY id DESC LIMIT 1").fetchone())
+
+
+def _camp_meetings_event(conn, round_number: int, turn_id: int, talks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Everyone sees who met whom, never what was said: in camp people notice
+    who walks off together."""
+    meetings = [
+        {
+            "started_by": _agent_name(conn, talk["payload"].get("chosen_by") or talk["payload"]["participant_ids"][0]),
+            "with": [_agent_name(conn, agent_id) for agent_id in talk["payload"]["participant_ids"]],
+        }
+        for talk in talks
+        if talk["payload"].get("participant_ids")
+    ]
+    line = "; ".join(f"{m['started_by']} met {', '.join(n for n in m['with'] if n != m['started_by'])}" for m in meetings)
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="camp",
+        kind="camp_meetings",
+        scene="camp",
+        shot="wide_camp",
+        actor_ids=["host"],
+        target_ids=[],
+        visibility="audience",
+        title="Who Met Whom",
+        dialogue=f"Seen around camp: {line}." if line else "Nobody met today.",
+        subtitle="Meetings are seen; what was said is not",
+        duration_ms=6000,
+        animation="establishing",
+        payload={"meetings": meetings},
+    )
+
+
+def _parting_words_event(conn, round_number: int, turn_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT agent_id FROM Agents WHERE elimination_round = ? ORDER BY agent_id LIMIT 1", (round_number,)
+    ).fetchone()
+    if row is None:
+        return None  # nobody left this round
+    out = row["agent_id"]
+    text = f"{_agent_name(conn, out)} leaves without a word."
+    if should_use_live_llm():
+        context = build_agent_episode_context(conn, actor_id=out, round_number=round_number, current_step="parting_words")
+        action = _real_agent_action(
+            conn,
+            actor_id=out,
+            step="parting_words",
+            scene_context=(
+                "You have just been voted out and will sit on the jury that picks the winner. Say your parting "
+                "words to the players still in the game, in under 80 words. Everyone hears them."
+            ),
+            response_kind="dialogue",
+            episode_context=context,
+            allowed_targets=[],
+        )
+        if action and action.dialogue:
+            text = action.dialogue
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="tribal",
+        kind="parting_words",
+        scene="tribal",
+        shot="finalist_closeup",
+        actor_ids=[out],
+        target_ids=[],
+        visibility="audience",
+        title=f"{_agent_name(conn, out)}'s Parting Words",
+        dialogue=text,
+        subtitle="Parting words",
+        duration_ms=8000,
+        animation="finale_pitch",
+        payload={},
+    )
+
+
+def _jury_deliberation_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
+    """Jurors talk it over among themselves before voting; finalists do not hear."""
+    jurors = [juror["agent_id"] for juror in _jury_rows(conn)]
+    finalists = ", ".join(agent["pseudonym"] for agent in _active_agent_rows(conn))
+    _tie_talk(
+        conn,
+        round_number,
+        turn_id,
+        speakers=jurors,
+        kind="jury_deliberation",
+        title="Jury Deliberation",
+        phase="finale",
+        private_to=jurors,
+        scene=(
+            f"Jury deliberation, before the final vote between {finalists}. Only jurors hear this. Speak once, "
+            "in under 100 words: who you lean toward and why, and answer what other jurors have said."
+        ),
+    )
+    return row_to_dict(conn.execute("SELECT * FROM StoryEvents WHERE kind = 'jury_deliberation' ORDER BY id DESC LIMIT 1").fetchone())
 
 
 def _deadlock(
@@ -6227,6 +6397,12 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         return 2 * len(_active_agent_rows(conn))
     if step == "finale_rebuttal":
         return len(_active_agent_rows(conn))
+    if step == "tribal_council":
+        return len(_active_agent_rows(conn))
+    if step == "parting_words":
+        return 1
+    if step == "jury_deliberation":
+        return conn.execute("SELECT COUNT(*) AS n FROM Agents WHERE status = 'eliminated'").fetchone()["n"]
     if step == "challenge_attempts":
         # one call per player for the whole ladder
         return len(_active_agent_rows(conn))
@@ -6267,6 +6443,9 @@ _STEP_RESPONSE_KIND = {
     "jury_questions": "jury_vote",
     "finale_crossfire": "finale_pitch",
     "finale_rebuttal": "finale_pitch",
+    "tribal_council": "conversation",
+    "parting_words": "conversation",
+    "jury_deliberation": "conversation",
     "winner_declared": "host",
     "challenge_intro": "host",
     "challenge_result": "host",

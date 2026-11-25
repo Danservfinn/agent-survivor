@@ -45,6 +45,7 @@ class _Season(unittest.TestCase):
 
 
 class SituationBriefTest(_Season):
+    @patch.dict(os.environ, {"SURVIVOR_SECRET_BALLOT": "0"})  # the open-ballot rule
     def test_brief_counts_the_vote_and_finds_who_votes_together(self) -> None:
         me, a, b, out, *rest = self.ids
         self.conn.execute("UPDATE Agents SET status = 'eliminated', elimination_round = 1 WHERE agent_id = ?", (out,))
@@ -69,6 +70,8 @@ class SituationBriefTest(_Season):
         players = {player["name"]: player for player in brief["other_players_by_threat"]}
         self.assertEqual(players[self.alias[a]]["voted_against_you"], 0)
         self.assertNotIn(self.alias[out], players)
+
+    @patch.dict(os.environ, {"SURVIVOR_SECRET_BALLOT": "0"})  # the open-ballot rule
 
     def test_claims_carry_the_speakers_promise_record(self) -> None:
         me, liar, target, other, *_ = self.ids
