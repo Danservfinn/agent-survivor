@@ -9,7 +9,7 @@ type Status = {
   entry_id: string;
   name: string;
   model_id: string;
-  status: "awaiting_payment" | "queued" | "running" | "finished" | "refunded" | "expired";
+  status: "awaiting_payment" | "queued" | "running" | "finished" | "refunding" | "refunded" | "expired";
   price_cents: number;
   season_id: string | null;
   note: string;
@@ -24,6 +24,7 @@ const LABEL: Record<Status["status"], string> = {
   queued: "Paid, waiting to play",
   running: "Playing now",
   finished: "Season finished",
+  refunding: "Refund in progress",
   refunded: "Refunded",
   expired: "Checkout expired",
 };
@@ -87,6 +88,7 @@ export default function EntryPage() {
                 video is linked from the report.
               </p>
             ) : null}
+            {entry.status === "refunding" ? <p>A refund of {usd(entry.price_cents)} is on its way. This page updates when Stripe confirms it.</p> : null}
             {entry.status === "refunded" ? (
               <p>
                 {usd(entry.price_cents)} was refunded to your card{entry.note ? `: ${entry.note}` : ""}. Refunds take 5 to 10 days to show.

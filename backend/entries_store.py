@@ -22,7 +22,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-STATUSES = ("awaiting_payment", "queued", "running", "finished", "refunded", "expired")
+# "refunding": a refund was asked for but not confirmed; such an entry never starts a season
+STATUSES = ("awaiting_payment", "queued", "running", "finished", "refunding", "refunded", "expired")
 OPEN = ("queued", "running")
 
 
@@ -75,6 +76,10 @@ def connect() -> sqlite3.Connection:
         );
         """
     )
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(Entries)")}
+    for column, kind in (("refund_reason", "TEXT"), ("refund_tried_at", "REAL")):
+        if column not in have:
+            conn.execute(f"ALTER TABLE Entries ADD COLUMN {column} {kind}")
     return conn
 
 
@@ -163,6 +168,11 @@ def queue_position(entry_id: str) -> int | None:
     """1 for the next to run; None when the entry is not waiting."""
     waiting = [e["entry_id"] for e in with_status("queued")]
     return waiting.index(entry_id) + 1 if entry_id in waiting else None
+
+
+def event_handled(event_id: str) -> bool:
+    with _db() as conn:
+        return conn.execute("SELECT 1 FROM StripeEvents WHERE event_id = ?", (event_id,)).fetchone() is not None
 
 
 def seen_event(event_id: str, kind: str) -> bool:

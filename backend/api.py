@@ -203,7 +203,8 @@ def api_live_season_run(request: LiveSeasonRequest, _: None = Depends(require_op
     )
 
 
-_launch_lock = threading.Lock()
+# shared with the paid-entry dispatcher, so the two can never start seasons at once
+from .season_launch import LAUNCH_LOCK as _launch_lock  # noqa: E402
 
 
 def _runner_flag() -> dict | None:
@@ -294,7 +295,10 @@ def api_live_season_public_run(payload: dict | None = Body(default=None)) -> dic
     with _launch_lock:
         if _detached_runner_alive() or current_status().get("status") == "running":
             raise HTTPException(status_code=409, detail="a season is already running, check status")
-        if entries_store.with_status(*entries_store.OPEN):
+        from .entry_queue import startable
+
+        # only entries the dispatcher can actually start hold the button back
+        if startable() or entries_store.with_status("running"):
             raise HTTPException(status_code=409, detail="paid entries are waiting to play; try again after them")
         (seasons_dir / "runner_status.json").write_text(json.dumps({"status": "running", "started_at": time.time()}))
         # detached so API restarts can't kill it; it writes its report and
@@ -488,8 +492,9 @@ def api_methodology_prompt(family: str) -> dict:
 # (docs/plans/2026-11-25-methodology-page-and-agent-entries.md, "Entries").
 
 _quote_hits: dict[str, list[float]] = {}
+_quote_day: list[float] = []
 QUOTES_PER_10_MIN = 6
-QUOTES_PER_DAY = 200  # every quote makes one real model call
+QUOTES_PER_DAY = 200  # every quote that reaches a model makes one real call
 
 
 def _client_ip(request: Request) -> str:
@@ -498,14 +503,25 @@ def _client_ip(request: Request) -> str:
 
 
 def _rate_limited(ip: str) -> bool:
+    """Per visitor: at most QUOTES_PER_10_MIN tries in ten minutes. Old entries are dropped as it goes."""
     now = time.time()
+    if len(_quote_hits) > 5000:
+        for key in [k for k, v in _quote_hits.items() if not v or now - v[-1] >= 600]:
+            del _quote_hits[key]
     hits = [t for t in _quote_hits.get(ip, []) if now - t < 600]
     hits.append(now)
     _quote_hits[ip] = hits
-    day = [t for t in _quote_hits.get("*", []) if now - t < 86400]
-    day.append(now)
-    _quote_hits["*"] = day
-    return len(hits) > QUOTES_PER_10_MIN or len(day) > QUOTES_PER_DAY
+    return len(hits) > QUOTES_PER_10_MIN
+
+
+def _daily_budget_spent() -> bool:
+    """One more real model call today? Counted only for requests that pass validation."""
+    now = time.time()
+    _quote_day[:] = [t for t in _quote_day if now - t < 86400]
+    if len(_quote_day) >= QUOTES_PER_DAY:
+        return True
+    _quote_day.append(now)
+    return False
 
 
 def _site() -> str:
@@ -537,10 +553,19 @@ def api_entries_quote(request: Request, payload: dict = Body(...)) -> dict:
     """Public: the price for entering a model, after a live test call. Rate-limited."""
     from .entry_pricing import QuoteError, quote
 
+    from .model_rosters import EntryError, validate_entry
+
     if _rate_limited(_client_ip(request)):
         raise HTTPException(status_code=429, detail="too many quotes from here; try again in a few minutes")
+    model_id = str(payload.get("model_id") or "")
     try:
-        return {"ok": True, **quote(str(payload.get("model_id") or ""))}
+        validate_entry({"name": "Quote", "model_id": model_id})
+    except EntryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if _daily_budget_spent():
+        raise HTTPException(status_code=429, detail="quotes are busy today; try again tomorrow")
+    try:
+        return {"ok": True, **quote(model_id)}
     except QuoteError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
@@ -560,8 +585,13 @@ def api_entries_create(request: Request, payload: dict = Body(...)) -> dict:
     model_id = str(payload.get("model_id") or "").strip()
     try:
         validate_entry({"name": name, "model_id": model_id})
+    except EntryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if _daily_budget_spent():
+        raise HTTPException(status_code=429, detail="entries are busy today; try again tomorrow")
+    try:
         priced = quote(model_id)
-    except (EntryError, QuoteError) as exc:
+    except QuoteError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     entry = entries_store.create(
         name=name, model_id=model_id, price_cents=priced["price_cents"], cap_cents=priced["cap_cents"],
@@ -570,25 +600,30 @@ def api_entries_create(request: Request, payload: dict = Body(...)) -> dict:
     try:
         session = entry_payments.create_checkout(entry, site=_site())
     except entry_payments.PaymentError as exc:
-        entries_store.move(entry["entry_id"], ("awaiting_payment",), "expired", note=str(exc))
+        print(f"entries: checkout for {entry['entry_id']} failed: {exc}")
+        entries_store.move(entry["entry_id"], ("awaiting_payment",), "expired", note="the payment page could not be opened")
         raise HTTPException(status_code=502, detail="the payment page could not be opened; nothing was charged") from None
     entries_store.update(entry["entry_id"], stripe_session_id=session["id"])
     return {"ok": True, "checkout_url": session["url"], "status_url": f"/entry?t={entry['token']}", "price_cents": entry["price_cents"]}
 
 
 def _fulfil(session: dict) -> None:
-    """A paid Checkout Session: queue its entry (safe to call twice)."""
+    """A paid Checkout Session: queue its entry (safe to call twice).
+
+    Matched by our own reference on the session (metadata, else client_reference_id),
+    so a paid session still finds its entry if saving the session id failed."""
     from . import entries_store
 
     if session.get("payment_status") not in ("paid", "no_payment_required"):
         return
     entry_id = (session.get("metadata") or {}).get("llm_survivor_entry") or session.get("client_reference_id")
     entry = entries_store.get(str(entry_id)) if entry_id else None
-    if entry and entry.get("stripe_session_id") == session.get("id"):
-        entries_store.move(
-            entry["entry_id"], ("awaiting_payment", "expired"), "queued",
-            paid_at=time.time(), stripe_payment_intent=session.get("payment_intent"),
-        )
+    if not entry or entry.get("stripe_session_id") not in (None, session.get("id")):
+        return
+    entries_store.move(
+        entry["entry_id"], ("awaiting_payment", "expired"), "queued",
+        paid_at=time.time(), stripe_payment_intent=session.get("payment_intent"), stripe_session_id=session.get("id"),
+    )
 
 
 @app.get("/api/entries/status")
@@ -628,15 +663,18 @@ async def api_entries_stripe_webhook(request: Request) -> dict:
     except entry_payments.PaymentError:
         raise HTTPException(status_code=400, detail="bad signature") from None
     obj = (event.get("data") or {}).get("object") or {}
-    if not entry_payments.is_ours(obj) or entries_store.seen_event(str(event.get("id")), str(event.get("type"))):
+    if not entry_payments.is_ours(obj) or entries_store.event_handled(str(event.get("id"))):
         return {"ok": True}
     kind = event.get("type")
+    # handling is safe to repeat; the event is recorded only after it succeeds, so a
+    # failure here returns 500 and Stripe's retry is handled, not dropped
     if kind in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
         _fulfil(obj)
     elif kind == "checkout.session.expired":
         entry_id = (obj.get("metadata") or {}).get("llm_survivor_entry")
         if entry_id:
             entries_store.move(str(entry_id), ("awaiting_payment",), "expired")
+    entries_store.seen_event(str(event.get("id")), str(kind))
     return {"ok": True}
 
 
@@ -647,9 +685,29 @@ def api_entries_settings(payload: dict = Body(...), _: None = Depends(require_op
     from . import entries_store
 
     for key in ("open", "paused", "allow_test_runs"):
+        if key in payload and not isinstance(payload[key], bool):
+            raise HTTPException(status_code=400, detail=f"{key} must be true or false")
+    for key in ("open", "paused", "allow_test_runs"):
         if key in payload:
             entries_store.set_setting(key, "1" if payload[key] else "0")
     return {"ok": True, "open": entries_store.is_open(), "paused": entries_store.paused(), "allow_test_runs": entries_store.runs_test_entries()}
+
+
+@app.post("/api/entries/{entry_id}/cancel")
+def api_entries_cancel(entry_id: str, _: None = Depends(require_operator)) -> dict:
+    """Operator: cancel an entry that has not started. Refunds it if it was paid."""
+    from . import entries_store
+    from .entry_queue import refund_now
+
+    entry = entries_store.get(entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="no such entry")
+    if entry["status"] == "awaiting_payment":
+        entries_store.move(entry_id, ("awaiting_payment",), "expired", note="cancelled")
+        return {"ok": True, "status": "expired"}
+    if entry["status"] in ("queued", "refunding"):
+        return {"ok": True, "status": refund_now(entry, "cancelled before its season")}
+    raise HTTPException(status_code=409, detail=f"an entry that is {entry['status']} cannot be cancelled")
 
 
 @app.get("/api/live-season/budget")

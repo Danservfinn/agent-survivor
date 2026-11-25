@@ -1,14 +1,21 @@
 """Run paid entries one at a time, and settle each when its season ends.
 
 A thread in the API process ticks every TICK_S seconds:
-1. If an entry is running and its runner has stopped, settle it: finished
-   (the season has a result), or refunded (the season failed for our
-   reasons: a provider outage, the cost cap, or a crash on its second try).
-2. If no season is running and an entry is queued, re-check its model (still
-   in the catalog at a fixed price, still answering, not dearer than paid
-   for) and start it through scripts/run_public_season.py --entry-spec, the
-   same runner the public button uses, so the one-season-at-a-time check
-   covers both. A model that fails the re-check is refunded.
+1. Retry refunds that did not go through ("refunding"). An entry in that state
+   never starts a season; it leaves it only as "refunded", once Stripe shows
+   the money returned.
+2. If an entry is running and its runner has stopped, settle it: finished
+   (the season has a result), refunded (the season failed for our reasons:
+   a provider outage, the cost cap, or a crash on its second try), or queued
+   again after a first crash.
+3. If no season is running and an entry can start (live mode, or test mode
+   with the operator's allow_test_runs), re-check its model (still in the
+   catalog at a fixed price, still answering, not dearer than paid for) and
+   confirm with Stripe that its payment was not refunded, then start it
+   through scripts/run_public_season.py --entry-spec, the same runner the
+   public button uses, under the same lock (backend/season_launch.py).
+   A model that fails the re-check is refunded; a check that could not run
+   (a network or catalog error) is retried for a while before that.
 
 The runner never touches this store or Stripe; it reports through
 runner_status.json and the season's scorecard.json.
@@ -26,18 +33,28 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import entries_store as store
+from .season_launch import LAUNCH_LOCK
 
 TICK_S = 15
 MAX_ATTEMPTS = 2  # a crash is retried once before the entry is refunded
+REFUND_RETRY_S = 600  # a refund that failed is tried again every 10 minutes
+RECHECK_DEFERRALS = 20  # about 5 minutes of failed checks before an entry is refunded
 
-_lock = threading.Lock()
+# buyer-visible notes: plain words, never a provider's or Stripe's error text
+NOTE_REFUND_PENDING = "your refund is being processed"
+
 _thread: threading.Thread | None = None
+_deferred: dict[str, int] = {}
 
 
 def _seasons_dir() -> Path:
     from .live_season import SEASONS_DIR
 
     return Path(SEASONS_DIR)
+
+
+def _runner_path() -> str:
+    return str(Path(__file__).resolve().parent.parent / "scripts" / "run_public_season.py")
 
 
 def _flag() -> dict[str, Any] | None:
@@ -48,16 +65,22 @@ def _flag() -> dict[str, Any] | None:
 
 
 def runner_busy() -> bool:
-    """True while any season runs (the public button's or an entry's)."""
+    """True while any season runs from this checkout (the public button's or an entry's)."""
     flag = _flag()
     if not flag or flag.get("status") != "running":
         return False
     try:
         # this checkout's runner only (its full path), so a run from another checkout never blocks it
-        runner = str(Path(__file__).resolve().parent.parent / "scripts" / "run_public_season.py")
-        return subprocess.run(["pgrep", "-f", runner], capture_output=True, timeout=5).returncode == 0
+        return subprocess.run(["pgrep", "-f", _runner_path()], capture_output=True, timeout=5).returncode == 0
     except Exception:  # noqa: BLE001 - cannot tell; trust the flag
         return True
+
+
+def startable() -> list[dict[str, Any]]:
+    """Queued entries the dispatcher may start now, in the order they were paid."""
+    if store.paused():
+        return []
+    return [e for e in store.with_status("queued") if e["mode"] == "live" or store.runs_test_entries()]
 
 
 def _season_for(entry_id: str) -> Path | None:
@@ -73,16 +96,31 @@ def _season_for(entry_id: str) -> Path | None:
     return None
 
 
-def _refund(entry: dict[str, Any], reason: str) -> None:
-    from .entry_payments import PaymentError, refund
+def refund_now(entry: dict[str, Any], reason: str) -> str:
+    """Move the entry to "refunding" (it can never start from there), then ask Stripe.
 
+    "refunded" once Stripe has returned the money; "refunding" if the request
+    failed (it is retried, and confirmed against the payment first)."""
+    from .entry_payments import PaymentError, refund, refunded_cents
+
+    entry_id = entry["entry_id"]
+    if entry["status"] != "refunding":
+        if not store.move(entry_id, ("awaiting_payment", "queued", "running"), "refunding", note=NOTE_REFUND_PENDING, refund_reason=reason):
+            return store.get(entry_id)["status"]  # type: ignore[index]
     try:
+        if refunded_cents(entry) >= int(entry["price_cents"]):
+            store.move(entry_id, ("refunding",), "refunded", refunded_at=time.time(), note=reason)
+            return "refunded"
         refund(entry, reason)
     except PaymentError as exc:
-        # leave it for an operator; the status page says a refund is pending
-        store.update(entry["entry_id"], note=f"refund pending: {reason} ({exc})")
-        return
-    store.move(entry["entry_id"], ("queued", "running"), "refunded", refunded_at=time.time(), note=reason)
+        if exc.already_refunded:
+            store.move(entry_id, ("refunding",), "refunded", refunded_at=time.time(), note=reason)
+            return "refunded"
+        store.update(entry_id, refund_tried_at=time.time())
+        print(f"entry queue: refund for {entry_id} not confirmed yet: {exc}")
+        return "refunding"
+    store.move(entry_id, ("refunding",), "refunded", refunded_at=time.time(), note=reason)
+    return "refunded"
 
 
 def settle(entry: dict[str, Any]) -> str:
@@ -98,35 +136,45 @@ def settle(entry: dict[str, Any]) -> str:
         store.move(entry["entry_id"], ("running",), "finished", season_id=folder.name, finished_at=time.time())  # type: ignore[union-attr]
         return "finished"
     if card.get("interrupted"):
-        _refund(entry, "an AI provider went down during the season")
-        return "refunded"
+        return refund_now(entry, "an AI provider went down during the season")
     if (card.get("caps") or {}).get("cap_reached"):
-        _refund(entry, "the season reached its spending limit before it ended")
-        return "refunded"
+        return refund_now(entry, "the season reached its spending limit before it ended")
     if entry["attempts"] < MAX_ATTEMPTS:
         store.move(entry["entry_id"], ("running",), "queued", note="restarted after the season stopped unexpectedly")
         return "requeued"
-    _refund(entry, "the season stopped unexpectedly twice")
-    return "refunded"
+    return refund_now(entry, "the season stopped unexpectedly twice")
+
+
+class RecheckDeferred(Exception):
+    """The re-check could not run (network, catalog); try again later."""
 
 
 def recheck(entry: dict[str, Any]) -> str | None:
-    """Why the entry can no longer run as paid for, or None if it can."""
+    """Why the entry can no longer run as paid for, or None if it can. Raises RecheckDeferred
+    when the check itself failed, so one transient error never refunds anyone."""
+    from .entry_payments import PaymentError, refunded_cents
     from .entry_pricing import QuoteError, quote
 
+    try:
+        if refunded_cents(entry) > 0:
+            return "the payment was refunded"
+    except PaymentError as exc:
+        raise RecheckDeferred(f"could not read the payment: {exc}") from None
     try:
         fresh = quote(entry["model_id"])
     except QuoteError as exc:
         return str(exc)
-    except Exception as exc:  # noqa: BLE001 - a catalog outage is not the buyer's fault, but do not run blind
-        return f"could not check the model ({type(exc).__name__})"
+    except Exception as exc:  # noqa: BLE001 - a catalog or network failure is not a verdict
+        raise RecheckDeferred(f"could not check the model ({type(exc).__name__})") from None
     if fresh["price_cents"] > entry["price_cents"]:
         return "the model's price rose above what was paid"
     return None
 
 
-def start(entry: dict[str, Any], *, launch: Callable[[Path], None] | None = None) -> None:
-    """Write the entry's spec (0600, deleted by the runner) and launch the runner."""
+def start(entry: dict[str, Any], *, launch: Callable[[Path], None] | None = None) -> bool:
+    """Claim the entry and launch its season. False if another caller claimed it first."""
+    if not store.move(entry["entry_id"], ("queued",), "running", started_at=time.time(), attempts=entry["attempts"] + 1):
+        return False
     spec_dir = _seasons_dir().parent / "entries"
     spec_dir.mkdir(parents=True, exist_ok=True)
     spec = spec_dir / f"{entry['entry_id']}.json"
@@ -136,18 +184,17 @@ def start(entry: dict[str, Any], *, launch: Callable[[Path], None] | None = None
             {"entry_id": entry["entry_id"], "name": entry["name"], "model_id": entry["model_id"], "cap_cents": entry["cap_cents"]},
             handle,
         )
-    store.move(entry["entry_id"], ("queued",), "running", started_at=time.time(), attempts=entry["attempts"] + 1)
     (launch or _launch)(spec)
+    return True
 
 
 def _launch(spec: Path) -> None:
-    root = Path(__file__).resolve().parent.parent
     seasons = _seasons_dir()
     seasons.mkdir(parents=True, exist_ok=True)
     (seasons / "runner_status.json").write_text(json.dumps({"status": "running", "started_at": time.time(), "entry": True}))
     with open(seasons / "runner.log", "ab") as log:
         subprocess.Popen(
-            [sys.executable, str(root / "scripts" / "run_public_season.py"), "--entry-spec", str(spec)],
+            [sys.executable, _runner_path(), "--entry-spec", str(spec)],
             stdout=log,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -157,24 +204,41 @@ def _launch(spec: Path) -> None:
 
 def tick(*, launch: Callable[[Path], None] | None = None, busy: Callable[[], bool] | None = None) -> str:
     """One pass of the dispatcher. Returns what it did, for logs and tests."""
-    with _lock:
-        is_busy = (busy or runner_busy)()
+    is_busy = busy or runner_busy
+    now = time.time()
+    for entry in store.with_status("refunding"):
+        if now - (entry.get("refund_tried_at") or 0) >= REFUND_RETRY_S:
+            return f"refund {entry['entry_id']}: {refund_now(entry, entry.get('refund_reason') or 'refund')}"
+    if not is_busy():
         for entry in store.with_status("running"):
-            if not is_busy:
-                return f"settled {entry['entry_id']}: {settle(entry)}"
-        if is_busy or store.paused():
-            return "busy" if is_busy else "paused"
-        queued = [e for e in store.with_status("queued") if e["mode"] == "live" or store.runs_test_entries()]
-        if not queued:
-            return "idle"
-        entry = queued[0]
-        problem = recheck(entry)
-        if problem:
-            store.move(entry["entry_id"], ("queued",), "queued", note=problem)
-            _refund(entry, problem)
-            return f"refunded {entry['entry_id']}: {problem}"
-        start(entry, launch=launch)
-        return f"started {entry['entry_id']}"
+            return f"settled {entry['entry_id']}: {settle(entry)}"
+    if is_busy():
+        return "busy"
+    if store.paused():
+        return "paused"
+    waiting = startable()
+    if not waiting:
+        return "idle"
+    entry = waiting[0]
+    try:
+        problem = recheck(entry)  # network calls: outside the launch lock
+    except RecheckDeferred as exc:
+        _deferred[entry["entry_id"]] = _deferred.get(entry["entry_id"], 0) + 1
+        if _deferred[entry["entry_id"]] < RECHECK_DEFERRALS:
+            return f"deferred {entry['entry_id']}: {exc}"
+        problem = "the model could not be checked before its season"
+    _deferred.pop(entry["entry_id"], None)
+    if problem:
+        return f"refund {entry['entry_id']}: {refund_now(entry, problem)} ({problem})"
+    with LAUNCH_LOCK:
+        if is_busy():
+            return "busy"
+        current = store.get(entry["entry_id"])
+        if not current or current["status"] != "queued":
+            return "changed"
+        if not start(current, launch=launch):
+            return "claimed elsewhere"
+    return f"started {entry['entry_id']}"
 
 
 def run_forever() -> None:

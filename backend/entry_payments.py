@@ -28,7 +28,13 @@ WEBHOOK_TOLERANCE_S = 300
 
 
 class PaymentError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: str = "") -> None:
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def already_refunded(self) -> bool:
+        return self.code == "charge_already_refunded"
 
 
 def _secrets_path() -> Path:
@@ -94,10 +100,11 @@ def _call(method: str, path: str, params: dict[str, Any] | None = None, *, idemp
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
         try:
-            message = json.loads(exc.read().decode()).get("error", {}).get("message", "")
+            error = json.loads(exc.read().decode()).get("error", {})
         except Exception:  # noqa: BLE001
-            message = ""
-        raise PaymentError(f"Stripe refused the request (HTTP {exc.code}){': ' + message if message else ''}") from None
+            error = {}
+        message, code = error.get("message", ""), error.get("code", "")
+        raise PaymentError(f"Stripe refused the request (HTTP {exc.code}){': ' + message if message else ''}", code=code) from None
     except (urllib.error.URLError, TimeoutError) as exc:
         raise PaymentError(f"could not reach Stripe: {type(exc).__name__}") from None
 
@@ -149,6 +156,15 @@ def refund(entry: dict[str, Any], reason: str) -> dict[str, Any]:
         {"payment_intent": entry["stripe_payment_intent"], "metadata": {MARKER: entry["entry_id"], "reason": reason[:200]}},
         idempotency_key=f"refund-{entry['entry_id']}",
     )
+
+
+def refunded_cents(entry: dict[str, Any]) -> int:
+    """How much of the entry's payment Stripe has refunded so far (0 if none)."""
+    if not entry.get("stripe_payment_intent"):
+        return 0
+    intent = _call("GET", f"/payment_intents/{urllib.parse.quote(entry['stripe_payment_intent'])}", {"expand": ["latest_charge"]})
+    charge = intent.get("latest_charge") or {}
+    return int(charge.get("amount_refunded") or 0) if isinstance(charge, dict) else 0
 
 
 def verify_webhook(raw: bytes, header: str | None, *, secret: str | None = None, now: float | None = None) -> dict[str, Any]:

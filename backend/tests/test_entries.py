@@ -33,8 +33,13 @@ class _Base(unittest.TestCase):
         self.seasons.mkdir()
         self.seasons_patch = patch("backend.live_season.SEASONS_DIR", self.seasons)
         self.seasons_patch.start()
+        # Stripe is never called: by default nothing has been refunded yet
+        self.refunded = patch.object(entry_payments, "refunded_cents", return_value=0)
+        self.refunded.start()
+        entry_queue._deferred.clear()
 
     def tearDown(self) -> None:
+        self.refunded.stop()
         self.seasons_patch.stop()
         self.env.stop()
 
@@ -106,6 +111,17 @@ class WebhookSignatureTest(unittest.TestCase):
             self.assertNotIn("STRIPE_TEST_SECRET_KEY", os.environ)
             with patch.dict(os.environ, {"STRIPE_MODE": "live"}):
                 self.assertIsNone(entry_payments.config())  # no live key yet
+
+
+class OperatorTokenTest(unittest.TestCase):
+    def test_compared_in_constant_time_and_still_correct(self) -> None:
+        from backend.auth import require_operator
+
+        with patch.dict(os.environ, {"OPERATOR_TOKEN": "tok"}):
+            require_operator("Bearer tok")
+            for bad in ("Bearer nope", None, "", "tok"):
+                with self.assertRaises(HTTPException):
+                    require_operator(bad)
 
 
 class StoreTest(_Base):
@@ -192,13 +208,51 @@ class QueueTest(_Base):
         refund.assert_called_once()
         self.assertEqual(store.get(e["entry_id"])["status"], "refunded")
 
-    def test_a_failed_refund_stays_visible(self) -> None:
-        e = self.entry("running", attempts=2)
-        with patch.object(entry_payments, "refund", side_effect=entry_payments.PaymentError("no network")):
-            entry_queue.tick(busy=lambda: False)
+    def test_a_refund_that_looks_failed_never_leads_to_a_season(self) -> None:
+        e = self.entry("queued")
+        with patch.object(entry_payments, "refund", side_effect=entry_payments.PaymentError("timed out")):
+            self.assertIn("refunding", entry_queue.refund_now(e, "the model vanished"))
         after = store.get(e["entry_id"])
-        self.assertEqual(after["status"], "running")
-        self.assertIn("refund pending", after["note"])
+        self.assertEqual(after["status"], "refunding")
+        self.assertEqual(after["note"], entry_queue.NOTE_REFUND_PENDING)  # no Stripe text shown to the buyer
+        # the model is fine again, the runner is free: it must still not start
+        with patch.object(entry_queue, "recheck", return_value=None):
+            self.assertEqual(entry_queue.tick(launch=lambda s: self.fail("must not start"), busy=lambda: False), "idle")
+        # ten minutes later the retry finds Stripe did refund it after all
+        store.update(e["entry_id"], refund_tried_at=time.time() - entry_queue.REFUND_RETRY_S - 1)
+        with patch.object(entry_payments, "refunded_cents", return_value=6500), patch.object(entry_payments, "refund") as refund:
+            entry_queue.tick(busy=lambda: False)
+        refund.assert_not_called()
+        self.assertEqual(store.get(e["entry_id"])["status"], "refunded")
+
+    def test_already_refunded_ends_the_retries(self) -> None:
+        e = self.entry("refunding", refund_reason="x")
+        with patch.object(entry_payments, "refund", side_effect=entry_payments.PaymentError("no", code="charge_already_refunded")):
+            entry_queue.tick(busy=lambda: True)
+        self.assertEqual(store.get(e["entry_id"])["status"], "refunded")
+
+    def test_a_refunded_payment_is_never_started(self) -> None:
+        e = self.entry("queued")
+        with patch.object(entry_payments, "refunded_cents", return_value=6500), patch("backend.entry_pricing.quote", return_value={"price_cents": 6500}):
+            result = entry_queue.tick(launch=lambda s: self.fail("must not start"), busy=lambda: False)
+        self.assertIn("refund", result)
+        self.assertEqual(store.get(e["entry_id"])["status"], "refunded")
+
+    def test_a_check_that_could_not_run_is_retried_before_any_refund(self) -> None:
+        e = self.entry("queued")
+        with patch("backend.entry_pricing.quote", side_effect=OSError("catalog down")), patch.object(entry_payments, "refund") as refund:
+            for _ in range(entry_queue.RECHECK_DEFERRALS - 1):
+                self.assertIn("deferred", entry_queue.tick(launch=lambda s: None, busy=lambda: False))
+            refund.assert_not_called()
+            self.assertIn("refund", entry_queue.tick(launch=lambda s: None, busy=lambda: False))
+        self.assertEqual(store.get(e["entry_id"])["status"], "refunded")
+
+    def test_an_entry_is_started_once(self) -> None:
+        e = self.entry("queued")
+        launched = []
+        self.assertTrue(entry_queue.start(e, launch=launched.append))
+        self.assertFalse(entry_queue.start(e, launch=launched.append))
+        self.assertEqual(len(launched), 1)
 
 
 class ApiTest(_Base):
@@ -246,6 +300,13 @@ class ApiTest(_Base):
                 self.api.api_entries_create(self.request(), {"name": "Night Owl", "model_id": "x-ai/grok-4.7"})
             self.assertEqual(caught.exception.status_code, 503)
 
+    def test_junk_requests_do_not_spend_the_daily_budget(self) -> None:
+        self.api._quote_day.clear()
+        for n in range(self.api.QUOTES_PER_DAY + 10):
+            with self.assertRaises(HTTPException):
+                self.api.api_entries_quote(self.request(f"10.0.{n // 250}.{n % 250}"), {"model_id": "not a model"})
+        self.assertEqual(len(self.api._quote_day), 0)
+
     def test_quotes_are_rate_limited(self) -> None:
         with patch("backend.entry_pricing.quote", return_value={"model_id": "m/x", "price_cents": 5000, "cap_cents": 4250, "estimate": {}}):
             for _ in range(self.api.QUOTES_PER_10_MIN):
@@ -254,12 +315,37 @@ class ApiTest(_Base):
                 self.api.api_entries_quote(self.request("5.5.5.5"), {"model_id": "m/x"})
         self.assertEqual(caught.exception.status_code, 429)
 
-    def test_the_public_button_waits_for_paid_entries(self) -> None:
-        self.entry("queued")
+    def test_the_public_button_waits_only_for_entries_that_can_start(self) -> None:
+        test_entry = store.create(name="Test Owl", model_id="x-ai/grok-4.7", price_cents=6500, cap_cents=5525, estimate=_estimate(), ip="1", mode="test")
+        store.update(test_entry["entry_id"], status="queued")
+        launched = []
+        with patch.object(self.api, "_detached_runner_alive", return_value=False), patch("subprocess.Popen", side_effect=lambda *a, **k: launched.append(a)):
+            self.api.api_live_season_public_run(None)  # a test-mode entry that can never start does not lock it
+        self.assertEqual(len(launched), 1)
+        (self.seasons / "runner_status.json").unlink(missing_ok=True)
+        self.entry("queued")  # a live one does
         with patch.object(self.api, "_detached_runner_alive", return_value=False):
             with self.assertRaises(HTTPException) as caught:
                 self.api.api_live_season_public_run(None)
         self.assertEqual(caught.exception.status_code, 409)
+
+    def test_a_paid_session_finds_its_entry_even_if_its_id_was_never_saved(self) -> None:
+        e = store.create(name="Night Owl", model_id="x-ai/grok-4.7", price_cents=6500, cap_cents=5525, estimate=_estimate(), ip="1", mode="live")
+        self.api._fulfil({"id": "cs_lost", "payment_status": "paid", "payment_intent": "pi_l", "client_reference_id": e["entry_id"]})
+        after = store.get(e["entry_id"])
+        self.assertEqual((after["status"], after["stripe_session_id"]), ("queued", "cs_lost"))
+
+    def test_settings_take_real_booleans_and_cancel_refunds(self) -> None:
+        with self.assertRaises(HTTPException):
+            self.api.api_entries_settings({"open": "false"})
+        self.assertEqual(self.api.api_entries_settings({"open": False})["open"], False)
+        e = self.entry("queued")
+        with patch.object(entry_payments, "refund") as refund:
+            self.assertEqual(self.api.api_entries_cancel(e["entry_id"])["status"], "refunded")
+        refund.assert_called_once()
+        running = self.entry("running")
+        with self.assertRaises(HTTPException):
+            self.api.api_entries_cancel(running["entry_id"])
 
     def test_the_webhook_ignores_other_products_and_repeats(self) -> None:
         e = self.entry("awaiting_payment", stripe_session_id="cs_w")
@@ -279,9 +365,15 @@ class ApiTest(_Base):
         import asyncio
 
         with patch.object(entry_payments, "verify_webhook", side_effect=lambda raw, header: json.loads(raw)):
+            # the first delivery fails mid-way: Stripe must be able to retry it
+            with patch.object(self.api, "_fulfil", side_effect=RuntimeError("db locked")):
+                with self.assertRaises(RuntimeError):
+                    asyncio.run(self.api.api_entries_stripe_webhook(Req(events[1])))
+            self.assertFalse(store.event_handled("evt_ours"))
             for event in events + events:
                 self.assertEqual(asyncio.run(self.api.api_entries_stripe_webhook(Req(event))), {"ok": True})
         self.assertEqual(store.get(e["entry_id"])["status"], "queued")
+        self.assertTrue(store.event_handled("evt_ours"))
 
 
 class EntrySeasonsStayApartTest(unittest.TestCase):
