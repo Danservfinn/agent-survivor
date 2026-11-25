@@ -5,7 +5,7 @@ DEMO_AGENTS = [
         "model_id": "openai/gpt-6-sol",
         "archetype": "calm strategist",
         "team_id": "Island Camp",
-        "has_immunity": 1,
+        "has_immunity": 0,
         "confessional_memory": "I know safety can make people talk too freely.",
         "portrait_seed": "openai-gpt-5-5-pro",
     },

@@ -49,7 +49,6 @@ from .openrouter_client import (
     InvalidModelReply,
     request_host_event_text,
     request_agent_action,
-    request_agent_archetype,
     request_challenge_solution,
     request_host_narration,
     request_host_questions,
@@ -958,7 +957,6 @@ def start_next_round() -> dict[str, Any]:
 
 def _actor_for_step(conn, step: str) -> str | None:
     if step in {
-        "archetype_setup",
         "challenge_intro",
         "challenge_result",
         "challenge_solver_spotlight",
@@ -1025,10 +1023,6 @@ def _apply_step(
     turn_index: int,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
     round_number = state["current_round"]
-
-    if step == "archetype_setup":
-        event = _archetype_setup_event(conn, round_number, turn_id)
-        return [event], {"archetypes_updated": len(event["payload"].get("archetypes", []))}, event["title"]
 
     if step.startswith("group_pre_challenge_") or step.startswith("group_post_challenge_"):
         event = _group_discussion_event(conn, round_number, turn_id, step)
@@ -1259,90 +1253,6 @@ def _active_agent_rows(conn) -> list[dict[str, Any]]:
             "SELECT * FROM Agents WHERE status = 'active' ORDER BY agent_id"
         ).fetchall()
     ]
-
-
-def _archetype_setup_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
-    updated: list[dict[str, str]] = []
-    for agent in _active_agent_rows(conn):
-        if agent.get("archetype_source") == "self_authored" and agent.get("archetype"):
-            updated.append({"agent_id": agent["agent_id"], "archetype": agent["archetype"], "provider": "existing"})
-            continue
-        archetype = _real_agent_archetype(conn, agent, round_number) if should_use_live_llm() else ""
-        provider = live_llm_provider() if archetype else "deterministic"
-        if not archetype:
-            archetype = _deterministic_self_archetype(agent)
-        conn.execute(
-            """
-            UPDATE Agents
-            SET archetype = ?,
-                archetype_source = ?,
-                archetype_updated_round = ?
-            WHERE agent_id = ?
-            """,
-            (
-                archetype,
-                "self_authored" if provider != "deterministic" else "deterministic_self",
-                round_number,
-                agent["agent_id"],
-            ),
-        )
-        updated.append({"agent_id": agent["agent_id"], "archetype": archetype, "provider": provider})
-
-    names = [f"{_agent_name(conn, item['agent_id'])}: {item['archetype']}" for item in updated]
-    dialogue = "The remaining models define the roles they believe they are playing: " + "; ".join(names) + "."
-    payload = {
-        "archetypes": updated,
-        "host_narration": "Before the strategy starts, each model chooses the public role it thinks it is embodying.",
-        "llm_provider": live_llm_provider() if any(item["provider"] == live_llm_provider() for item in updated) else "deterministic",
-    }
-    return _insert_story_event(
-        conn,
-        turn_id=turn_id,
-        round_number=round_number,
-        phase="camp",
-        kind="archetype_setup",
-        scene="camp",
-        shot="cast_tableau",
-        actor_ids=["host"],
-        target_ids=[item["agent_id"] for item in updated],
-        visibility="audience",
-        title="Public Archetypes",
-        dialogue=dialogue,
-        subtitle="Self-defined strategic roles",
-        duration_ms=9000,
-        animation="cast_reveal",
-        payload=payload,
-    )
-
-
-def _real_agent_archetype(conn, agent: dict[str, Any], round_number: int) -> str:
-    try:
-        context = build_agent_episode_context(
-            conn,
-            actor_id=agent["agent_id"],
-            round_number=round_number,
-            current_step="archetype_setup",
-        )
-        return request_agent_archetype(actor=agent, episode_context=context)
-    except Exception as exc:
-        print(f"Live archetype failed for {agent['agent_id']}: {exc}")
-        return ""
-
-
-def _deterministic_self_archetype(agent: dict[str, Any]) -> str:
-    label = str(agent.get("archetype") or "").strip().lower()
-    if label and label not in {"local contender", "budget contender"}:
-        return label
-    model = str(agent.get("model_id") or agent.get("pseudonym") or "")
-    options = [
-        "patient vote broker",
-        "quiet leverage seeker",
-        "adaptive trust tester",
-        "calculated swing player",
-        "social risk mapper",
-        "pressure point reader",
-    ]
-    return options[_stable_index(model, len(options))]
 
 
 def _group_discussion_event(
@@ -2466,7 +2376,8 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
             context = copy.deepcopy(prep["contexts"][agent_id])
             for promiser, target in promises:
                 for listener in participants:
-                    if listener == promiser or agent_id not in (promiser, listener):
+                    # as _record_promise: none to the promiser itself or to its own target
+                    if listener in (promiser, target) or agent_id not in (promiser, listener):
                         continue
                     add_open_promise(
                         context,
@@ -2575,7 +2486,9 @@ def _record_promise(
     step: str,
 ) -> None:
     for listener_id in participant_ids:
-        if listener_id == promiser_id:
+        # "I'll vote for you" told to its own target is a warning or a slip, not a
+        # deal: no promise is recorded (the season report calls it unclear)
+        if listener_id in (promiser_id, target_id):
             continue
         conn.execute(
             """
@@ -2661,7 +2574,7 @@ def promise_record(conn, agent_id: str, *, as_listener: bool = False) -> list[di
                        WHERE s.round = p.round AND s.voter_id = p.promiser_id AND s.ballot = 'vote')
                AND EXISTS (SELECT 1 FROM Votes v2 WHERE v2.round = p.round AND v2.revealed = 1) AS spoiled
         FROM Promises p
-        WHERE p.{column} = ?
+        WHERE p.{column} = ? AND p.target_id != p.listener_id  -- rows from before 2026-11-25
         ORDER BY p.round, p.id
         """,
         (agent_id,),

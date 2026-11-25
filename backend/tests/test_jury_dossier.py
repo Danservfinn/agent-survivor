@@ -71,7 +71,7 @@ class JuryDossierTest(unittest.TestCase):
         )
         self.conn.execute(
             "INSERT INTO Promises (round, promiser_id, listener_id, target_id, discussion_step) VALUES (1, ?, ?, ?, 'camp_talk_2')",
-            (f, second, second),
+            (f, other, second),  # told other it would vote second (a promise to vote for the listener itself is no promise)
         )
         for voter, target in ((f, first), (other, first), (first, f)):
             self.conn.execute(

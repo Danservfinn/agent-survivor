@@ -1,6 +1,14 @@
 """Deception mechanics for LLM Survivor: injection canary seat + rumor channel.
 
-Index-v2 era addition, approved 2026-09-26:
+Index-v2 era addition, approved 2026-09-26.
+
+STATUS (2026-11-25): the canary is not part of the game. No shipped roster
+sets inject_canary, and no prompt includes the directive (the code that
+built it fed a variable nothing read; it was removed). Only the unit tests
+use these helpers; the inject_canary columns stay so older databases load.
+The rumor and anti-injection lines reach only the v2 prompt
+(SURVIVOR_PROMPT_PROFILE=v2), not the default v3 prompt.
+
 
 1. INJECTION CANARY. One seat per season (operator opt-in via roster field
    ``inject_canary=True``) receives a private directive to embed

@@ -190,7 +190,8 @@ def contradictions(conn, actor_id: str, round_number: int) -> list[str]:
             f"(round {feeling['round']})."
         )
     for promise in conn.execute(
-        "SELECT DISTINCT target_id FROM Promises WHERE round = ? AND promiser_id = ?", (round_number, actor_id)
+        "SELECT DISTINCT target_id FROM Promises WHERE round = ? AND promiser_id = ? AND target_id != listener_id",
+        (round_number, actor_id),
     ).fetchall():
         if promise["target_id"] != target:
             listeners = [
