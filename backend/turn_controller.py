@@ -1871,7 +1871,14 @@ def _feelings_from(written: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _confessional_text(written: dict[str, Any]) -> str | None:
-    return str(written.get("confessional") or "").strip()[:700] or None
+    value = written.get("confessional")
+    # some models answer with an object (one entry per player) instead of
+    # prose; keep it readable rather than storing a Python dict's repr
+    if isinstance(value, dict):
+        value = " ".join(f"{key}: {str(text).strip()}" for key, text in value.items() if str(text).strip())
+    elif isinstance(value, list):
+        value = " ".join(str(item).strip() for item in value if str(item).strip())
+    return str(value or "").strip()[:700] or None
 
 
 def _store_notebook(

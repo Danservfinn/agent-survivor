@@ -75,3 +75,11 @@ class PlayerSelfTest(_Base):
         from backend import openrouter_client
 
         self.assertIn("short, direct and personal", open(openrouter_client.__file__).read())
+
+
+class ConfessionalShapeTest(_Base):
+    def test_a_confessional_given_as_an_object_is_stored_as_text(self) -> None:
+        text = tc._confessional_text({"confessional": {"Cedar": "I fear Cedar.", "Larch": "Larch is next."}})
+        self.assertEqual(text, "Cedar: I fear Cedar. Larch: Larch is next.")
+        self.assertNotIn("{", text)
+        self.assertEqual(tc._confessional_text({"confessional": ["one", "two"]}), "one two")
