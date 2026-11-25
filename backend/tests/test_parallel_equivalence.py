@@ -76,7 +76,7 @@ class _Stub:
             dialogue=f"line {h % 100000}",
             inner_thought=f"thought {h % 977}",
             model_id=kwargs["actor"]["model_id"],
-            target_id=target if kind != "followup" or h % 2 else None,
+            target_id=target if (kind != "followup" or h % 2) and (kind != "immunity_choice" or h % 3 == 0) else None,
             strategic_summary=f"ask {h % 613}",
             confidence=0.5,
             play_idol=bool(h % 5 == 0),
@@ -104,6 +104,9 @@ class _Stub:
             # and sometimes spend the whisper listening in on a talk
             receipt_id=claims[h % len(claims)].get("receipt_id") if claims and h % 4 == 1 else None,
             spy_on=target if kind == "followup" and h % 7 == 0 else None,
+            search=kind == "talk_choice" and h % 6 == 0,
+            show_idol=h % 4 == 2,
+            show_ballot=kind == "vote" and h % 5 == 1,
         )
 
     def challenge(self, **kwargs) -> ChallengeSolution:
@@ -213,6 +216,7 @@ class ParallelEquivalenceTest(unittest.TestCase):
         self.assertTrue(sequential_dump["RoundThoughts"])
         self.assertTrue(sequential_dump["Lies"])
         self.assertTrue(sequential_dump["Spying"])
+        self.assertTrue(sequential_dump["IdolSearches"])
         self.assertTrue(any('"stamped"' in str(cell) for row in sequential_dump["StoryEvents"] for cell in row))
         # group talks of three or more happened (column 5 is target_size, the talk's size)
         self.assertTrue(any(row[5] > 2 for row in sequential_dump["GroupDiscussions"]))

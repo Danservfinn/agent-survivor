@@ -390,6 +390,7 @@ class VoteDecision:
     predicted_votes: dict[str, str] | None = None
     prediction_confidence: float | None = None
     expected_of_me: dict[str, str] | None = None
+    show_ballot: bool = False
 
 
 @dataclass(frozen=True)
@@ -1082,7 +1083,7 @@ def _apply_step(
         return [event], {"jury_deliberation": True}, event["title"]
 
     if step == "challenge_gift":
-        events = _challenge_gift_events(conn, round_number, turn_id)
+        events = _immunity_choice_events(conn, round_number, turn_id) + _challenge_gift_events(conn, round_number, turn_id)
         return events, {"challenge_gift": bool(events)}, "Challenge gift" if events else "No gift this round"
 
     if step == "challenge_solver_spotlight":
@@ -2187,6 +2188,7 @@ def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, A
         return []
     picks: list[tuple[str, list[str]]] = []
     asks: dict[str, str] = {}
+    searchers: list[str] = []
     parallel = should_use_live_llm() and _parallel_enabled()
     choices = _choose_talk_partners_parallel(conn, round_number, active) if parallel else None
     for index, agent in enumerate(active):
@@ -2196,6 +2198,10 @@ def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, A
                 choice = choices[index * PRIVATE_TALKS_PER_ROUND + repeat]
             else:
                 choice = _choose_talk_partner(conn, round_number, agent["agent_id"], others, index)
+            if choice == IDOL_SEARCH:
+                if agent["agent_id"] not in searchers:
+                    searchers.append(agent["agent_id"])
+                continue
             invited, ask = choice if isinstance(choice, tuple) else (choice, None)
             if isinstance(invited, str):
                 invited = [invited]
@@ -2203,6 +2209,8 @@ def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, A
                 picks.append((agent["agent_id"], list(invited)))
                 if ask:
                     asks[agent["agent_id"]] = ask
+    # searches resolve before any talk, so a finder can already show its idol
+    search_events = _idol_search_events(conn, round_number, turn_id, searchers)
     talks: list[list[str]] = []
     seen: set[frozenset[str]] = set()
     for chooser, invited in picks:
@@ -2212,8 +2220,8 @@ def _camp_talk_events(conn, round_number: int, turn_id: int) -> list[dict[str, A
         seen.add(group)
         talks.append([chooser, *[agent_id for agent_id in invited if agent_id != chooser]])
     if parallel:
-        return _camp_talks_parallel(conn, round_number, turn_id, talks, asks)
-    events = []
+        return search_events + _camp_talks_parallel(conn, round_number, turn_id, talks, asks)
+    events = list(search_events)
     for number, members in enumerate(talks):
         event = _group_discussion_event(
             conn,
@@ -2244,12 +2252,77 @@ def _talk_choice_result(
     legal = {other["agent_id"] for other in others}
     if not action:
         return None
+    if action.search and advantages_enabled():
+        return IDOL_SEARCH  # the player skips its talk to look for an idol
     invited = [agent_id for agent_id in action.invite_ids if agent_id in legal]
     if not invited and action.target_id in legal:
         invited = [action.target_id]  # v2 replies, or a single target_id
     if not invited:
         return None
     return invited, (action.strategic_summary or "").strip()[:240] or None
+
+
+# a talk choice that skips the talk to search for an idol
+IDOL_SEARCH = "search"
+IDOL_SEARCH_FROM_ROUND = 3  # counted from the season's first round
+IDOL_HIDDEN_CHANCE = 0.5
+
+
+def _idol_hidden(conn, round_number: int) -> bool:
+    """Whether an idol can be found this round: from round 3 of the season,
+    while more than IDOL_EXPIRES_AT remain and nobody holds one, in about half
+    of those rounds (fixed by the season seed)."""
+    if round_number < _season_first_round(conn) + IDOL_SEARCH_FROM_ROUND - 1:
+        return False
+    if len(_active_agent_rows(conn)) <= IDOL_EXPIRES_AT or _idol_holder(conn) is not None:
+        return False
+    return random.Random(f"idol:{_season_seed()}:{round_number}").random() < IDOL_HIDDEN_CHANCE
+
+
+def _idol_search_events(conn, round_number: int, turn_id: int, searchers: list[str]) -> list[dict[str, Any]]:
+    """Resolve this round's searches: one searcher finds the idol if one is
+    hidden (the seed picks among several). Each searcher is told privately."""
+    if not searchers:
+        return []
+    finder = None
+    if _idol_hidden(conn, round_number):
+        ordered = sorted(searchers)
+        finder = ordered[random.Random(f"idol-finder:{_season_seed()}:{round_number}").randrange(len(ordered))]
+        conn.execute("UPDATE Agents SET idol_held = 1 WHERE agent_id = ?", (finder,))
+    events = []
+    for agent_id in searchers:
+        found = agent_id == finder
+        conn.execute(
+            "INSERT INTO IdolSearches (round, agent_id, found) VALUES (?, ?, ?)", (round_number, agent_id, int(found))
+        )
+        name = _agent_name(conn, agent_id)
+        summary = (
+            f"{name} searched camp and found a hidden immunity idol. Nobody else knows. It can be played with "
+            f"your vote to cancel every vote against you, and expires when {IDOL_EXPIRES_AT} players remain."
+            if found
+            else f"{name} searched camp and found nothing."
+        )
+        events.append(
+            _insert_story_event(
+                conn,
+                turn_id=turn_id,
+                round_number=round_number,
+                phase="camp",
+                kind="idol_search",
+                scene="camp",
+                shot="private_two_shot",
+                actor_ids=[agent_id],
+                target_ids=[],
+                visibility="private",
+                title=f"{name} Searches Camp",
+                dialogue=summary,
+                subtitle="Private",
+                duration_ms=5000,
+                animation="camp_strategy",
+                payload={"privacy": "participants_only", "participant_ids": [agent_id], "group_summary": summary, "found": found},
+            )
+        )
+    return events
 
 
 def _choose_talk_partners_parallel(conn, round_number: int, active: list[dict[str, Any]]) -> list[Any]:
@@ -3407,6 +3480,63 @@ def _idol_gift_round(conn, round_number: int) -> bool:
 def _idol_holder(conn) -> str | None:
     row = conn.execute("SELECT agent_id FROM Agents WHERE status = 'active' AND idol_held = 1").fetchone()
     return row["agent_id"] if row else None
+
+
+def _immunity_choice_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
+    """The challenge winner keeps immunity or hands it to another player, as
+    in the show. Announced to everyone."""
+    if not (advantages_enabled() and should_use_live_llm()):
+        return []
+    result = _ensure_challenge_result(conn, round_number)
+    winner_id = result.get("winning_agent_id")
+    if not winner_id:
+        return []
+    candidates = [agent for agent in _active_agent_rows(conn) if agent["agent_id"] != winner_id]
+    context = build_agent_episode_context(conn, actor_id=winner_id, round_number=round_number, current_step="immunity_choice")
+    try:
+        action = _real_agent_action(
+            conn,
+            actor_id=winner_id,
+            step="immunity_choice",
+            scene_context=(
+                "You won individual immunity: nobody can vote for you tonight. You may keep it, or hand it to "
+                "another player so it protects them tonight instead of you. Everyone will see what you do. "
+                "Put that player's id in target_id to hand it over, or null to keep it. Your dialogue is said publicly."
+            ),
+            response_kind="immunity_choice",
+            episode_context=context,
+            allowed_targets=candidates,
+        )
+    except Exception as exc:
+        print(f"live immunity choice failed for {winner_id}: {exc}")
+        return []
+    recipient = action.target_id if action and action.target_id in {a["agent_id"] for a in candidates} else None
+    if recipient is None:
+        return []  # kept: nothing to announce beyond the challenge result
+    conn.execute("UPDATE Agents SET has_immunity = 0 WHERE agent_id = ?", (winner_id,))
+    conn.execute("UPDATE Agents SET has_immunity = 1 WHERE agent_id = ?", (recipient,))
+    winner_name, recipient_name = _agent_name(conn, winner_id), _agent_name(conn, recipient)
+    said = (action.dialogue or "").strip()[:300]
+    return [
+        _insert_story_event(
+            conn,
+            turn_id=turn_id,
+            round_number=round_number,
+            phase="challenge",
+            kind="immunity_given",
+            scene="challenge",
+            shot="result_closeup",
+            actor_ids=["host", winner_id, recipient],
+            target_ids=[recipient],
+            visibility="audience",
+            title=f"{winner_name} Gives Away Immunity",
+            dialogue=f"{winner_name} hands immunity to {recipient_name}." + (f' "{said}"' if said else ""),
+            subtitle=f"{recipient_name} is safe tonight; {winner_name} is not",
+            duration_ms=7000,
+            animation="immunity_award",
+            payload={"giver_id": winner_id, "recipient_id": recipient, "host_narration": "Immunity changes hands."},
+        )
+    ]
 
 
 def _challenge_gift_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
@@ -5476,6 +5606,8 @@ def _vote_reveal_event(conn, round_number: int, turn_id: int, reveal_index: int)
     target_name = _agent_name(conn, target_id)
     revealed_counts = _revealed_vote_counts(conn, round_number)
     total_votes = _total_votes_for_round(conn, round_number)
+    # a voter who showed its ballot is named, even under secret ballots
+    shown_by = _agent_name(conn, vote_row["voter_id"]) if vote_row["shown"] else None
     if reveal_index == total_votes:
         host_narration = (
             f"The final vote is for {target_name}. The public tally is complete, "
@@ -5497,13 +5629,14 @@ def _vote_reveal_event(conn, round_number: int, turn_id: int, reveal_index: int)
         actor_ids=["host"],
         target_ids=[target_id],
         visibility="audience",
-        title=f"Vote {reveal_index} of {total_votes}",
-        dialogue=target_name,
+        title=f"Vote {reveal_index} of {total_votes}" + (f": {shown_by} shows this ballot" if shown_by else ""),
+        dialogue=f"{target_name} (shown by {shown_by})" if shown_by else target_name,
         subtitle=_format_tally(conn, revealed_counts),
         duration_ms=8500,
         animation="vote_card_reveal",
         spoiler_group=f"vote_{reveal_index}",
         payload={
+            **({"shown_by": vote_row["voter_id"]} if shown_by else {}),
             "vote_number": reveal_index,
             "total_votes": total_votes,
             "revealed_tally": revealed_counts,
@@ -6323,9 +6456,9 @@ def _insert_vote(
         """
         INSERT INTO Votes (
             round, turn_index, voter_id, target_id, revealed,
-            predicted_eliminated, predicted_votes, prediction_confidence, expected_of_me
+            predicted_eliminated, predicted_votes, prediction_confidence, expected_of_me, shown
         )
-        VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
         """,
         (
             round_number,
@@ -6336,6 +6469,7 @@ def _insert_vote(
             json_dumps(decision.predicted_votes or {}) if decision else "{}",
             decision.prediction_confidence if decision else None,
             json_dumps(decision.expected_of_me) if decision and decision.expected_of_me else None,
+            int(bool(decision and decision.show_ballot and advantages_enabled())),
         ),
     )
     # a betrayal is marked when the vote is revealed (_vote_reveal_event), not
@@ -6487,6 +6621,7 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
         predicted_votes=_resolve_predicted_votes(conn, voter_id, action.predicted_votes),
         prediction_confidence=action.prediction_confidence,
         expected_of_me=_resolve_predicted_votes(conn, voter_id, action.expected_of_me),
+        show_ballot=bool(action.show_ballot),
     )
 
 
@@ -6964,7 +7099,8 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         # one call per player for the whole ladder
         return len(_active_agent_rows(conn))
     if step == "challenge_gift":
-        return 1 if _idol_gift_round(conn, int(game["current_round"])) else 0
+        gift = 1 if _idol_gift_round(conn, int(game["current_round"])) else 0
+        return gift + (1 if advantages_enabled() else 0)  # the winner's keep-or-give call
     if step in {"round_plan", "camp_followup"}:
         return len(_active_agent_rows(conn))
     if step == "memory_update":

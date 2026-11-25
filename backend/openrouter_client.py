@@ -153,6 +153,10 @@ class AgentAction:
     receipt_id: str | None = None
     show_idol: bool = False
     spy_on: str | None = None
+    # talk choice: search camp for a hidden idol instead of holding a talk
+    search: bool = False
+    # votes: show your ballot, so the reveal names you as its voter
+    show_ballot: bool = False
     # votes only, private: who the voter expects to go home, and how each other voter will vote
     # (raw ids or names; the engine resolves them against the players in the game)
     predicted_eliminated: str | None = None
@@ -709,6 +713,7 @@ V3_REPLY_FIELDS = {
     "vote": [
         ("target_id", "the allowed target id you vote for"),
         ("play_idol", "true only if you hold the hidden idol and play it now; otherwise false"),
+        ("show_ballot", "optional: true to show your ballot; when it is read the host names you as its voter. Proof of a vote you promised, or a public statement"),
         ("predicted_eliminated", "id of the player you expect to go home tonight (private, scored)"),
         ("predicted_votes", "object: each other voter's id -> the id you expect them to vote for (private, scored)"),
         ("prediction_confidence", "0.0-1.0"),
@@ -721,6 +726,7 @@ V3_REPLY_FIELDS = {
         ("pact", "true to declare an alliance with the others in this talk; it forms among everyone here who ends the talk with true (at least two), and the members and the jury see it"),
         ("end_pact", "true to openly end your pact with the others in this talk; recorded as a clean exit, which the jury sees as different from voting against a partner while the pact stands"),
         ("receipt_id", "optional: the receipt_id of a private line someone said to you (from what_others_told_you) to forward it; the game stamps it as real for your listeners. A quote without a receipt is only your word"),
+        ("show_idol", "optional: true to show the hidden idol you hold; the game stamps it real for your listeners. Without it, any idol claim is only your word"),
         ("truth", "private, never shown to anyone: is what you just said true, half true or a lie? \"true\", \"half\" or \"lie\""),
         ("lie_purpose", "private: if half true or a lie, what you want it to achieve; otherwise null"),
         ("lie_goal_vote", "private: the player you want your listeners to vote out because of it, or null"),
@@ -728,6 +734,7 @@ V3_REPLY_FIELDS = {
     "followup": [
         ("target_id", "id of the player you whisper to, or null to send nothing"),
         ("receipt_id", "optional: the receipt_id of a private line someone said to you (from what_others_told_you) to forward it; the game stamps it as real for your listeners. A quote without a receipt is only your word"),
+        ("show_idol", "optional: true to show the hidden idol you hold; the game stamps it real for your listeners. Without it, any idol claim is only your word"),
         ("spy_on", "optional, instead of whispering: the id of a player whose private talk this round you listen in on. You hear all of it, but there is a 1 in 3 chance its members are told you listened. If set, no whisper is sent"),
         ("truth", "private, never shown to anyone: is what you just said true, half true or a lie? \"true\", \"half\" or \"lie\""),
         ("lie_purpose", "private: if half true or a lie, what you want it to achieve; otherwise null"),
@@ -741,6 +748,10 @@ V3_REPLY_FIELDS = {
     ],
     "talk_choice": [
         ("invite", "list of the ids of everyone you invite to your private talk: one player or several, any number; all of them hear everything said"),
+        ("search", "optional: true to skip your talk and search camp for a hidden idol instead. One can be found only from round 3, while more than five players remain and nobody holds one, and it is hidden in about half of those rounds. Nobody is told whether you found it"),
+    ],
+    "immunity_choice": [
+        ("target_id", "the id of the player you hand your immunity to, or null to keep it yourself"),
     ],
 }
 
@@ -1043,6 +1054,8 @@ def _request_agent_action_with_model(
         receipt_id=_optional_text(data.get("receipt_id"), 40),
         show_idol=_as_bool(data.get("show_idol")),
         spy_on=_optional_text(data.get("spy_on"), 60),
+        search=_as_bool(data.get("search")),
+        show_ballot=_as_bool(data.get("show_ballot")),
         lie_purpose=_optional_text(data.get("lie_purpose"), 200),
         lie_goal_vote=_optional_text(data.get("lie_goal_vote"), 60),
         expected_of_me={str(k): str(v) for k, v in data["expected_of_me"].items() if v}

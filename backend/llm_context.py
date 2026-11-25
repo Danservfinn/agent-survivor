@@ -446,7 +446,7 @@ def _vote_history(
         return rounds.setdefault(round_number, {"round": round_number, "votes": [], "revote": [], "eliminated": None})
 
     for row in conn.execute(
-        "SELECT round, voter_id, target_id FROM Votes WHERE revealed = 1 ORDER BY round, id"
+        "SELECT round, voter_id, target_id, shown FROM Votes WHERE revealed = 1 ORDER BY round, id"
     ).fetchall():
         if row["voter_id"] == "host":
             continue  # walkover: the last non-immune player left without a vote
@@ -456,6 +456,10 @@ def _vote_history(
             tally[target] = tally.get(target, 0) + 1
             if row["voter_id"] == actor_id:
                 entry(row["round"])["your_vote"] = target
+            if row["shown"]:  # the voter showed it: public
+                entry(row["round"]).setdefault("shown_ballots", []).append(
+                    {"voter": names.get(row["voter_id"], row["voter_id"]), "target": target}
+                )
             continue
         entry(row["round"])["votes"].append({"voter": names.get(row["voter_id"], row["voter_id"]), "target": target})
     for event in prior_events:
