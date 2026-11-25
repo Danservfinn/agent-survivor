@@ -35,7 +35,11 @@ type ReportData = {
   moments?: { id: string; kind: string; round: number | null; title: string; text: string }[];
   models: ReportModel[];
   rounds: { round: number; eliminated_id: string | null; tally: Record<string, number>; revote_tally: Record<string, number> | null }[];
-  finale: { tally: Record<string, number>; winner_id: string | null } | null;
+  finale: {
+    tally: Record<string, number>;
+    winner_id: string | null;
+    jury?: { juror_id: string; finalist_id: string | null }[];
+  } | null;
 };
 
 /** what a newcomer sees in the live feed by default; the rest is behind "Show every event" */
@@ -410,6 +414,9 @@ export default function Benchmark() {
                 .filter((r) => r.eliminated_id)
                 .map((r) => ({ round: r.round, id: r.eliminated_id as string }))}
               winnerId={report.finale?.winner_id ?? null}
+              juryVotes={(report.finale?.jury ?? [])
+                .filter((j) => j.finalist_id)
+                .map((j) => ({ jurorId: j.juror_id, finalistId: j.finalist_id as string }))}
             />
           )}
         </div>
