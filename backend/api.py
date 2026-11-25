@@ -460,6 +460,19 @@ def api_methodology() -> dict:
     return facts()
 
 
+@app.get("/api/methodology/prompt/{family}")
+def api_methodology_prompt(family: str) -> dict:
+    """Public: one real prompt and reply of a kind of step, from the reference season's log."""
+    from .methodology import prompt_example
+
+    if not re.fullmatch(r"[a-z_]{1,32}", family):
+        raise HTTPException(status_code=404, detail="Not Found")
+    example = prompt_example(family)
+    if example is None:
+        raise HTTPException(status_code=404, detail="no recorded example yet")
+    return example
+
+
 @app.get("/api/live-season/budget")
 def api_live_season_budget() -> dict:
     from .public_gate import public_budget_status

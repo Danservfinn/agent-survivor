@@ -71,7 +71,7 @@ class MethodologyFactsTest(unittest.TestCase):
         with patch.object(methodology, "REFERENCE_PATH", pin):
             ref = methodology.reference_season(base)
         self.assertEqual(ref, {"season_id": "20261124-175223-lab_mix_openrouter", "pinned": True, "rules_version": 1,
-                               "current_rules": False})
+                               "current_rules": False, "prompt_examples": []})
 
     def test_the_api_serves_the_feed(self) -> None:
         from backend import api

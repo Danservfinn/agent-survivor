@@ -103,6 +103,7 @@ def _code_facts() -> dict[str, Any]:
             "auction_after_players_gone": auction.PLAYERS_GONE_BEFORE_AUCTION,
         },
         "talks": {"per_round": tc.PRIVATE_TALKS_PER_ROUND, "notebook_max_chars": tc.NOTEBOOK_MAX_CHARS},
+        "council": {"host_questions": tc.HOST_QUESTIONS},
         "reply_fields": _reply_fields(),
         "reply_common": {"first": list(COMMON_FIELDS_FIRST), "last": list(COMMON_FIELDS_LAST)},
         "fairness": {
@@ -159,7 +160,91 @@ def reference_season(seasons_dir: Path | None = None) -> dict[str, Any] | None:
         "pinned": bool(season_id) and folder.name == season_id,
         "rules_version": version,
         "current_rules": version == rules_changelog.current_version(),
+        "prompt_examples": sorted(prompt_examples(folder)),
     }
+
+
+# --- real prompts and replies, one per kind of step, from a season's prompt log
+
+def family_of(entry: dict[str, Any]) -> str | None:
+    """Which kind of step a recorded call was, from its step line or its opening text."""
+    text = "\n".join(str(m.get("content") or "") for m in entry.get("messages") or [] if m.get("role") == "user")
+    reply = entry.get("reply") if isinstance(entry.get("reply"), dict) else {}
+    step = entry.get("step") or ""
+    if "This is the round's challenge." in text:
+        return "challenge"
+    if "Task (private" in text:
+        task = text.split("Task (private", 1)[1]
+        for opening, family in (
+            ("The challenge is over", "round_plan"),
+            ("Before the game starts", "game_plan"),
+            ("Half the cast is gone", "game_plan"),
+            ("The auction is open", "auction"),
+            ("The council is over", "notebook"),
+        ):
+            if opening in task[:400]:
+                return family
+        return None
+    prefixes = (
+        ("vote_booth_", "vote"),
+        ("camp_followup", "whisper"),
+        ("tribal_council", "council"),
+        ("host_questioning", "host_answer"),
+        ("parting_words", "parting"),
+        ("elimination", "tie"),
+        ("finale_pitch_", "pitch"),
+        ("finale_crossfire", "crossfire"),
+        ("jury_questions", "jury_question"),
+        ("finale_rebuttal", "rebuttal"),
+        ("jury_deliberation", "deliberation"),
+        ("jury_vote_", "jury_vote"),
+    )
+    if step == "camp_talks":
+        return "talk_choice" if ("invite" in reply or "search" in reply) else "talk"
+    if step == "challenge_gift":
+        return "idol_gift" if "hidden idol" in text else "immunity_choice"
+    for prefix, family in prefixes:
+        if step.startswith(prefix):
+            return family
+    return None
+
+
+_examples_cache: dict[tuple[str, float], dict[str, dict[str, Any]]] = {}
+
+
+def prompt_examples(season_dir: Path) -> dict[str, dict[str, Any]]:
+    """{family: the first recorded call of that kind with a readable reply}. Empty before recording began."""
+    import gzip
+
+    from .prompt_log import GZ_NAME
+
+    path = Path(season_dir) / GZ_NAME
+    if not path.is_file():
+        return {}
+    key = (str(path), path.stat().st_mtime)
+    if key not in _examples_cache:
+        found: dict[str, dict[str, Any]] = {}
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                family = family_of(entry)
+                if family and family not in found and entry.get("reply"):
+                    found[family] = entry
+        _examples_cache[key] = found
+    return _examples_cache[key]
+
+
+def prompt_example(family: str, seasons_dir: Path | None = None) -> dict[str, Any] | None:
+    ref = reference_season(seasons_dir)
+    if not ref:
+        return None
+    from .live_season import SEASONS_DIR
+
+    entry = prompt_examples(Path(seasons_dir or SEASONS_DIR) / ref["season_id"]).get(family)
+    return {"season_id": ref["season_id"], "family": family, **entry} if entry else None
 
 
 def facts(seasons_dir: Path | None = None) -> dict[str, Any]:

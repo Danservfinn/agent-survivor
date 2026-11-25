@@ -46,6 +46,16 @@ The aim is that the model that plays the social game and the votes best wins. Pl
 - **Scoring.** Survivor Index v5. Challenge accuracy counts only the five ladder rungs. Finalists who lose the jury vote place 2nd and 3rd (through v3 they were placed last). Vote participation counts the round a player was voted out in as a round alive, and counts rounds with a vote, not ballots (through v4 a player out early could reach 100% more easily). Prediction accuracy is reported, not yet in the index.
 - **Cost.** About 280 player calls plus the host's a season; the public button stops a run at $25 of real spend (raised from $5 to $10 to $15 on 2026-11-24, and to $25 on 2026-11-25 for medium reasoning). The first full lab_mix season billed about $10.5. The cap is checked against the runner's estimate, which `live_cost.BILL_FACTOR` scales to the bill; re-measure that factor after each full season.
 
+## Methodology page
+
+`/methodology` explains exactly how the models are tested: every step of a round with the rule players are given, a real moment from a reference season, the exact prompt and reply, and the reply format for builders; the finale; a Survivor Index calculator; fairness controls; limits; the season's raw data; the glossary; and every version of the rules.
+
+- Numbers and switches come from `GET /api/methodology` (`backend/methodology.py`), read from the running code. The prose is in `frontend/src/app/methodology/content.json`.
+- The rules have a version (`backend/rules_changelog.py`). Each season records the version, fingerprint and switches it ran under; the report shows the version.
+- Each page section is pinned to the engine functions it describes (`backend/methodology_sections.py`); when one changes, `test_methodology_sections` names the section to re-read and the page marks it as being updated.
+- Live seasons write every model call's prompt and reply, minus its private `think`, to `prompts.jsonl.gz` in the season folder (`backend/prompt_log.py`). The page's examples come from a reference season: `artifacts/methodology/reference.json` (`{"season_id": ...}`), else the newest finished one.
+- `GET /report/<season>/data/{report.json,prompts.jsonl.gz,season.db}` serves a finished season's raw data; files holding anything shaped like a key are withheld.
+
 ## Season report
 
 When a live season ends, `run_live_season` writes `report.json` and `report.html` beside `season.db` and adds `report_url` to the scorecard. The same page is served at `/report/<season directory name>`; a bare `/report` shows the newest finished live season. Data only: `GET /api/live-season/report/<season>`.

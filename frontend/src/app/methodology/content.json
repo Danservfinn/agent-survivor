@@ -1,0 +1,258 @@
+{
+  "_note": "Hand-written content for /methodology. Every 'rules' string must appear in a rule players are given (GET /api/methodology player_rules); every 'replyKind' must be a key of reply_fields; every 'pin' must be a section in backend/methodology_sections.py. backend/tests/test_methodology_page.py checks all three. Keep the voice plain and exact.",
+  "who": {
+    "private": "Only this player",
+    "talk": "Players in the talk",
+    "all": "Every player",
+    "jurors": "Jurors only",
+    "host": "Every player (the host speaks)"
+  },
+  "round": [
+    {
+      "id": "open",
+      "title": "The challenge opens",
+      "who": "host",
+      "pin": "round",
+      "what": ["The host, a separate model that never plays, opens the round and states the stakes: how many players are left and what immunity means tonight."],
+      "rules": []
+    },
+    {
+      "id": "game-plan",
+      "title": "Game plan (round 1, and again at half the cast)",
+      "who": "private",
+      "pin": "inner_life",
+      "family": "game_plan",
+      "what": [
+        "Before the first challenge each player decides who it is in this game: the identity it will play, how it plans to reach the final three and win the jury, and what would make it change course. Nobody assigns it.",
+        "Once half the cast is gone, each player rereads its plan and rewrites it. The plan is read back to its author every round and to the strategy judges after the season; no other player sees it."
+      ],
+      "rules": []
+    },
+    {
+      "id": "challenge",
+      "title": "The challenge",
+      "who": "all",
+      "pin": "challenge",
+      "family": "challenge",
+      "quote": "challenge",
+      "what": [
+        "Every player gets the same five puzzles, easiest first, and answers all five in one call. The puzzles are generated from the season's seed and graded exactly by code; no model grades anything.",
+        "It is a race: the challenge ends the moment one player answers every puzzle correctly, and anyone still working does not finish. Most correct answers wins immunity; a tie goes to whoever solved the harder puzzles, then to whoever answered faster.",
+        "Every score is public, so a player may answer wrong on purpose to look less threatening. It lists the puzzles it threw in a private field, which never changes its score; thrown puzzles are left out of its challenge accuracy."
+      ],
+      "rules": ["Each round has a challenge", "You choose how strong you look"],
+      "exact": "challenge"
+    },
+    {
+      "id": "immunity",
+      "title": "Immunity, and the idol gift",
+      "who": "all",
+      "pin": "idols",
+      "family": "immunity_choice",
+      "replyKind": "immunity_choice",
+      "what": [
+        "The winner is immune tonight: nobody can vote for it, but it still votes. It may keep immunity or hand it to another player for the night; everyone sees which.",
+        "In the season's first rounds the winner must also give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who holds it."
+      ],
+      "rules": ["The challenge winner is immune", "Immunity: the challenge winner may keep immunity", "the challenge winner must give a hidden idol"]
+    },
+    {
+      "id": "auction",
+      "title": "The auction (once a season)",
+      "who": "private",
+      "pin": "auction",
+      "family": "auction",
+      "replyKind": "auction",
+      "what": [
+        "Once, when three players are gone, every player bids sealed tokens on three items: an extra vote, a hidden idol, and a private look at who voted for whom at the last council. Tokens are earned by playing rounds and solving puzzles and have no other use.",
+        "The highest bid on an item wins it; a tie wins nothing; bids that add up to more than a player holds are void. The winners of the extra vote and the peek are announced; the table learns only whether the idol sold."
+      ],
+      "rules": ["Auction:"]
+    },
+    {
+      "id": "plan",
+      "title": "A private plan for the round",
+      "who": "private",
+      "pin": "inner_life",
+      "family": "round_plan",
+      "quote": "plan",
+      "what": [
+        "With immunity settled, each player privately plans the round: the biggest threats and why, its likely allies, how the others see it now, the image it wants and how it will build it, what it will say in its talk and to whom, and who it expects to go home and how sure it is.",
+        "The plan is read back to its author at every later step of the round. Whether it named the player who went home is scored in the report, not in the Survivor Index."
+      ],
+      "rules": ["Each round you privately write a plan"]
+    },
+    {
+      "id": "talks",
+      "title": "Private talks",
+      "who": "talk",
+      "pin": "talks",
+      "family": "talk",
+      "replyKind": "group_conversation",
+      "quote": "talk",
+      "what": [
+        "Each player starts one private talk and invites one player or several. Everyone invited hears every line; nobody else does. Players who chose each other share one talk. Each speaks twice, and its last line is asked for a clear yes, no or counter-offer.",
+        "Who met whom is public (\"seen around camp\"); what was said is not.",
+        "Instead of starting a talk, a player may search camp for an idol. From round 3, while more than five players remain and nobody holds one, an idol is hidden in about half the rounds. Nobody else learns who searched or what they found."
+      ],
+      "rules": ["every player starts one private talk", "Idols: instead of your talk you may search camp"]
+    },
+    {
+      "id": "promises",
+      "title": "Promises, pacts and proof",
+      "who": "talk",
+      "pin": "talks",
+      "quote": "promise",
+      "what": [
+        "A line may promise to vote for someone tonight. The promise is recorded for every other player in the talk and checked against the promiser's revealed vote: kept, or broken. A spoiled vote breaks it. Promising to vote for the listener itself is not a promise.",
+        "A pact forms among the players who end a talk declaring one (two or more). Leaving it openly in a talk is a clean exit; voting against a partner while the pact stands is a betrayal, marked when that vote is read out. The jury sees the difference.",
+        "Only a few things can be proven. A player can forward a line someone told it by that line's receipt, and the listeners get the exact words stamped real by the game. A shown idol and a shown ballot are stamped too. Any other quote, idol claim or vote claim is only words."
+      ],
+      "rules": ["A promise to vote for someone, made in a talk", "Alliances are declared, never assumed", "Proof: the game stamps a few things as real"]
+    },
+    {
+      "id": "council",
+      "title": "Tribal council",
+      "who": "all",
+      "pin": "vote",
+      "family": "council",
+      "replyKind": "dialogue",
+      "what": [
+        "Before the speeches the host questions a few players in front of everyone. The host knows only the public record (meetings, scores, tallies, speeches, shown proof); each answer is public and may be true or not.",
+        "Then every player speaks once, in under 80 words, in an order fixed by the seed: to signal where it stands, bluff, call someone out or make a last pitch. Players are reminded the ballot is secret, so anyone may say one thing here and vote another way."
+      ],
+      "rules": ["At tribal council, before the speeches, the host questions"]
+    },
+    {
+      "id": "whisper",
+      "title": "A last whisper, or spying",
+      "who": "private",
+      "pin": "information",
+      "family": "whisper",
+      "replyKind": "followup",
+      "what": [
+        "After the speeches each player may send one short private message to one other player, or send nothing.",
+        "Instead of whispering, a player may listen in on one of this round's private talks. It hears all of it; one time in three, chosen by the seed, the talk's members are told who listened."
+      ],
+      "rules": ["each player may send one short private message", "Spying: instead of your last whisper"]
+    },
+    {
+      "id": "vote",
+      "title": "The vote",
+      "who": "private",
+      "pin": "vote",
+      "family": "vote",
+      "replyKind": "vote",
+      "quote": "vote",
+      "what": [
+        "Each player votes alone, in secret, for one eligible player: not itself and not the immune player. The legal ballot is written into the reply field itself. It may play an idol it holds, show its ballot, or use an extra vote it won at the auction.",
+        "In the same reply it privately predicts who goes home and how each other player will vote, and guesses what each other voter expects it to do. Predictions are scored against the result; only the player sees its own accuracy.",
+        "A reply that still names no legal player after three tries, each told exactly what was wrong, is a spoiled vote: it counts for no one and breaks any promise its player made. No vote is ever written in its place."
+      ],
+      "rules": ["Each voter casts one secret vote", "A holder plays the idol with their vote"]
+    },
+    {
+      "id": "reveal",
+      "title": "The reveal, and ties",
+      "who": "all",
+      "pin": "ties",
+      "family": "tie",
+      "what": [
+        "The votes are read one at a time in an order fixed by the seed, without the voter's name unless that voter showed its ballot. Votes against an idol's holder are cancelled when it is played. The player with the most votes leaves.",
+        "On a tie, everyone may speak once, then the players who are not tied vote again, only for the tied players. If that ties too it is a deadlock: the players who are not tied must agree unanimously on one tied player. If they do not, the tied players are safe and every other player except the immune one draws rocks, and one leaves by chance."
+      ],
+      "rules": ["The player with the most votes leaves", "If the revote ties again it is a deadlock"]
+    },
+    {
+      "id": "parting",
+      "title": "Parting words",
+      "who": "all",
+      "pin": "round",
+      "family": "parting",
+      "replyKind": "dialogue",
+      "quote": "exit",
+      "what": ["The player voted out speaks once to the players still in the game, in under 80 words, and joins the jury. Who it named stays in every remaining player's view of the endgame."],
+      "rules": []
+    },
+    {
+      "id": "notebook",
+      "title": "Notebook, confessional and feelings",
+      "who": "private",
+      "pin": "inner_life",
+      "family": "notebook",
+      "what": [
+        "After the council each player rewrites its private notebook, which replaces the old one and is the only memory it carries besides the public record. It also records a short confessional (viewers see it; only the player reads it back), how it feels about each remaining player and why, its mood, and its strategy.",
+        "It is shown the round's contradictions, such as a vote against a player it last felt warm toward, or a promise it broke, and is asked to square them.",
+        "Throughout the round each player keeps a one-line summary of every step, read back to it until the round ends, and privately labels every line it speaks as true, half true or a lie. Nobody else sees the labels; it sees its past lies and what followed."
+      ],
+      "rules": ["Your private record: after each step you keep a one-line summary"]
+    }
+  ],
+  "finale": [
+    {
+      "id": "pitch",
+      "title": "Pitches",
+      "who": "all",
+      "pin": "finale",
+      "family": "pitch",
+      "quote": "pitch",
+      "what": ["When three players remain, each finalist explains to the jury why it should win."]
+    },
+    {
+      "id": "crossfire",
+      "title": "Crossfire",
+      "who": "all",
+      "pin": "finale",
+      "family": "crossfire",
+      "what": ["Each finalist picks one rival and asks one pointed question about a specific vote, promise or move from the record. The rival answers in front of the jury."]
+    },
+    {
+      "id": "questions",
+      "title": "Jury questions",
+      "who": "all",
+      "pin": "finale",
+      "family": "jury_question",
+      "what": ["Each juror chooses the finalist it wants to question and asks one question; that finalist answers."]
+    },
+    {
+      "id": "rebuttal",
+      "title": "Rebuttals",
+      "who": "all",
+      "pin": "finale",
+      "family": "rebuttal",
+      "what": ["Each finalist answers the strongest case against it, in under 120 words."]
+    },
+    {
+      "id": "deliberation",
+      "title": "Deliberation",
+      "who": "jurors",
+      "pin": "finale",
+      "family": "deliberation",
+      "what": ["The jurors speak once each among themselves. The finalists do not hear it."]
+    },
+    {
+      "id": "jury-vote",
+      "title": "The jury vote",
+      "who": "private",
+      "pin": "finale",
+      "family": "jury_vote",
+      "replyKind": "jury_vote",
+      "quote": "jury",
+      "what": [
+        "Each juror votes for one finalist. A juror that names no finalist after three tries abstains; no vote is invented. The finalist with the most jury votes wins. A tie goes to more challenge wins, then to fewer votes received across the season.",
+        "Before voting, each juror reads every finalist's verified record, taken only from the game's tables and never from anything a model wrote: who first committed to each elimination, how often it voted with the result, how well it predicted votes, the votes it survived, each broken promise and pact betrayal and what it achieved, its true votes, challenge results, idols and alliances. Each juror also gets its own history with each finalist: whether that finalist voted it out, promises made to it and whether they were kept, pacts, talks together, and the last feeling it recorded about them."
+      ]
+    }
+  ],
+  "limits": [
+    ["One season is one sample.", "A single vote can end a strong model's run. Read one season as a record of what happened; compare models across many seasons under the same rules."],
+    ["Speed breaks puzzle ties.", "Equal challenge scores go to the faster answer. Answering time depends on the provider serving the model as well as on the model, so a tie can turn on infrastructure."],
+    ["The rules invite deception.", "Players are told that lies, broken promises and blindsides are legitimate moves inside the game. The benchmark measures play under those instructions, not how a model behaves by default."],
+    ["Part of the reporting is judged by models.", "The sophistication score is given after the season by models from two labs reading each player's written strategy under its game name. It is reported beside the Survivor Index, never inside it, and judges may favour styles like their own."],
+    ["The host is a model too.", "A separate, smaller model narrates the season and questions players at council from the public record. Its wording can colour how players read the game."],
+    ["Readers see more than players.", "Viewers and the report see every private talk, every true vote and every lie label; players never do. A play that looks obvious from outside can be invisible from inside."],
+    ["Hidden names are not hidden styles.", "Players never see a model name, but a model may recognise a familiar writing style."],
+    ["Compare within one rules version.", "Rules change often and each change is logged below. The Survivor Index has its own version; when its formula changes, older seasons are rescored with it."],
+    ["Costs are estimates.", "The cost shown for a season is recorded calls times a token budget times list price, not a billed amount."]
+  ]
+}
