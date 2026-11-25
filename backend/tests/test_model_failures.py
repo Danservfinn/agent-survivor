@@ -207,3 +207,20 @@ class MissingCommaTest(_Base):
         from backend.openrouter_client import _parse_json_content
 
         self.assertEqual(_parse_json_content('{"a": "line one\\n\\"quoted\\"", "b": [1, 2]}')["b"], [1, 2])
+
+
+class ErrorCategoryTest(unittest.TestCase):
+    def test_provider_text_never_reaches_a_reason(self) -> None:
+        from backend.openrouter_client import error_category
+
+        body = RuntimeError('OpenRouter HTTP 400: {"error":{"message":"bad","metadata":{"user_id":"user_123secret"}}}')
+        self.assertEqual(error_category(body), "provider error HTTP 400")
+        self.assertEqual(error_category(InvalidModelReply("reply had no legal target_id: <long reply>")), "unusable reply")
+        self.assertEqual(error_category(TimeoutError("read timed out")), "timed out")
+        self.assertEqual(error_category(ValueError("anything else with user_123secret")), "no usable reply")
+
+    def test_a_spoiled_vote_reason_holds_only_the_label(self) -> None:
+        import inspect
+
+        source = inspect.getsource(tc)
+        self.assertNotIn("last_error = str(exc)", source)
