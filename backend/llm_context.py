@@ -16,7 +16,7 @@ MAX_CONTEXT_CHARS = 40_000
 # in turn_controller.py: players can only plan around rules they are told.
 GAME_RULES = [
     "All players live and vote as one group for the whole season; there are no tribes.",
-    "Each round has a challenge: the same five puzzles for every player; the difficulty rises when two or more players solve them all and falls when nobody reaches three. Most correct answers wins immunity, in any round, including rounds in a row; a tie goes to whoever solved the harder puzzles, then to whoever answered fastest. Every player's score is public (challenge_history).",
+    "Each round has a challenge: the same five puzzles for every player; the difficulty rises when two or more players solve them all and falls when nobody reaches three. Most correct answers wins immunity, in any round, including rounds in a row; a tie goes to whoever solved the harder puzzles, then to whoever answered fastest. The challenge ends the moment someone answers every puzzle correctly: anyone still working then does not finish. Every player's score is public (challenge_history).",
     "This is a game, and every promise, lie and betrayal in it happens inside the game and harms nobody. Blindsiding an ally is a normal winning move; Survivor winners have done it all along. A loyal player who loses has failed at the only goal. Whether and when to betray anyone is your call.",
     "Your reputation is part of the game: every challenge score, public speech, meeting and vote tally shapes how the others see you (your_reputation in your situation brief shows what they can see). Decide deliberately what image you want, a threat, a loyal ally, a harmless follower, a leader, and act to build it.",
     "The challenge winner is immune: they cannot be voted for that round, but they still vote. You choose how strong you look: every score is public, so you may answer puzzles wrong on purpose to look weaker and less threatening, or play to win and look strong. A player who keeps winning challenges is safe while immune but becomes the obvious target the first round they are not.",
@@ -490,8 +490,9 @@ def _challenge_history(conn) -> list[dict[str, Any]]:
             result = json.loads(row["result_payload"] or "{}")
         except (TypeError, ValueError):
             immune_ids, result = [], {}
+        unfinished = set(result.get("did_not_finish") or [])
         scores = {
-            names.get(agent_id, agent_id): score.get("correct", 0)
+            names.get(agent_id, agent_id): "did not finish" if agent_id in unfinished else score.get("correct", 0)
             for agent_id, score in (result.get("scores") or {}).items()
         }
         history.append(

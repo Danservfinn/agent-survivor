@@ -132,10 +132,43 @@ class LadderScoringTest(_SeasonDb):
         next_ladder = tc._round_ladder(self.conn, ROUND + 1)
         self.assertEqual(tuple(p["difficulty"] for p in next_ladder), tc.LADDER_LEVELS[2])
 
-    def test_one_perfect_score_keeps_the_level(self) -> None:
+    def test_one_perfect_score_raises_the_level(self) -> None:
+        # the challenge ends at the first perfect score, so one is enough
         a, b, *_ = self.players
         self._run({a: {0, 1, 2, 3, 4}, b: {0, 1, 2}})
+        self.assertEqual(tc._ladder_level(self.conn, ROUND + 1), tc.FIRST_LADDER_LEVEL + 1)
+
+    def test_nothing_perfect_keeps_the_level(self) -> None:
+        a, b, *_ = self.players
+        self._run({a: {0, 1, 2, 3}, b: {0, 1, 2}})
         self.assertEqual(tc._ladder_level(self.conn, ROUND + 1), tc.FIRST_LADDER_LEVEL)
+
+    def test_the_challenge_ends_at_the_first_perfect_score(self) -> None:
+        import time as _time
+
+        fast, *slow = self.players
+        started = _time.perf_counter()
+        result = self._run(
+            {fast: {0, 1, 2, 3, 4}, **{agent: {0, 1, 2, 3, 4} for agent in slow}},
+            delays={agent: 3.0 for agent in slow},
+            times={fast: 100, **{agent: 3000 for agent in slow}},
+        )
+        self.assertLess(_time.perf_counter() - started, 2.5)  # did not wait for the slow players
+        self.assertEqual(result["winning_agent_id"], fast)
+        self.assertEqual(sorted(result["result_payload"]["did_not_finish"]), sorted(slow))
+        standings = {row["agent_id"]: row for row in tc._challenge_standings(self.conn, result)}
+        self.assertTrue(standings[slow[0]]["did_not_finish"])
+        self.assertFalse(standings[fast]["did_not_finish"])
+
+    def test_without_a_perfect_score_everyone_is_waited_for(self) -> None:
+        slow, *rest = self.players
+        result = self._run(
+            {slow: {0, 1, 2, 3}, **{agent: {0} for agent in rest}},
+            delays={slow: 1.5},
+            times={slow: 1500},
+        )
+        self.assertEqual(result["winning_agent_id"], slow)
+        self.assertEqual(result["result_payload"]["did_not_finish"], [])
 
     def test_ladder_eases_when_nobody_reaches_three(self) -> None:
         self.conn.execute(

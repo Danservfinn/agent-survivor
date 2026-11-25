@@ -8,7 +8,7 @@ import os
 import random
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from typing import Any
 
@@ -425,6 +425,8 @@ class ChallengeAttemptDecision:
     # the player says it answered this rung wrong on purpose (kept out of accuracy stats only)
     thrown: bool = False
     sudden_death: bool = False
+    # still answering when another player's perfect score ended the challenge
+    did_not_finish: bool = False
 
 
 
@@ -3102,10 +3104,12 @@ def _challenge_standings(conn, result: dict[str, Any]) -> list[dict[str, Any]]:
     guesses = payload.get("guesses") or {}
     target = payload.get("guess_target")
     times = payload.get("times_ms") or {}
+    unfinished = set(payload.get("did_not_finish") or [])
     standings = [
         {
             "agent_id": agent_id,
             "name": _agent_name(conn, agent_id),
+            "did_not_finish": agent_id in unfinished,
             "correct": score["correct"],
             "weighted": score["weighted"],
             "sudden_death": sudden.get(agent_id),
@@ -3137,7 +3141,10 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
     winner_name = _agent_name(conn, winner_id) if winner_id else None
     standings = _challenge_standings(conn, result)
     rungs = len(LADDER_TIERS)
-    score_line = ", ".join(f"{row['name']} {row['correct']}/{rungs}" for row in standings)
+    score_line = ", ".join(
+        f"{row['name']} {'did not finish' if row.get('did_not_finish') else str(row['correct']) + '/' + str(rungs)}"
+        for row in standings
+    )
     result_payload = result.get("result_payload") or {}
     tied = result_payload.get("tied") or []
     on_ladder = result_payload.get("tied_on_ladder") or []
@@ -3559,7 +3566,7 @@ FIRST_LADDER_LEVEL = 1
 
 def _ladder_level(conn, round_number: int) -> int:
     """Difficulty level for this round's ladder, from the previous round's result.
-    Up a level when two or more players solved every rung (the top was not
+    Up a level when anyone solved every rung (the top was not
     separated), down a level when nobody solved three. The first rule was "half
     the field perfect", which fired once in 14 rounds on the cheap roster: the
     top two or three were perfect while the rest scored low."""
@@ -3576,7 +3583,9 @@ def _ladder_level(conn, round_number: int) -> int:
     if not scores:
         return level
     rungs = len(LADDER_TIERS)
-    if sum(1 for correct in scores if correct == rungs) >= 2:
+    # Since the challenge ends at the first perfect score, a second perfect
+    # score is never seen: anyone acing the ladder raises it (was: two or more).
+    if any(correct == rungs for correct in scores):
         level += 1
     elif max(scores) < 3:
         level -= 1
@@ -3616,14 +3625,26 @@ def _deterministic_challenge_attempts(
     return attempts
 
 
+def _perfect(solution: ChallengeSolution, puzzles: list[dict[str, Any]]) -> bool:
+    return all(
+        solution.answers.get(puzzle["puzzle_id"]) is not None
+        and grade_answer(solution.answers[puzzle["puzzle_id"]], puzzle["answer"])
+        for puzzle in puzzles
+    )
+
+
 def _live_challenge_attempts(
     conn,
     round_number: int,
     puzzles: list[dict[str, Any]],
     players: list[dict[str, Any]],
 ) -> list[ChallengeAttemptDecision]:
-    """One call per player answering every puzzle, all at once. Every player is
-    waited for; speed only breaks a tie between equal scores."""
+    """One call per player answering every puzzle, all at once. The challenge
+    ends the moment a player returns a perfect score (operator, 2026-11-25):
+    equal scores go to the fastest answer, so nobody still working can beat it.
+    Without a perfect score every player is waited for. Players still working
+    when it ends are recorded as not finished; their calls run on in the
+    background and their replies are discarded."""
     contexts = {
         agent["agent_id"]: build_agent_episode_context(
             conn,
@@ -3647,11 +3668,49 @@ def _live_challenge_attempts(
             return agent, None, int((time.perf_counter() - started) * 1000), str(exc)
 
     max_workers = 1 if live_llm_provider() == "ollama" else max(1, len(players))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = list(executor.map(call_model, players))
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    started = time.perf_counter()
+    futures = [executor.submit(call_model, agent) for agent in players]
+    finished: dict[str, tuple[dict[str, Any], ChallengeSolution | None, int, str | None]] = {}
+    fastest_perfect_ms: int | None = None
+    pending = set(futures)
+    while pending:
+        done, pending = wait(pending, timeout=1.0, return_when=FIRST_COMPLETED)
+        for future in done:
+            agent, solution, response_ms, error = future.result()
+            finished[agent["agent_id"]] = (agent, solution, response_ms, error)
+            if solution is not None and _perfect(solution, puzzles):
+                own_ms = solution.solve_ms if solution.solve_ms is not None else response_ms
+                fastest_perfect_ms = own_ms if fastest_perfect_ms is None else min(fastest_perfect_ms, own_ms)
+        # a perfect score is in, and everyone still working has already taken
+        # longer than it: none of them can answer faster, so the race is won
+        if pending and fastest_perfect_ms is not None and (time.perf_counter() - started) * 1000 >= fastest_perfect_ms:
+            break
+    stopped_ms = int((time.perf_counter() - started) * 1000)
+    executor.shutdown(wait=False, cancel_futures=True)
 
     attempts: list[ChallengeAttemptDecision] = []
-    for order, (agent, solution, response_ms, error) in enumerate(results):
+    for order, agent in enumerate(players):
+        if agent["agent_id"] not in finished:
+            for position, puzzle in enumerate(puzzles):
+                attempts.append(
+                    ChallengeAttemptDecision(
+                        agent_id=agent["agent_id"],
+                        tribe_id=None,
+                        provider="did_not_finish",
+                        model_id=agent.get("model_id"),
+                        answer="",
+                        explanation="",
+                        is_correct=False,
+                        response_ms=stopped_ms,
+                        attempt_order=order,
+                        context_digest=context_digest(contexts[agent["agent_id"]]),
+                        rung_index=int(puzzle.get("rung", position)),
+                        did_not_finish=True,
+                    )
+                )
+            continue
+        _, solution, response_ms, error = finished[agent["agent_id"]]
         for position, puzzle in enumerate(puzzles):
             rung = int(puzzle.get("rung", position))
             if solution is None:
@@ -3706,6 +3765,7 @@ def _insert_challenge_attempt(
         "llm_context_digest": attempt.context_digest or {},
         "thrown": attempt.thrown,
         "sudden_death": attempt.sudden_death,
+        "did_not_finish": attempt.did_not_finish,
     }
     if attempt.error:
         payload["error"] = attempt.error
@@ -3813,6 +3873,9 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
                     "scores": scores,
                     "ladder_level": int(ladder[0].get("ladder_level", 0)),
                     "times_ms": times,
+                    "did_not_finish": sorted(
+                        {row["agent_id"] for row in ladder_rows if (row.get("attempt_payload") or {}).get("did_not_finish")}
+                    ),
                     "barred_last_winner": barred,
                     "tied_on_ladder": leaders if len(leaders) > 1 else [],
                     "tied": tied,
