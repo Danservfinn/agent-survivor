@@ -21,7 +21,7 @@ class PublicGateTest(unittest.TestCase):
     def test_run_cap_is_flat_per_run(self) -> None:
         gate.record_public_run({"caps": {"estimated_cost_cents": 500.0}, "roster": "x", "finished": True})
         caps = gate.public_run_caps()
-        self.assertEqual(caps["max_cost_cents"], 1000.0)
+        self.assertEqual(caps["max_cost_cents"], 1500.0)
         self.assertEqual(caps["roster"], "lab_mix_openrouter")
 
     def test_roster_includes_grok(self) -> None:
@@ -44,7 +44,7 @@ class PublicGateTest(unittest.TestCase):
 
     def test_public_roster_season_estimate_fits_the_cap(self) -> None:
         """A full season is about 280 player calls; even with every call priced at
-        the dearest seat's challenge rate halved, the estimate stays under the cap."""
+        the dearest seat's challenge rate halved, the estimate stays under 60% of the cap."""
         from backend.live_cost import estimate_step_cost_usd, get_pricing_table
         from backend.model_rosters import LAB_MIX_OPENROUTER_MODELS
 

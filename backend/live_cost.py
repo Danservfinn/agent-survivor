@@ -136,6 +136,12 @@ TOKEN_BUDGETS = {
 # about 20% of a max_tokens raised by 1600. Reasoning tokens are billed as output.
 ESTIMATED_REASONING_TOKENS = 400
 
+# The estimate ran about 1.7x under the real OpenRouter bill: a full lab_mix
+# season (old prompt, 2026-11-24) was estimated at $6.34 and billed about $10.5.
+# The factor makes every estimate, and so every cost cap, mean real dollars.
+# Re-measure it after a full season; it is not a constant of nature.
+BILL_FACTOR = 1.7
+
 
 def estimate_step_cost_usd(
     model_ids: list[str],
@@ -145,7 +151,7 @@ def estimate_step_cost_usd(
 ) -> float:
     input_tokens, output_tokens = TOKEN_BUDGETS.get(response_kind, (3500, 420))
     output_tokens += ESTIMATED_REASONING_TOKENS
-    return sum(
+    return BILL_FACTOR * sum(
         estimate_call_cost_usd(m, input_tokens=input_tokens, output_tokens=output_tokens, table=table)
         for m in model_ids
     )

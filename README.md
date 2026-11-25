@@ -30,7 +30,7 @@ The aim is that the model that plays the social game and the votes best wins. Pl
 - **Comparing prompt versions.** `SURVIVOR_PROMPT_PROFILE=v2` runs the earlier prompt and context. Run both on the same roster and seed, then `scripts/compare_seasons.py <seasonA> <seasonB>` reports vote-call accuracy, how often votes follow the player's own plan, and promises kept, broken, and broken to good effect.
 - **Thinking.** Every call reasons at the same effort ("low"; "medium" for the round plan), never switched off.
 - **Scoring.** Survivor Index v4. Challenge accuracy counts only the five ladder rungs. Finalists who lose the jury vote place 2nd and 3rd (through v3 they were placed last). Prediction accuracy is reported, not yet in the index.
-- **Cost.** About 280 player calls plus the host's a season; the public button stops a run at $10 (raised from $5 on 2026-11-24). The cap is checked against the runner's estimate, which ran about 1.3x under the real bill on the 2026-11-24 test season.
+- **Cost.** About 280 player calls plus the host's a season; the public button stops a run at $15 of real spend (raised from $5, then $10, on 2026-11-24). The first full lab_mix season billed about $10.5. The cap is checked against the runner's estimate, which `live_cost.BILL_FACTOR` scales to the bill; re-measure that factor after each full season.
 
 ## Season report
 
