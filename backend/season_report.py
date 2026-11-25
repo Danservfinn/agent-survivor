@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .season_character import build_character
-from . import live_cost, season_story, season_video
+from . import glossary, live_cost, rules_changelog, season_story, season_video
 from .benchmark_scoring import LADDER_RUNGS, WEIGHTS, score_season
 
 REPORT_VERSION = 1
@@ -870,6 +870,8 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "cap_reached": caps.get("cap_reached"),
         "elapsed_s": stored.get("elapsed_s"),
         "season_seed": stored.get("season_seed"),
+        # the rules the season was played under: recorded since 2026-11-25, worked out from the start time before that
+        "rules_version": stored.get("rules_version") or rules_changelog.version_for_season(season_dir.name),
         "run_est_cost_cents": caps.get("estimated_cost_cents"),
         "run_live_calls": caps.get("estimated_live_calls"),
         "contestant_calls": sum(m["calls"] for m in models),
@@ -968,6 +970,8 @@ def render_report_html(
     page = dict(report)
     page["links"] = {"contact": safe_link(contact_url), "site": site, "handle": handle, "share": share_base or None, "report": report_url, "video": bool(video and share_base)}
     page["thread"] = season_story.build_thread(report, handle=handle, report_url=report_url, video=bool(video and share_base))
+    page["glossary"] = glossary.for_report(season)
+    page["rules"] = {"version": season.get("rules_version"), "current": rules_changelog.current_version()}
     # "</" must not appear inside the inline JSON or a model's own text could close the script tag
     blob = json.dumps(page, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
     title = f"LLM Survivor season report {season.get('date') or season.get('season_id') or ''}".strip()

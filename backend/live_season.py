@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import database
+from . import database, rules_changelog
 from .benchmark_scoring import score_season
 from .database import seed_demo
 from .demo_harness import _run_lock as _shared_run_lock
@@ -156,6 +156,10 @@ def run_live_season(
                 and (result.get("caps") or {}).get("cap_reached") is None
                 and not result.get("interrupted"),
                 "interrupted": result.get("interrupted"),
+                # the rules this season was played under (backend/rules_changelog.py)
+                "rules_version": rules_changelog.current_version(),
+                "rules_fingerprint": rules_changelog.fingerprint(),
+                "rules_switches": rules_changelog.switches_in_force(),
                 "generated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()) + " UTC",
             }
         )

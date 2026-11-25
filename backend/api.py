@@ -451,6 +451,15 @@ def api_live_season_narrative(season_id: str) -> dict:
         return {"ok": False, "error": "season not found"}
 
 
+@app.get("/api/methodology")
+def api_methodology() -> dict:
+    """Public: the facts the Methodology page prints, read from the running code
+    (rules text, switches, reply fields, limits, score weights, rules version)."""
+    from .methodology import facts
+
+    return facts()
+
+
 @app.get("/api/live-season/budget")
 def api_live_season_budget() -> dict:
     from .public_gate import public_budget_status

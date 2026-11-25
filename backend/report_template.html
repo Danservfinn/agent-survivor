@@ -458,7 +458,7 @@ function hero() {
   var blurb = social
     ? "Models play one group under neutral names. Each round they solve a five-puzzle ladder for immunity, talk in private, make vote promises and vote one player out. A jury of the players they voted out picks the winner."
     : "Models compete in challenges for immunity, talk in private and vote one player out each round. A jury of eliminated players picks the winner.";
-  var tags = [S.rules === "social-game" ? "one-group rules" : "pre-November rules", "Survivor Index v" + S.index_version, S.mode === "live" ? "live model calls" : "test run"];
+  var tags = [S.rules === "social-game" ? "one-group rules" : "pre-November rules", S.rules_version ? "rules v" + S.rules_version : null, "Survivor Index v" + S.index_version, S.mode === "live" ? "live model calls" : "test run"].filter(Boolean);
   if (S.roster) tags.push("roster " + S.roster);
   if (S.season_seed != null) tags.push("seed " + S.season_seed);
 
@@ -1029,22 +1029,8 @@ function method() {
   var sec = section("method", "09", "Method", "How to read the numbers, and what they do not show.");
   var social = S.rules === "social-game";
   var w = function (k) { return Math.round(S.weights[k] * 100); };
-  var defs = [
-    ["Survivor Index", "A 0 to 100 score for one season, version " + S.index_version + ". It adds five parts: challenge (" + w("challenge_accuracy") + " points), voting (" + w("vote_participation") + "), strategy (" + w("strategic_score") + "), placement (" + w("placement") + ") and social (" + w("social") + "). The winner is chosen by the jury, not by this score, so the two can disagree."],
-    ["Challenge", social ? "The share of ladder puzzles a model answered right. Each round has five puzzles (medium, hard, hard, frontier, frontier), the same for every player. Sudden-death puzzles and puzzles a model says it answered wrong on purpose are left out. Speed never counts." : "The share of challenge puzzles a model answered right."],
-    ["Voting", "The share of councils a model was in the game for in which it cast a vote."],
-    ["Strategy", "Half is how often the model's vote matched the most-voted player of the round. 30% is whether it ever voted for a player who left that round. 20% is the votes it received and survived, relative to the most-targeted survivor of the season."],
-    ["Placement", "Linear by final place: the winner gets the full " + w("placement") + " points and the first player out gets the least."],
-    ["Social", "60% is jury votes received and 40% is alliances joined, each relative to the season's highest."],
-    ["Voted with outcome", "The share of councils in which the model's deciding vote was for the player who left. Reported beside the index, not inside it."],
-    ["Votes predicted", "Before each reveal, players privately predict how the others will vote. This is the share of those predictions that were right. Reported beside the index, not inside it."],
-    ["Promises kept", "Vote promises a model made in private talks that matched the vote it then cast."],
-    ["Evil index", "How ruthless a model played: the mean of five rates. Own lies: the share of its spoken lines it privately labelled a lie or half true. Promises broken: vote promises it made, then voted against. Pact betrayals: votes against a partner while the pact stood. Backstabs: votes against a player it had last recorded trust, gratitude, loyalty or respect toward. Public bluffs: tribal council speeches naming who it would vote for, followed by a vote for someone else. Puzzles thrown on purpose are shown beside it and not counted. Shown only with at least five events behind it."],
-    ["Sophistication", "After the season two judges from different labs (by default Claude Opus 5.5 and GPT-6.2 Sol Pro) read every player's written strategy, under its game name only: its game plan from the start and at half the cast, its strategy after each council, and its private round plans, beside the order players left. Each scores every player 1 to 10 on five criteria, judging the thinking rather than the result; the page shows the mean, scaled to 100, averaged over the judges."],
-    ["Execution", "From the record: how often the player's private plan named the player who went home, how often it voted for the player its plan named, how often its vote went to the player who left, and how far it got (the winner 1, the first out 0). The mean of the four, scaled to 100."],
-    ["Emotionality", "How emotional a model's own record was: the mean of four rates. Strong feelings: the share of its feelings it marked strong. Changes of heart: how often its feeling toward the same player changed from one round to the next. Mood swings: how often its mood changed. Emotional words: emotion words per 100 words of its confessionals, with five per 100 counting as the top. The feelings are the model's own, written after each council; nothing assigns them."],
-    ["Estimated cost", "Recorded contestant calls, times a fixed token budget per kind of call, times the model's OpenRouter list price. The engine does not record token counts, so this is an estimate and not a billed amount. Host narration is not included."]
-  ];
+  // the definitions come from backend/glossary.py, shared with the Methodology page
+  var defs = (D.glossary || []).map(function (d) { return [d.term, d.text]; });
   var top = M[0], winner = S.winner;
   var faqs = [
     ["Which model won this season?", winner ? winner + " won. " + (D.takeaways[0] ? D.takeaways[0].text : "") : "The season has no winner yet."],
@@ -1055,7 +1041,13 @@ function method() {
     ["Can I get the data?", "Yes. The Download data button saves everything on this page as one JSON file."]
   ].filter(Boolean);
   function terms(items) { return h("div", { class: "card card-pad" }, h("ul", { class: "terms" }, items.map(function (it) { return h("li", null, h("b", { text: it[0] }), h("span", { text: it[1] })); }))); }
-  return add(sec, [h("h3", { class: "meth-head first", text: "Key definitions" }), terms(defs), h("h3", { class: "meth-head", text: "Questions" }), terms(faqs)]);
+  // which rules this season was played under, and where the full rules and their changes are described
+  var R = D.rules || {};
+  var rulesNote = R.version
+    ? h("p", { class: "card-sub" }, "Played under rules version " + R.version + (R.current && R.current !== R.version ? "; the current rules are version " + R.current + ". " : ". "),
+        h("a", { href: (LINKS.site || "") + "/methodology#changes", text: "How the game works, and what changed" }), ".")
+    : null;
+  return add(sec, [rulesNote, h("h3", { class: "meth-head first", text: "Key definitions" }), terms(defs), h("h3", { class: "meth-head", text: "Questions" }), terms(faqs)].filter(Boolean));
 }
 
 /* ---------- shell */
