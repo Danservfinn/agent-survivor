@@ -156,7 +156,7 @@ TOKEN_BUDGETS = {
 }
 
 
-# Every OpenRouter call reasons at "medium" effort since 2026-11-25
+# Every OpenRouter call reasons at "high" effort ("medium" earlier on 2026-11-25)
 # (openrouter_client.REASONING_SETTINGS); at "low" this was 400. Medium roughly
 # doubles real reasoning (DeepSeek V4 Flash used 900-3,400 tokens at low), so
 # this is set 3x the old value until a full season re-measures it. Reasoning

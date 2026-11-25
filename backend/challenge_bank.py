@@ -15,10 +15,12 @@ Families:
 A challenge is a ladder: five puzzles of rising difficulty, the same for
 every player (ladder_for_round). The ladder's difficulty level adapts to the
 field (see turn_controller._ladder_level), and an "extreme" tier sits above
-frontier so strong fields cannot saturate it. Ladder ties are broken by a
-guessing game, not by more puzzles. Puzzles are pure functions of the season
-seed, round and level, so any live run is reproducible puzzle-for-puzzle.
-Speed is never scored.
+frontier so strong fields cannot saturate it, and a "master" tier above that.
+Puzzles are pure functions of the season seed, round and level, so any live
+run is reproducible puzzle-for-puzzle. Ladder ties go to the harder puzzles
+(RUNG_WEIGHTS), then to the faster answer (turn_controller._ensure_challenge_result).
+Seasons before 2026-11-25 broke ties with sudden-death puzzles or a guessing
+game; those fields are only read to display old seasons.
 """
 
 from __future__ import annotations

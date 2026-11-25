@@ -29,7 +29,8 @@ Sources (all read from a season DB):
 Survivor Index (0-100):
   challenge_accuracy   30%
   vote_participation   20%  (fraction of rounds alive with a recorded vote)
-  strategic_score      20%  (mean normalized strategic_score, 0 if none)
+  strategic_score      20%  (from the votes: 0.5 voted with the plurality, 0.3 a vote
+                             that sent the boot home, 0.2 votes received and survived)
   placement            15%  (linear by final place)
   social               15%  (jury votes + alliances, normalized)
 """
@@ -200,15 +201,13 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
                 tally[v["target_id"]] = tally.get(v["target_id"], 0) + 1
         if not tally:
             continue
-        plurality_id, plurality_n = max(tally.items(), key=lambda kv: kv[1])
-        n_voters = len(round_votes)
+        plurality_id, _ = max(tally.items(), key=lambda kv: kv[1])
         for v in round_votes:
             voter = v["voter_id"]
             if voter not in {a["agent_id"] for a in agents}:
                 continue
             aligned = v["target_id"] == plurality_id
-            weighted = plurality_n / n_voters  # how real the majority was
-            majority_alignment.setdefault(voter, []).append(1.0 if aligned else 0.0 * weighted)
+            majority_alignment.setdefault(voter, []).append(1.0 if aligned else 0.0)
     majority_rate = {aid: (sum(vals) / len(vals)) for aid, vals in majority_alignment.items()}
 
     # flip influence: rounds where the agent's stated target WAS the eliminated agent

@@ -244,7 +244,7 @@ def api_live_season_public_run(payload: dict | None = Body(default=None)) -> dic
 
     Anyone can click. The runner enforces the per-run cost cap in
     public_gate.PUBLIC_RUN_MAX_COST_CENTS; there is no daily cap. One season
-    runs at a time. Runs the cheap roster.
+    runs at a time. Runs public_gate.PUBLIC_ROSTER (lab_mix_openrouter, one model per lab).
 
     Body (optional): {"openrouter_key": "sk-or-..."} — run the season on the
     visitor's own OpenRouter key instead of the operator's. The key is used

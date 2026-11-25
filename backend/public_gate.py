@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 
-# $15 per public run (raised from $5 to $10 to $15 on 2026-11-24 with one model per
+# $25 per public run (raised from $5 to $10 to $15 on 2026-11-24 with one model per
 # lab). The cap is checked against the runner's own estimate, which is scaled
 # to the real OpenRouter bill (live_cost.BILL_FACTOR): the first full season,
 # 2026-11-24, billed about $10.5 and the newer prompt is a little dearer, so the
