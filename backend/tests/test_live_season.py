@@ -19,10 +19,12 @@ from backend.model_rosters import agents_for_roster  # noqa: E402
 
 
 class RosterTest(unittest.TestCase):
-    def test_cheap_roster_is_9_seats_with_grok(self) -> None:
+    def test_cheap_roster_is_9_seats_one_per_lab(self) -> None:
         agents = agents_for_roster("cheap_recent_openrouter")
         self.assertEqual(len(agents), 9)
-        self.assertIn("x-ai/grok-4.7", {a["model_id"] for a in agents})
+        self.assertEqual(len({a["model_id"].split("/")[0] for a in agents}), 9)
+        # Grok 4.7 cost 20-200x the rest; Reka Edge's 16k window was too small
+        self.assertFalse({"x-ai/grok-4.7", "rekaai/reka-edge"} & {a["model_id"] for a in agents})
 
     def test_cheap_roster_models_are_live(self) -> None:
         agents = agents_for_roster("cheap_recent_openrouter")

@@ -16,13 +16,13 @@ MAX_CONTEXT_CHARS = 40_000
 # in turn_controller.py: players can only plan around rules they are told.
 GAME_RULES = [
     "All players live and vote as one group for the whole season; there are no tribes.",
-    "Each round has a challenge: the same five puzzles for every player; the difficulty rises when half the field solves them all and falls when nobody reaches three. Most correct answers wins; a tie goes to whoever solved the harder puzzles, then to a guessing game played in the same answer: every player names a whole number from 0 to 100 and the tied player closest to two-thirds of the average wins; if still tied, nobody wins. Speed does not count. Every player's score is public (challenge_history).",
+    "Each round has a challenge: the same five puzzles for every player; the difficulty rises when two or more players solve them all and falls when nobody reaches three. Most correct answers wins immunity; a tie goes to whoever solved the harder puzzles, then to whoever answered fastest. Last round's immunity winner cannot win it this round. Every player's score is public (challenge_history).",
     "The challenge winner is immune: they cannot be voted for that round, but they still vote. A player may answer puzzles wrong on purpose to look less threatening.",
     "In the first two rounds of the season the challenge winner must give a hidden idol to another player. Everyone learns that an idol was given; only the giver and the holder know who has it. Only one idol is in play at a time.",
     "A holder plays the idol with their vote at a council; every vote against them that round is then cancelled, and the play is announced. An unplayed idol expires when five players remain.",
     "Each voter casts one secret vote for an eligible player. After everyone votes, the votes are revealed one by one and stay public: every player sees who voted for whom (vote_history).",
-    "The player with the most votes leaves. On a tie there is a revote among the tied players only; tied players cannot vote for themselves.",
-    "If the revote is also tied, the tied player with the fewest challenge wins this season leaves; if still level, the one who has received the most votes this season leaves.",
+    "The player with the most votes leaves. On a tie, everyone may speak once, then the players who are not tied vote again, only for the tied players; the tied players do not vote.",
+    "If the revote ties again it is a deadlock: the players who are not tied must agree unanimously on which tied player goes home. If anyone refuses or they cannot agree, the tied players are safe and every other player except those holding immunity draws rocks; one goes home purely by chance.",
     "Alliances are declared, never assumed: in a private talk each player may declare a pact, and an alliance forms only when every player in the talk ends it by declaring one. Your active alliances are listed in your private memory, and the jury sees them.",
     "Each round, before the vote, every player picks one other player for a private talk; only the two of them hear it. A promise to vote for someone, made in a talk, is recorded and later checked against the revealed vote (your_promises).",
     "Each round you privately write a plan after the challenge, privately predict the vote when you cast yours, and rewrite your private notebook after the council. Only you see these; your prediction accuracy is shown to you (your_predictions).",
@@ -57,8 +57,18 @@ AGENT_PUBLIC_KINDS = {
     "memory_update",
     "finale_intro",
     "finale_pitch",
+    "finale_crossfire",
     "jury_questions",
+    "finale_rebuttal",
     "jury_vote",
+    "revote_call",
+    "tie_discussion",
+    "revote_tally",
+    "deadlock_call",
+    "deadlock_discussion",
+    "deadlock_result",
+    "rock_draw",
+    "tiebreak",
     "winner_declared",
 }
 # Host framing that carries no strategic fact; dropped from players' timeline (v3)
@@ -215,7 +225,18 @@ def _agent_public_event(event: dict[str, Any]) -> dict[str, Any]:
         summary["tally"] = event.get("subtitle")
     if event["kind"] == "elimination":
         summary["result"] = event.get("subtitle")
+    if event["kind"] in FINALE_SPOKEN_KINDS:
+        # what was actually said: the questions and answers jurors vote on.
+        # Before 2026-11-25 only the host's one-line summary reached the jury.
+        summary["speaker_lines"] = [
+            {key: line[key] for key in ("agent_id", "text", "question_to", "answer_to") if key in line}
+            for line in (event.get("payload") or {}).get("speaker_lines", [])
+            if isinstance(line, dict) and isinstance(line.get("text"), str)
+        ]
     return summary
+
+
+FINALE_SPOKEN_KINDS = {"finale_crossfire", "jury_questions", "finale_rebuttal", "tie_discussion", "deadlock_discussion"}
 
 
 def _is_public_event(event: dict[str, Any]) -> bool:
@@ -430,9 +451,11 @@ def _challenge_history(conn) -> list[dict[str, Any]]:
                 "immune": [names.get(agent_id, agent_id) for agent_id in immune_ids],
                 "scores_out_of_5": scores,
                 "ladder_level": result.get("ladder_level", 0),
-                # everyone's number in the guessing game, public after the round
-                "guesses": {names.get(agent_id, agent_id): guess for agent_id, guess in (result.get("guesses") or {}).items()},
-                "two_thirds_of_average": result.get("guess_target"),
+                "answer_seconds": {
+                    names.get(agent_id, agent_id): round(ms / 1000, 1)
+                    for agent_id, ms in (result.get("times_ms") or {}).items()
+                    if ms is not None
+                },
                 "idol_given_by_winner": row["round"] in idol_rounds,
             }
         )

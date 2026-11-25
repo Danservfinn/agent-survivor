@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -189,3 +190,50 @@ class JuryDossierTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FinalePersuasionTest(unittest.TestCase):
+    """Finalists question each other and rebut; jurors read what was said."""
+
+    setUp = JuryDossierTest.setUp
+
+    def test_finale_order_puts_persuasion_around_the_jury_questions(self) -> None:
+        steps = tc._finale_steps(self.conn)
+        order = [step for step in steps if not step.startswith(("finale_pitch_", "jury_vote_"))]
+        self.assertEqual(order, ["finale_intro", "finale_crossfire", "jury_questions", "finale_rebuttal", "winner_declared"])
+        self.assertLess(max(i for i, s in enumerate(steps) if s.startswith("finale_pitch_")), steps.index("finale_crossfire"))
+        self.assertLess(steps.index("finale_rebuttal"), min(i for i, s in enumerate(steps) if s.startswith("jury_vote_")))
+
+    def test_crossfire_and_rebuttal_reach_the_jurors_record(self) -> None:
+        a, b, c = self.finalists
+
+        def action(**kwargs):
+            actor = kwargs["actor"]["agent_id"]
+            step = kwargs["step"]
+            if step == "finale_crossfire":
+                target = kwargs["allowed_targets"][0]["agent_id"]
+                return AgentAction(dialogue=f"Q from {actor}", inner_thought="", model_id="m", target_id=target)
+            if step == "jury_questions" and "asks you" in kwargs["scene_context"]:
+                return AgentAction(dialogue=f"A from {actor}", inner_thought="", model_id="m")
+            if step == "finale_rebuttal":
+                return AgentAction(dialogue=f"Rebuttal from {actor}", inner_thought="", model_id="m")
+            return AgentAction(dialogue="?", inner_thought="", model_id="m")
+
+        with patch.object(tc, "should_use_live_llm", return_value=True), patch.object(
+            tc, "live_llm_provider", return_value="openrouter"
+        ), patch.object(tc, "build_agent_episode_context", return_value={}), patch.object(
+            tc, "request_agent_action", side_effect=action
+        ):
+            crossfire = tc._finale_crossfire_event(self.conn, 9, 1)
+            rebuttal = tc._finale_rebuttal_event(self.conn, 9, 2)
+        lines = crossfire["payload"]["speaker_lines"]
+        self.assertEqual([line["text"] for line in lines if "question_to" in line], [f"Q from {a}", f"Q from {b}", f"Q from {c}"])
+        self.assertTrue(all(line["question_to"] != line["agent_id"] for line in lines if "question_to" in line))
+        self.assertEqual(len([line for line in lines if "answer_to" in line]), 3)
+        self.assertEqual([line["text"] for line in rebuttal["payload"]["speaker_lines"]], [f"Rebuttal from {f}" for f in (a, b, c)])
+
+        from backend.llm_context import build_agent_episode_context
+
+        juror_view = json.dumps(build_agent_episode_context(self.conn, actor_id=self.jury[0], round_number=9, current_step="jury_vote"))
+        self.assertIn(f"Q from {a}", juror_view)
+        self.assertIn(f"Rebuttal from {c}", juror_view)

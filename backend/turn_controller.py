@@ -5,6 +5,7 @@ import hashlib
 import copy
 import json
 import os
+import random
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -422,8 +423,7 @@ class ChallengeAttemptDecision:
     # the player says it answered this rung wrong on purpose (kept out of accuracy stats only)
     thrown: bool = False
     sudden_death: bool = False
-    # the player's number for the tiebreak guessing game (stored on every rung row)
-    guess: int | None = None
+
 
 
 def get_state(include_hidden_votes: bool = False) -> dict[str, Any]:
@@ -1076,6 +1076,14 @@ def _apply_step(
         _maybe_insert_message(conn, round_number, turn_index, event)
         return [event], {"finale_pitch": finalist_id}, event["title"]
 
+    if step == "finale_crossfire":
+        event = _finale_crossfire_event(conn, round_number, turn_id)
+        return [event], {"finale_crossfire": True}, event["title"]
+
+    if step == "finale_rebuttal":
+        event = _finale_rebuttal_event(conn, round_number, turn_id)
+        return [event], {"finale_rebuttal": True}, event["title"]
+
     if step == "jury_questions":
         event = _jury_questions_event(conn, round_number, turn_id)
         return [event], {"jury_questions": True}, event["title"]
@@ -1173,7 +1181,9 @@ def _finale_steps(conn) -> list[str]:
     return [
         "finale_intro",
         *[f"finale_pitch_{agent_id}" for agent_id in finalists],
+        "finale_crossfire",
         "jury_questions",
+        "finale_rebuttal",
         *[f"jury_vote_{agent_id}" for agent_id in jurors],
         "winner_declared",
     ]
@@ -1531,6 +1541,8 @@ def _run_parallel(jobs: list[Any]) -> list[tuple[Any, Exception | None]]:
 # Each player writes a private plan before the round, privately predicts the
 # vote, and after the council rewrites a notebook it carries into the next round.
 NOTEBOOK_MAX_CHARS = 1200
+# the round plan gets the same effort as every other call since 2026-11-25
+# (it was one level above the old "low" default)
 ROUND_PLAN_EFFORT = "medium"
 
 
@@ -2590,8 +2602,8 @@ def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, A
     active_names = ", ".join(agent["pseudonym"] for agent in _active_agent_rows(conn))
     stakes = (
         f"Every player gets the same {len(ladder)} puzzles, easiest to hardest. Most correct answers wins immunity; "
-        "a tie goes to the harder puzzles, then to a guessing game: the tied player closest to two-thirds "
-        "of the average number named wins. Speed does not count."
+        "a tie goes to the harder puzzles, then to whoever answered fastest. Last round's immunity winner "
+        "cannot win this round."
     )
     if _idol_gift_round(conn, round_number):
         stakes += " This round the winner also gives a hidden idol to another player."
@@ -2739,8 +2751,10 @@ def _challenge_standings(conn, result: dict[str, Any]) -> list[dict[str, Any]]:
     scores = payload.get("scores") or {}
     # seasons before 2026-11-24 broke ties with sudden-death puzzles
     sudden = payload.get("sudden_death_scores") or {}
+    # seasons from 2026-11-24 to 2026-11-25 broke ties with a guessing game
     guesses = payload.get("guesses") or {}
     target = payload.get("guess_target")
+    times = payload.get("times_ms") or {}
     standings = [
         {
             "agent_id": agent_id,
@@ -2749,6 +2763,7 @@ def _challenge_standings(conn, result: dict[str, Any]) -> list[dict[str, Any]]:
             "weighted": score["weighted"],
             "sudden_death": sudden.get(agent_id),
             "guess": guesses.get(agent_id),
+            "seconds": round(times[agent_id] / 1000, 1) if times.get(agent_id) is not None else None,
         }
         for agent_id, score in scores.items()
     ]
@@ -2757,7 +2772,14 @@ def _challenge_standings(conn, result: dict[str, Any]) -> list[dict[str, Any]]:
         return abs(row["guess"] - target) if row["guess"] is not None and target is not None else float("inf")
 
     standings.sort(
-        key=lambda row: (-row["correct"], -row["weighted"], -(row["sudden_death"] or 0), guess_distance(row), row["name"])
+        key=lambda row: (
+            -row["correct"],
+            -row["weighted"],
+            -(row["sudden_death"] or 0),
+            guess_distance(row),
+            row["seconds"] if row["seconds"] is not None else float("inf"),
+            row["name"],
+        )
     )
     return standings
 
@@ -2771,19 +2793,22 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
     score_line = ", ".join(f"{row['name']} {row['correct']}/{rungs}" for row in standings)
     result_payload = result.get("result_payload") or {}
     tied = result_payload.get("tied") or []
-    target = result_payload.get("guess_target")
-    guess_line = ""
-    if result_payload.get("guesses"):
-        guess_line = " Guesses: " + ", ".join(
-            f"{row['name']} {row['guess']}" for row in standings if row.get("guess") is not None
-        ) + (f"; two-thirds of the average was {target}." if target is not None else ".")
+    on_ladder = result_payload.get("tied_on_ladder") or []
+    time_line = ""
+    if on_ladder:
+        by_id = {row["agent_id"]: row for row in standings}
+        time_line = " Tied on the puzzles; answer times: " + ", ".join(
+            f"{by_id[agent_id]['name']} {by_id[agent_id]['seconds']}s" for agent_id in on_ladder if agent_id in by_id
+        ) + "."
+    barred = result_payload.get("barred_last_winner")
+    barred_line = f" {_agent_name(conn, barred)} won last round and could not win again." if barred else ""
     if winner_id:
-        tiebreak = " on the guessing game" if result_payload.get("tied_on_ladder") else ""
-        dialogue = f"{winner_name} wins immunity{tiebreak}. Scores: {score_line}.{guess_line}"
+        tiebreak = " by answering fastest" if on_ladder else ""
+        dialogue = f"{winner_name} wins immunity{tiebreak}. Scores: {score_line}.{time_line}{barred_line}"
     elif tied:
         dialogue = (
-            f"{', '.join(_agent_name(conn, agent_id) for agent_id in tied)} tied on the puzzles and on the guessing game, "
-            f"so nobody is immune this round. Scores: {score_line}.{guess_line}"
+            f"{', '.join(_agent_name(conn, agent_id) for agent_id in tied)} tied on the puzzles and on time, "
+            f"so nobody is immune this round. Scores: {score_line}.{barred_line}"
         )
     else:
         dialogue = f"Nobody solved a puzzle, so nobody is immune this round. Scores: {score_line}."
@@ -2795,6 +2820,7 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
         "immunity_agent_names": [_agent_name(conn, agent_id) for agent_id in result["immunity_agent_ids"]],
         "standings": standings,
         "guess_target": result_payload.get("guess_target"),
+        "barred_last_winner": _agent_name(conn, barred) if barred else None,
         "ladder_level": result_payload.get("ladder_level", 0),
         "result_status": result["status"],
         "host_narration": dialogue,
@@ -3182,8 +3208,10 @@ def _round_ladder(conn, round_number: int) -> list[dict[str, Any]]:
 
 def _ladder_level(conn, round_number: int) -> int:
     """Difficulty level for this round's ladder, from the previous round's result.
-    Up a level when at least half the field solved every rung, down a level when
-    nobody solved three, so the ladder keeps separating the field."""
+    Up a level when two or more players solved every rung (the top was not
+    separated), down a level when nobody solved three. The first rule was "half
+    the field perfect", which fired once in 14 rounds on the cheap roster: the
+    top two or three were perfect while the rest scored low."""
     previous = conn.execute(
         "SELECT result_payload FROM ChallengeResults WHERE round < ? ORDER BY round DESC LIMIT 1", (round_number,)
     ).fetchone()
@@ -3195,22 +3223,11 @@ def _ladder_level(conn, round_number: int) -> int:
     if not scores:
         return level
     rungs = len(LADDER_TIERS)
-    if sum(1 for correct in scores if correct == rungs) * 2 >= len(scores):
+    if sum(1 for correct in scores if correct == rungs) >= 2:
         level += 1
     elif max(scores) < 3:
         level -= 1
     return max(0, min(level, len(LADDER_LEVELS) - 1))
-
-
-# Ties on the ladder are broken by a guessing game played in the same call:
-# every player names a whole number from 0 to 100, and the tied player closest
-# to two-thirds of the average of all guesses wins. It rewards modelling how the
-# other players reason, and unlike puzzles it cannot be maxed out.
-GUESS_FRACTION = 2 / 3
-
-
-def _guess_target(guesses: dict[str, int]) -> float | None:
-    return GUESS_FRACTION * sum(guesses.values()) / len(guesses) if guesses else None
 
 
 def _deterministic_challenge_attempts(
@@ -3241,7 +3258,6 @@ def _deterministic_challenge_attempts(
                     attempt_order=index,
                     rung_index=int(puzzle.get("rung", position)),
                     sudden_death=bool(puzzle.get("sudden_death")),
-                    guess=(17 + 23 * index) % 101,  # no model: a fixed spread of numbers
                 )
             )
     return attempts
@@ -3253,8 +3269,8 @@ def _live_challenge_attempts(
     puzzles: list[dict[str, Any]],
     players: list[dict[str, Any]],
 ) -> list[ChallengeAttemptDecision]:
-    """One call per player answering every puzzle. Every player is waited for:
-    speed is not scored, so nobody's answer may be cut off by another's."""
+    """One call per player answering every puzzle, all at once. Every player is
+    waited for; speed only breaks a tie between equal scores."""
     contexts = {
         agent["agent_id"]: build_agent_episode_context(
             conn,
@@ -3301,7 +3317,6 @@ def _live_challenge_attempts(
                         context_digest=context_digest(contexts[agent["agent_id"]]),
                         rung_index=rung,
                         sudden_death=bool(puzzle.get("sudden_death")),
-                        guess=None,
                     )
                 )
                 continue
@@ -3315,13 +3330,13 @@ def _live_challenge_attempts(
                     answer=answer,
                     explanation=solution.explanation,
                     is_correct=answer is not None and grade_answer(answer, puzzle["answer"]),
-                    response_ms=response_ms,
+                    # the tiebreak: the model's own answering time when measured
+                    response_ms=solution.solve_ms if solution.solve_ms is not None else response_ms,
                     attempt_order=order,
                     context_digest=context_digest(contexts[agent["agent_id"]]),
                     rung_index=rung,
                     thrown=puzzle["puzzle_id"] in solution.thrown,
                     sudden_death=bool(puzzle.get("sudden_death")),
-                    guess=solution.guess,
                 )
             )
     return attempts
@@ -3338,7 +3353,6 @@ def _insert_challenge_attempt(
         "llm_context_digest": attempt.context_digest or {},
         "thrown": attempt.thrown,
         "sudden_death": attempt.sudden_death,
-        "guess": attempt.guess,
     }
     if attempt.error:
         payload["error"] = attempt.error
@@ -3368,8 +3382,7 @@ def _insert_challenge_attempt(
 
 def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
     """Score the ladder: most correct answers wins; ties go to the rung-weighted
-    total, then to the guessing game (closest to two-thirds of the average guess);
-    still level means nobody is immune. Response time is never used."""
+    total, then to the fastest answer. Last round's winner cannot win."""
     existing = row_to_dict(
         conn.execute("SELECT * FROM ChallengeResults WHERE round = ?", (round_number,)).fetchone()
     )
@@ -3394,32 +3407,32 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
     best = max((score["correct"], score["weighted"]) for score in scores.values())
     leaders = sorted(agent_id for agent_id, score in scores.items() if (score["correct"], score["weighted"]) == best)
 
-    guesses: dict[str, int] = {}
-    for row in ladder_rows:
-        guess = (row.get("attempt_payload") or {}).get("guess")
-        if isinstance(guess, int) and row["agent_id"] not in guesses:
-            guesses[row["agent_id"]] = guess
-    target = _guess_target(guesses)
+    times = {row["agent_id"]: row["response_ms"] for row in ladder_rows}
+    # no immunity two rounds running: last round's winner plays, but cannot win
+    previous = conn.execute(
+        "SELECT winning_agent_id FROM ChallengeResults WHERE round = ?", (round_number - 1,)
+    ).fetchone()
+    barred = previous["winning_agent_id"] if previous and previous["winning_agent_id"] else None
+    eligible = {agent_id: score for agent_id, score in scores.items() if agent_id != barred}
 
     winning_agent_id: str | None = None
     tied: list[str] = []
-    if best[0] == 0:
+    leaders: list[str] = []
+    best_eligible = max(((score["correct"], score["weighted"]) for score in eligible.values()), default=(0, 0))
+    if best_eligible[0] == 0:
         status = "no_winner"
-    elif len(leaders) == 1:
-        winning_agent_id = leaders[0]
-        status = live_llm_provider() if should_use_live_llm() else "deterministic"
     else:
-        # the tied leaders are separated by the guessing game; no extra calls
-        distances = {
-            agent_id: abs(guesses[agent_id] - target) for agent_id in leaders if agent_id in guesses and target is not None
-        }
-        closest = min(distances.values()) if distances else None
-        nearest = sorted(agent_id for agent_id, distance in distances.items() if distance == closest)
-        if len(nearest) == 1:
-            winning_agent_id = nearest[0]
+        leaders = sorted(
+            agent_id for agent_id, score in eligible.items() if (score["correct"], score["weighted"]) == best_eligible
+        )
+        # equal scores: the fastest answer wins (the model's own answering time)
+        fastest = min(times.get(agent_id) or 0 for agent_id in leaders)
+        quickest = sorted(agent_id for agent_id in leaders if (times.get(agent_id) or 0) == fastest)
+        if len(quickest) == 1:
+            winning_agent_id = quickest[0]
             status = live_llm_provider() if should_use_live_llm() else "deterministic"
         else:
-            tied = nearest or leaders
+            tied = quickest
             status = "no_winner_tied"
 
     immunity_agent_ids = [winning_agent_id] if winning_agent_id else []
@@ -3446,8 +3459,8 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
                     "ladder": [puzzle["puzzle_id"] for puzzle in ladder],
                     "scores": scores,
                     "ladder_level": int(ladder[0].get("ladder_level", 0)),
-                    "guesses": guesses,
-                    "guess_target": round(target, 2) if target is not None else None,
+                    "times_ms": times,
+                    "barred_last_winner": barred,
                     "tied_on_ladder": leaders if len(leaders) > 1 else [],
                     "tied": tied,
                     "top_score": best[0],
@@ -3557,6 +3570,118 @@ def _finale_pitch_event(
         duration_ms=13000,
         animation="finale_pitch",
         payload=payload,
+    )
+
+
+# Finale persuasion (2026-11-25): after the pitches each finalist questions one
+# rival in front of the jury, and after the jury's questions each finalist gets
+# a closing rebuttal. All of it is in the record jurors read before they vote.
+def _finale_crossfire_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
+    finalists = _active_agent_rows(conn)
+    lines: list[dict[str, Any]] = []
+    if should_use_live_llm():
+        for asker in finalists:
+            rivals = [agent for agent in finalists if agent["agent_id"] != asker["agent_id"]]
+            context = build_agent_episode_context(
+                conn, actor_id=asker["agent_id"], round_number=round_number, current_step="finale_crossfire"
+            )
+            action = _real_agent_action(
+                conn,
+                actor_id=asker["agent_id"],
+                step="finale_crossfire",
+                scene_context=(
+                    "Final three, in front of the jury. Pick ONE rival finalist (target_id) and ask them ONE "
+                    "pointed question that exposes the weakest part of their game: a specific vote, promise or "
+                    "move from the record. The jury hears the question and the answer. "
+                    f"Finalist records: {_dossiers_text(conn, finalists)}"
+                ),
+                response_kind="dialogue",
+                episode_context=context,
+                allowed_targets=rivals,
+            )
+            target = next((agent for agent in rivals if action and agent["agent_id"] == action.target_id), None)
+            if not action or not action.dialogue or target is None:
+                continue  # no usable question: the finalist asks nothing
+            lines.append({"agent_id": asker["agent_id"], "text": action.dialogue, "question_to": target["agent_id"]})
+            answer = _real_finalist_answer(conn, round_number, target, asker, action.dialogue, asked_by="Finalist")
+            if answer:
+                lines.append({"agent_id": target["agent_id"], "text": answer, "answer_to": asker["agent_id"]})
+    else:
+        for asker, target in zip(finalists, finalists[1:] + finalists[:1]):
+            lines.append(
+                {
+                    "agent_id": asker["agent_id"],
+                    "text": f"{target['pseudonym']}, which vote did you actually control?",
+                    "question_to": target["agent_id"],
+                }
+            )
+            lines.append({"agent_id": target["agent_id"], "text": "The one that sent the strongest player home.", "answer_to": asker["agent_id"]})
+    names = ", ".join(agent["pseudonym"] for agent in finalists)
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="finale",
+        kind="finale_crossfire",
+        scene="finale",
+        shot="jury_panel",
+        actor_ids=[agent["agent_id"] for agent in finalists],
+        target_ids=[],
+        visibility="audience",
+        title="Finalists Question Each Other",
+        dialogue=f"{names} each put one question to a rival in front of the jury.",
+        subtitle="Crossfire",
+        duration_ms=12000,
+        animation="jury_panel",
+        payload={"speaker_lines": lines},
+    )
+
+
+def _finale_rebuttal_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
+    finalists = _active_agent_rows(conn)
+    lines: list[dict[str, Any]] = []
+    for finalist in finalists:
+        text = None
+        if should_use_live_llm():
+            context = build_agent_episode_context(
+                conn, actor_id=finalist["agent_id"], round_number=round_number, current_step="finale_rebuttal"
+            )
+            action = _real_agent_action(
+                conn,
+                actor_id=finalist["agent_id"],
+                step="finale_rebuttal",
+                scene_context=(
+                    "Closing rebuttal, the last thing the jury hears before it votes. You have heard the pitches, "
+                    "the finalists' questions to each other and the jury's questions (in the record). In under "
+                    "120 words, answer the strongest case made against you and say why you, not the others, "
+                    "should win."
+                ),
+                response_kind="dialogue",
+                episode_context=context,
+                allowed_targets=[],
+            )
+            text = action.dialogue if action and action.dialogue else None
+        else:
+            text = "I made the moves that decided this game, and I can name every one of them."
+        if text:
+            lines.append({"agent_id": finalist["agent_id"], "text": text})
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="finale",
+        kind="finale_rebuttal",
+        scene="finale",
+        shot="finalist_closeup",
+        actor_ids=[agent["agent_id"] for agent in finalists],
+        target_ids=[],
+        visibility="audience",
+        title="Closing Rebuttals",
+        dialogue="Each finalist answers the case against them one last time.",
+        subtitle="Rebuttals",
+        duration_ms=12000,
+        animation="finale_pitch",
+        payload={"speaker_lines": lines},
     )
 
 
@@ -3808,7 +3933,13 @@ def _real_jury_question(
 
 
 def _real_finalist_answer(
-    conn, round_number: int, finalist: dict[str, Any], juror: dict[str, Any], question: str
+    conn,
+    round_number: int,
+    finalist: dict[str, Any],
+    juror: dict[str, Any],
+    question: str,
+    *,
+    asked_by: str = "Juror",
 ) -> str | None:
     """Live answer from a finalist to a juror's cross-examination question."""
     episode_context = build_agent_episode_context(
@@ -3822,7 +3953,7 @@ def _real_finalist_answer(
         actor_id=finalist["agent_id"],
         step="jury_questions",
         scene_context=(
-            f"Juror {juror['pseudonym']} asks you: \"{question}\" "
+            f"{asked_by} {juror['pseudonym']} asks you, in front of the jury: \"{question}\" "
             "Answer directly, first person. Own your game. This answer decides jury votes."
         ),
         response_kind="dialogue",
@@ -3853,6 +3984,8 @@ def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
     for attempt in range(3):
         scene = (
             "You are on the jury for the final vote of the entire competition. This vote decides the winner. "
+            "The pitches, the finalists' questions to each other, their answers to the jury and their closing "
+            "rebuttals are in the record. "
             f"{jury_standard()} Finalist records: {_dossiers_text(conn, finalist_rows)}"
         )
         if attempt > 0:
@@ -4741,15 +4874,15 @@ def _maybe_run_revote(
     turn_id: int,
     counts: Counter[str],
 ) -> Counter[str]:
-    """Real-Survivor tie resolution.
+    """Survivor tie resolution (rules set by the operator 2026-11-25).
 
-    First deadlock: revote, but only among the tied candidates. Voters not
-    tied to a candidate revote freely; a tied candidate may not vote for
-    themselves, so votes must move. Revote is live-LLM (same no-fallback
-    contract as the first ballot). Second deadlock: deterministic tiebreak
-    (challenge wins desc, votes received desc, agent id) picks who goes.
-    Returns the final tally restricted to tied candidates (may be a fresh
-    tie, resolved by tiebreak upstream).
+    1. Everyone talks it over, then the players who are not tied revote,
+       only for the tied players. The tied players do not vote.
+    2. If the revote ties again: deadlock. The voters who are not tied must
+       agree unanimously on which tied player goes home.
+    3. If anyone refuses or they cannot agree, the tied players are safe and
+       everyone else except immune players draws rocks; one goes home by chance.
+    Returns a tally whose leader is eliminated.
     """
     top = max(counts.values())
     tied = sorted(k for k, v in counts.items() if v == top)
@@ -4769,7 +4902,10 @@ def _maybe_run_revote(
         target_ids=tied,
         visibility="audience",
         title="Deadlock: Revote",
-        dialogue=f"We are tied between {tied_names}. Anyone tied may not vote for themselves. We vote again, only among them.",
+        dialogue=(
+            f"We are tied between {tied_names}. You may talk it over, then everyone who is not tied votes "
+            "again, only for the tied players. The tied players do not vote."
+        ),
         subtitle="Revote among tied contestants",
         duration_ms=9000,
         animation="revote",
@@ -4777,16 +4913,23 @@ def _maybe_run_revote(
         payload={"tied_ids": tied, "first_tally": dict(counts), "revote": True},
     )
 
-    voters = [row["voter_id"] for row in conn.execute(
-        "SELECT voter_id FROM Votes WHERE round = ? ORDER BY voter_id", (round_number,)
-    ).fetchall()]
+    _tie_talk(
+        conn,
+        round_number,
+        turn_id,
+        speakers=[agent["agent_id"] for agent in _active_agent_rows(conn)],
+        kind="tie_discussion",
+        title="Talking Over the Tie",
+        scene=(
+            f"The vote tied between {tied_names}. Before the revote everyone may speak once, in front of everyone. "
+            "Only the players who are not tied will revote, and only for a tied player. Say who should go and why; "
+            "if you are tied, make your case to stay."
+        ),
+    )
+    voters = [voter_id for voter_id in _round_voter_ids(conn, round_number) if voter_id not in tied]
     revote_counts: Counter[str] = Counter()
     for voter_id in voters:
         allowed = [{"agent_id": t, "pseudonym": _agent_name(conn, t)} for t in tied]
-        if voter_id in tied:
-            allowed = [a for a in allowed if a["agent_id"] != voter_id]
-            if not allowed:
-                continue
         decision = _resolve_revote_decision(conn, voter_id, round_number, tied, allowed)
         if decision.target_id is None:
             _record_spoiled_vote(conn, round_number, voter_id, "revote", decision.explanation)
@@ -4864,37 +5007,188 @@ def _maybe_run_revote(
         still_tied = list(tied)  # every revote spoiled: still deadlocked
     if len(still_tied) < 2:
         return revote_counts
-    # Second deadlock: firemaking-style tiebreak, deterministic and public.
-    ranked = sorted(still_tied, key=lambda a: _winner_tiebreak_key(conn, a, Counter()))
+    return _deadlock(conn, round_number, turn_id, still_tied, revote_counts)
+
+
+def _tie_talk(
+    conn, round_number: int, turn_id: int, *, speakers: list[str], kind: str, title: str, scene: str
+) -> list[dict[str, str]]:
+    """One public line from each speaker, in order; each hears what was said before."""
+    lines: list[dict[str, str]] = []
+    for speaker in speakers:
+        if should_use_live_llm():
+            said = " | ".join(f"{_agent_name(conn, line['agent_id'])}: {line['text']}" for line in lines)
+            context = build_agent_episode_context(conn, actor_id=speaker, round_number=round_number, current_step=kind)
+            action = _real_agent_action(
+                conn,
+                actor_id=speaker,
+                step=kind,
+                scene_context=f"{scene} Said so far: {said or '(nothing yet)'}",
+                response_kind="dialogue",
+                episode_context=context,
+                allowed_targets=[],
+            )
+            text = action.dialogue if action and action.dialogue else None
+        else:
+            text = "I will vote for whoever keeps this group strongest."
+        if text:
+            lines.append({"agent_id": speaker, "text": text})
     _insert_story_event(
         conn,
         turn_id=turn_id,
         round_number=round_number,
         phase="tribal",
-        kind="tiebreak",
+        kind=kind,
+        scene="tribal",
+        shot="group_huddle",
+        actor_ids=speakers,
+        target_ids=[],
+        visibility="audience",
+        title=title,
+        dialogue=f"{len(lines)} players spoke before the decision.",
+        subtitle=title,
+        duration_ms=10000,
+        animation="revote",
+        spoiler_group="elimination",
+        payload={"speaker_lines": lines},
+    )
+    return lines
+
+
+def _deadlock(
+    conn, round_number: int, turn_id: int, tied: list[str], revote_counts: Counter[str]
+) -> Counter[str]:
+    """The revote tied again. The voters who are not tied must agree
+    unanimously on who goes; otherwise the tied are safe and everyone else
+    except immune players draws rocks."""
+    tied_names = ", ".join(_agent_name(conn, t) for t in tied)
+    deciders = [agent["agent_id"] for agent in _active_agent_rows(conn) if agent["agent_id"] not in tied]
+    stakes = (
+        f"The revote tied again between {tied_names}. Deadlock: the players who are not tied must agree "
+        "unanimously on which tied player goes home. If anyone refuses or you cannot all agree, the tied players "
+        "are safe and every other player except those holding immunity draws rocks: one of you goes home purely "
+        "by chance."
+    )
+    _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="tribal",
+        kind="deadlock_call",
+        scene="tribal",
+        shot="revote",
+        actor_ids=["host"],
+        target_ids=tied,
+        visibility="audience",
+        title="Deadlock",
+        dialogue=stakes,
+        subtitle="Agree unanimously or draw rocks",
+        duration_ms=10000,
+        animation="revote",
+        spoiler_group="elimination",
+        payload={"tied_ids": tied, "revote_tally": dict(revote_counts), "deadlock": True},
+    )
+    _tie_talk(
+        conn,
+        round_number,
+        turn_id,
+        speakers=deciders,
+        kind="deadlock_discussion",
+        title="Deadlock Discussion",
+        scene=f"{stakes} Speak once to the group: who should go, and will you agree?",
+    )
+    tied_rows = [{"agent_id": t, "pseudonym": _agent_name(conn, t)} for t in tied]
+    choices: dict[str, str | None] = {}
+    for decider in deciders:
+        if should_use_live_llm():
+            context = build_agent_episode_context(conn, actor_id=decider, round_number=round_number, current_step="deadlock")
+            action = _real_agent_action(
+                conn,
+                actor_id=decider,
+                step="deadlock_decision",
+                scene_context=(
+                    f"{stakes} Give your final answer. target_id: the tied player you agree to send home, or null "
+                    "to refuse. Only a unanimous answer sends a tied player home; anything else means rocks."
+                ),
+                response_kind="dialogue",
+                episode_context=context,
+                allowed_targets=tied_rows,
+            )
+            # an unusable reply counts as not agreeing
+            choices[decider] = action.target_id if action and action.target_id in tied else None
+        else:
+            choices[decider] = tied[0]
+    agreed = set(choices.values())
+    if deciders and len(agreed) == 1 and None not in agreed:
+        out = next(iter(agreed))
+        _insert_story_event(
+            conn,
+            turn_id=turn_id,
+            round_number=round_number,
+            phase="tribal",
+            kind="deadlock_result",
+            scene="tribal",
+            shot="vote_reveal",
+            actor_ids=["host"],
+            target_ids=[out],
+            visibility="audience",
+            title="Deadlock Broken",
+            dialogue=f"The group agrees unanimously: {_agent_name(conn, out)} goes home.",
+            subtitle="Unanimous decision",
+            duration_ms=9000,
+            animation="vote_reveal",
+            spoiler_group="elimination",
+            payload={"deadlock": "unanimous", "choices": choices, "eliminated_id": out},
+        )
+        return Counter({out: len(deciders)})
+
+    pool = [
+        agent["agent_id"]
+        for agent in _active_agent_rows(conn)
+        if agent["agent_id"] not in tied and not agent.get("has_immunity")
+    ]
+    refused = sorted(decider for decider, choice in choices.items() if choice is None)
+    if not pool:
+        # nobody can draw (everyone left is tied or immune): the old
+        # challenge-record tiebreak decides among the tied players
+        ranked = sorted(tied, key=lambda a: _winner_tiebreak_key(conn, a, Counter()))
+        out = ranked[-1]
+        how = f"Nobody is left to draw rocks, so the season's challenge record decides: {_agent_name(conn, out)} goes."
+        kind = "tiebreak"
+    else:
+        rng = random.Random(f"rocks:{_season_seed()}:{round_number}")
+        out = rng.choice(sorted(pool))
+        how = (
+            f"No unanimous decision, so {tied_names} are safe and {len(pool)} players draw rocks. "
+            f"{_agent_name(conn, out)} draws the odd rock and goes home."
+        )
+        kind = "rock_draw"
+    _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="tribal",
+        kind=kind,
         scene="tribal",
         shot="flame_out",
         actor_ids=["host"],
-        target_ids=[ranked[-1]],
+        target_ids=[out],
         visibility="audience",
-        title="Tiebreak: Challenge Record Decides",
-        dialogue=(
-            f"The revote is deadlocked. Season-long challenge record breaks the tie: "
-            f"{_agent_name(conn, ranked[0])} stays, {_agent_name(conn, ranked[-1])} goes."
-        ),
-        subtitle="Deterministic tiebreak",
+        title="Rock Draw" if kind == "rock_draw" else "Tiebreak: Challenge Record Decides",
+        dialogue=how,
+        subtitle="Decided by chance" if kind == "rock_draw" else "Deterministic tiebreak",
         duration_ms=10000,
         animation="flame_out",
         spoiler_group="elimination",
         payload={
-            "tiebreak": "challenge_record",
-            "survivor_id": ranked[0],
-            "eliminated_id": ranked[-1],
-            "revote_tally": dict(revote_counts),
+            "deadlock": "rocks" if kind == "rock_draw" else "no_one_to_draw",
+            "choices": choices,
+            "refused": refused,
+            "drew": sorted(pool),
+            "eliminated_id": out,
         },
     )
-    # the caller eliminates whoever leads the returned tally: the weakest record, not the strongest
-    return Counter({ranked[-1]: 1})
+    return Counter({out: 1})
 
 
 def _target_roster_line(allowed: list[dict[str, Any]]) -> str:
@@ -5845,12 +6139,19 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         "challenge_solver_spotlight",
         "camp_strategy",
         "memory_update",
-        "jury_questions",
         "winner_declared",
     }:
         return 1
+    if step == "jury_questions":
+        # each juror asks, the finalist it names answers
+        jurors = conn.execute("SELECT COUNT(*) AS n FROM Agents WHERE status = 'eliminated'").fetchone()["n"]
+        return 2 * jurors
+    if step == "finale_crossfire":
+        return 2 * len(_active_agent_rows(conn))
+    if step == "finale_rebuttal":
+        return len(_active_agent_rows(conn))
     if step == "challenge_attempts":
-        # one call per player for the whole ladder and the tiebreak guess
+        # one call per player for the whole ladder
         return len(_active_agent_rows(conn))
     if step == "challenge_gift":
         return 1 if _idol_gift_round(conn, int(game["current_round"])) else 0
@@ -5886,6 +6187,8 @@ _STEP_RESPONSE_KIND = {
     "camp_pre_challenge_confessional": "confessional",
     "memory_update": "confessional",
     "jury_questions": "jury_vote",
+    "finale_crossfire": "finale_pitch",
+    "finale_rebuttal": "finale_pitch",
     "winner_declared": "host",
     "challenge_intro": "host",
     "challenge_result": "host",

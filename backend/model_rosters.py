@@ -9,8 +9,10 @@ from .frontier_roster import FrontierRosterError, agents_from_snapshot, load_fro
 
 CHEAP_RECENT_OPENROUTER_MODELS = [
     {
-        "model_id": "x-ai/grok-4.7",
-        "display_name": "Grok 4.7",
+        # replaced Grok 4.7 on 2026-11-25: at $2/$6 per million tokens it cost
+        # 20-200x the rest of the "cheap" roster and won immunity every round
+        "model_id": "meta/muse-ember",
+        "display_name": "Muse Ember",
         "status": "cheap_recent",
     },
     {
@@ -253,6 +255,8 @@ def _archetype_for_model(display_name: str) -> str:
         return "pattern generalist"
     if "Granite" in display_name:
         return "structured analyst"
+    if "Muse" in display_name:
+        return "measured strategist"
     if "Reka" in display_name or "Hunyuan" in display_name:
         return "adaptive wildcard"
     if "Qwen" in display_name:

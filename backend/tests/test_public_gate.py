@@ -24,11 +24,11 @@ class PublicGateTest(unittest.TestCase):
         self.assertEqual(caps["max_cost_cents"], 1500.0)
         self.assertEqual(caps["roster"], "lab_mix_openrouter")
 
-    def test_roster_includes_grok(self) -> None:
+    def test_cheap_roster_has_nine_cheap_seats(self) -> None:
         from backend.model_rosters import CHEAP_RECENT_OPENROUTER_MODELS
 
         models = [m["model_id"] for m in CHEAP_RECENT_OPENROUTER_MODELS if m["status"] == "cheap_recent"]
-        self.assertIn("x-ai/grok-4.7", models)
+        self.assertNotIn("x-ai/grok-4.7", models)
         self.assertEqual(len(models), 9)
 
 

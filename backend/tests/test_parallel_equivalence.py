@@ -92,6 +92,7 @@ class _Stub:
             answers={p["puzzle_id"]: (p["answer"] if (h >> i) % 2 else "x") for i, p in enumerate(kwargs["puzzles"])},
             explanation="e",
             model_id=kwargs["actor"]["model_id"],
+            solve_ms=1000 + h % 9000,  # equal scores go to the fastest answer
         )
 
     def private(self, **kwargs) -> dict:

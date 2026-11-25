@@ -35,6 +35,7 @@ FALLBACK_PRICING = {
     "google/gemma-4-31b-it": (0.20, 0.20),
     "rekaai/reka-edge": (0.20, 0.20),
     "tencent/hy4-flash": (0.05, 0.20),
+    "meta/muse-ember": (0.10, 0.50),
     "qwen/qwen3.5-9b": (0.10, 0.10),
     "openrouter/owl-alpha": (0.25, 0.25),
 }
@@ -58,15 +59,24 @@ def _fetch_catalog() -> dict[str, dict[str, float]]:
         except (TypeError, ValueError):
             continue
         # catalog prices are USD per token; store per 1M tokens
-        table[model_id] = {"prompt_per_m": prompt * 1_000_000, "completion_per_m": completion * 1_000_000}
+        table[model_id] = {
+            "prompt_per_m": prompt * 1_000_000,
+            "completion_per_m": completion * 1_000_000,
+            # the most output tokens the model's provider allows in one reply
+            "max_out": (model.get("top_provider") or {}).get("max_completion_tokens"),
+        }
     return table
 
 
 def _load_cache() -> dict[str, dict[str, float]] | None:
     try:
         raw = json.loads(CACHE_PATH.read_text())
-        if time.time() - raw.get("fetched_at", 0) < CACHE_TTL_SECONDS:
-            return raw.get("table")
+        table = raw.get("table")
+        # a cache written before output limits were stored is treated as stale
+        if time.time() - raw.get("fetched_at", 0) < CACHE_TTL_SECONDS and table and any(
+            "max_out" in entry for entry in table.values()
+        ):
+            return table
     except Exception:
         pass
     return None
@@ -80,19 +90,31 @@ def _save_cache(table: dict[str, dict[str, float]]) -> None:
         pass
 
 
+# the catalog this process last loaded; the client reads output limits from it
+_ACTIVE_TABLE: dict[str, dict[str, Any]] = {}
+
+
 def get_pricing_table(refresh: bool = False) -> dict[str, dict[str, float]]:
-    if not refresh:
-        cached = _load_cache()
-        if cached is not None:
-            return cached
-    try:
-        table = _fetch_catalog()
-        if table:
-            _save_cache(table)
-            return table
-    except Exception:
-        pass
-    return {k: {"prompt_per_m": v[0], "completion_per_m": v[1]} for k, v in FALLBACK_PRICING.items()}
+    table = _load_cache() if not refresh else None
+    if table is None:
+        try:
+            table = _fetch_catalog() or None
+            if table:
+                _save_cache(table)
+        except Exception:
+            table = None
+    if table is None:
+        table = {k: {"prompt_per_m": v[0], "completion_per_m": v[1]} for k, v in FALLBACK_PRICING.items()}
+    _ACTIVE_TABLE.clear()
+    _ACTIVE_TABLE.update(table)
+    return table
+
+
+def max_output_tokens(model_id: str) -> int | None:
+    """The model's reply limit from the loaded catalog; None when unknown.
+    Never fetches: a live season loads the catalog when it starts."""
+    value = (_ACTIVE_TABLE.get(model_id) or {}).get("max_out")
+    return int(value) if isinstance(value, (int, float)) and value > 0 else None
 
 
 def estimate_call_cost_usd(
@@ -119,23 +141,27 @@ def estimate_call_cost_usd(
 # Token budgets per response kind: (input, output). Contestant calls carry the
 # full game record (llm_context.MAX_CONTEXT_CHARS, up to about 10k tokens late
 # in a season) on top of a ~2.5k-token prompt; 8000 is a season average.
-# v3 replies open with up to ~150 words of private thinking (about 250 tokens)
-# before the decision, so contestant outputs carry that on top.
+# v3 replies open with up to ~300 words of private thinking (about 500 tokens;
+# 150 words before 2026-11-25) before the decision, so contestant outputs carry
+# that on top.
 TOKEN_BUDGETS = {
-    "conversation": (8000, 670),
+    "conversation": (8000, 920),
     "confessional": (8000, 380),
-    "vote": (8000, 670),
-    "jury_vote": (8000, 550),
-    "finale_pitch": (8000, 670),
+    "vote": (8000, 920),
+    "jury_vote": (8000, 800),
+    "finale_pitch": (8000, 920),
     "host": (3600, 300),
     "challenge": (6500, 1500),  # one call answers all five ladder puzzles
     "archetype": (1200, 120),
 }
 
 
-# Every OpenRouter call reasons at "low" effort (openrouter_client.REASONING_SETTINGS),
-# about 20% of a max_tokens raised by 1600. Reasoning tokens are billed as output.
-ESTIMATED_REASONING_TOKENS = 400
+# Every OpenRouter call reasons at "medium" effort since 2026-11-25
+# (openrouter_client.REASONING_SETTINGS); at "low" this was 400. Medium roughly
+# doubles real reasoning (DeepSeek V4 Flash used 900-3,400 tokens at low), so
+# this is set 3x the old value until a full season re-measures it. Reasoning
+# tokens are billed as output.
+ESTIMATED_REASONING_TOKENS = 1200
 
 # The estimate ran about 1.7x under the real OpenRouter bill: a full lab_mix
 # season (old prompt, 2026-11-24) was estimated at $6.34 and billed about $10.5.

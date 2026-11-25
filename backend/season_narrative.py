@@ -141,11 +141,13 @@ def season_narrative(season_id: str) -> dict[str, Any]:
                                         "correct": row["correct"],
                                         "sudden_death": row.get("sudden_death"),
                                         "guess": row.get("guess"),
+                                        "seconds": row.get("seconds"),
                                     }
                                     for row in payload["standings"]
                                 ],
                                 "guess_target": payload.get("guess_target"),
                                 "ladder_level": payload.get("ladder_level"),
+                                "barred_last_winner": payload.get("barred_last_winner"),
                                 "idol_given": any(
                                     (_payload(g) or {}).get("idol_given")
                                     for g in events

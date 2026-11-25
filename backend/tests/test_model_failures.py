@@ -120,7 +120,7 @@ class ModelFailureTest(_Base):
         tc._record_spoiled_vote(self.conn, ROUND, spoiler, "vote", "x")
         self.assertEqual(tc.promise_record(self.conn, spoiler)[0]["status"], "open")
 
-    def test_when_every_revote_is_spoiled_the_tiebreak_decides(self) -> None:
+    def test_when_every_revote_is_spoiled_it_goes_to_deadlock(self) -> None:
         a, b, *_ = self.players
         self._live(lambda **kwargs: AgentAction(dialogue="?", inner_thought="", model_id="m", target_id=None))
         from collections import Counter
@@ -129,8 +129,9 @@ class ModelFailureTest(_Base):
         for voter, target in ((c, a), (d, a), (e, b), (f, b)):
             tc._insert_vote(self.conn, ROUND, 0, voter, target)
         counts = tc._maybe_run_revote(self.conn, ROUND, 1, Counter({a: 2, b: 2}))
+        # every revote spoiled is a deadlock; nobody agrees, so the others draw rocks
         self.assertEqual(len(counts), 1)
-        self.assertIn(next(iter(counts)), {a, b})
+        self.assertNotIn(next(iter(counts)), {a, b})
         self.assertTrue(self.conn.execute("SELECT COUNT(*) FROM SpoiledVotes WHERE ballot = 'revote'").fetchone()[0])
 
     def test_an_unusable_pitch_is_left_out(self) -> None:

@@ -95,6 +95,21 @@ class ReasoningSettingsTest(unittest.TestCase):
         self.assertEqual(result["choices"][0]["message"]["content"], '{"ok": true}')
         self.assertEqual(self.sent[1]["max_tokens"], 16384 - 15000 - 32)
 
+    def test_the_reply_budget_never_exceeds_the_models_output_limit(self) -> None:
+        from backend import live_cost
+
+        live_cost._ACTIVE_TABLE["org/model"] = {"prompt_per_m": 1, "completion_per_m": 1, "max_out": 4000}
+        self.addCleanup(live_cost._ACTIVE_TABLE.pop, "org/model", None)
+        self._run([_ok("", finish="length"), _ok('{"ok": true}')])
+        self.assertEqual(self.sent[0]["max_tokens"], 4000)
+        self.assertEqual(self.sent[1]["max_tokens"], 4000)  # the doubled retry is capped too
+
+    def test_answer_time_counts_answered_calls_only(self) -> None:
+        result = self._run([_http_error(503, "upstream error"), _ok('{"ok": true}')])
+        self.assertIn("_model_ms", result)
+        self.assertGreaterEqual(result["_model_ms"], 0)
+        self.assertEqual(len(self.sent), 2)
+
     def test_400_naming_reasoning_retries_once_without_the_parameter(self) -> None:
         result = self._run(
             [

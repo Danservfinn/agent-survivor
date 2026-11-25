@@ -21,18 +21,21 @@ from .llm_config import (
     redact_secrets,
 )
 from .challenge_bank import answer_format
+from .live_cost import max_output_tokens
 from .deception import add_deception_lines, canary_directive
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Every OpenRouter call gets the same thinking budget, so no model gets more
-# reasoning than another. Reasoning is never switched off: some models make it
-# mandatory and reject "enabled: false" with HTTP 400. "exclude" keeps the
-# reasoning text out of the reply (it is still used and billed).
-REASONING_SETTINGS = {"effort": "low", "exclude": True}
-# Reasoning tokens count against max_tokens ("low" is about 20% of it), so each
-# call's visible-reply budget gets this much extra room on top.
-REASONING_TOKEN_HEADROOM = 1600
+# reasoning than another: medium effort since 2026-11-25 (was low). Hidden
+# reasoning is turned off only for a model that ignores the budget and answers
+# empty (see _post_chat_completion). "exclude" keeps the reasoning text out of
+# the reply (it is still used and billed).
+REASONING_SETTINGS = {"effort": "medium", "exclude": True}
+# Reasoning tokens count against max_tokens (medium is about half of it), so
+# each call's visible-reply budget gets this much extra room on top. Capped at
+# the model's own output limit (Command R7B allows 4,000, Nova Micro 5,120).
+REASONING_TOKEN_HEADROOM = 4000
 
 # A provider failure (rate limit, 5xx, timeout) never counts against
 # the player: the call is held and retried for up to this long, then the season
@@ -148,8 +151,9 @@ class ChallengeSolution:
     # puzzle ids the player says it answered wrong on purpose; private, used only
     # to keep those rungs out of the accuracy statistic, never in the result
     thrown: tuple[str, ...] = ()
-    # the tiebreak guessing game: a whole number 0-100, or None if missing
-    guess: int | None = None
+    # time the model spent producing its answers: successful calls only, never
+    # failed requests or provider waits (the tiebreak; None if not measured)
+    solve_ms: int | None = None
 
 
 def request_agent_archetype(*, actor: dict[str, Any], episode_context: dict[str, Any] | None = None) -> str:
@@ -453,7 +457,7 @@ def request_challenge_solution(
     puzzles: list[dict[str, Any]],
     episode_context: dict[str, Any] | None = None,
 ) -> ChallengeSolution:
-    """One call: the player answers every puzzle in the ladder and makes its guess."""
+    """One call: the player answers every puzzle in the ladder."""
     settings = get_llm_settings()
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if settings.provider == PROVIDER_OPENROUTER and not api_key:
@@ -479,9 +483,8 @@ You are a player in an island social-strategy game. This is the round's challeng
 
 How the challenge works:
 - Every player gets these same {len(puzzles)} puzzles, easiest first.
-- Most correct answers wins immunity. A tie goes to whoever solved the harder puzzles, then to the guessing game below.
-- Guessing game: every player names a whole number from 0 to 100. Among players still tied, the one closest to two-thirds of the average of everyone's numbers wins. Everyone else is guessing too; think about how they will reason. All numbers are made public afterwards.
-- Speed does not count. Take the care you need.
+- Most correct answers wins immunity. A tie goes to whoever solved the harder puzzles, then to whoever answered fastest.
+- The player who won immunity last round cannot win it this round.
 - Every player sees each player's score afterwards. You may answer some puzzles wrong on purpose to look less threatening; if you do, list their ids in "thrown". That list is private and never changes your score.
 
 Use your strongest reasoning privately before answering. Do not output chain-of-thought or step-by-step work.
@@ -502,7 +505,6 @@ Return strict JSON only:
 {{
   "answers": {{{example_answers}}},
   "thrown": [],
-  "guess": 0,
   "explanation": "one short sentence about your approach"
 }}
 
@@ -516,7 +518,7 @@ Rules:
         "messages": [
             {
                 "role": "system",
-                "content": "Return only valid JSON with keys answers, thrown, guess and explanation.",
+                "content": "Return only valid JSON with keys answers, thrown and explanation.",
             },
             {"role": "user", "content": prompt},
         ],
@@ -525,6 +527,7 @@ Rules:
         "max_tokens": 1500,
     }
     response_payload = _post_chat_completion(payload, api_key)
+    solve_ms = response_payload.get("_model_ms")
     try:
         data = _parse_json_content(_message_content(response_payload))
     except Exception:
@@ -533,10 +536,12 @@ Rules:
             *payload["messages"],
             {
                 "role": "user",
-                "content": "Return only one complete JSON object with keys answers, thrown, guess and explanation. No markdown.",
+                "content": "Return only one complete JSON object with keys answers, thrown and explanation. No markdown.",
             },
         ]
         response_payload = _post_chat_completion(retry_payload, api_key)
+        if solve_ms is not None and response_payload.get("_model_ms") is not None:
+            solve_ms += response_payload["_model_ms"]  # the model's own repair counts
         data = _parse_json_content(_message_content(response_payload))
 
     raw_answers = data.get("answers")
@@ -557,21 +562,8 @@ Rules:
         explanation=str(data.get("explanation") or "").strip(),
         model_id=model_id,
         thrown=tuple(str(item) for item in thrown if str(item) in known_ids),
-        guess=_parse_guess(data.get("guess")),
+        solve_ms=solve_ms,
     )
-
-
-def _parse_guess(value: Any) -> int | None:
-    """A whole number 0-100; anything else is no guess."""
-    if isinstance(value, bool):
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if number != number or number < 0 or number > 100:
-        return None
-    return int(round(number))
 
 
 def _agent_prompt_v2(
@@ -709,7 +701,7 @@ def _agent_prompt_v3(
     context = dict(episode_context or {})
     brief = context.pop("situation_brief", None)
     told = context.pop("what_others_told_you", None)
-    fields = [("think", "your private reasoning, up to 150 words; never shown to other players or kept in the game record")]
+    fields = [("think", "your private reasoning, up to 300 words; never shown to other players or kept in the game record")]
     fields.append(("summary", "one private sentence: what you decided and why"))
     step_fields = V3_REPLY_FIELDS.get(response_kind, [("target_id", "an allowed target id if your action names one, otherwise null")])
     if response_kind in {"vote", "jury_vote"} and allowed_targets:
@@ -1511,12 +1503,20 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is required for real OpenRouter calls")
     outbound_payload = {key: value for key, value in payload.items() if not key.startswith("_")}
+    output_cap = max_output_tokens(str(outbound_payload.get("model")))
+
+    def _capped(tokens: int) -> int:
+        return min(tokens, output_cap) if output_cap else tokens
+
     outbound_payload["max_tokens"] = int(outbound_payload.get("max_tokens", 360)) + REASONING_TOKEN_HEADROOM
     outbound_payload["reasoning"] = dict(REASONING_SETTINGS)
     if payload.get("_reasoning_effort"):
         # a step may ask every player for more thought (the round plan); still the same for every model
         outbound_payload["reasoning"]["effort"] = payload["_reasoning_effort"]
         outbound_payload["max_tokens"] += REASONING_TOKEN_HEADROOM
+    outbound_payload["max_tokens"] = _capped(outbound_payload["max_tokens"])
+
+    model_ms = [0]
 
     def _post(outbound: dict[str, Any]) -> dict[str, Any]:
         request = urllib.request.Request(
@@ -1530,11 +1530,16 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
             },
             method="POST",
         )
+        started = time.perf_counter()
         try:
             with urllib.request.urlopen(
                 request, timeout=settings.timeout_seconds, context=_ssl_context()
             ) as response:
-                return json.loads(response.read().decode("utf-8"))
+                body = json.loads(response.read().decode("utf-8"))
+            # only answered calls count toward the model's time, never failed
+            # requests or the waits between retries
+            model_ms[0] += int((time.perf_counter() - started) * 1000)
+            return body
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             error = RuntimeError(redact_secrets(RuntimeError(f"OpenRouter HTTP {exc.code}: {body}")))
@@ -1622,7 +1627,7 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
                 # That is enough for a model that just thinks long (DeepSeek V4
                 # Flash on a notebook, 2026-11-24 probe).
                 retry = dict(outbound_payload)
-                retry["max_tokens"] = int(outbound_payload["max_tokens"]) * 2
+                retry["max_tokens"] = _capped(int(outbound_payload["max_tokens"]) * 2)
                 response_payload = _post_with_retries(retry)
             if _empty(response_payload) and model not in _RUNAWAY_REASONING_MODELS:
                 # Some models ignore every reasoning budget (effort or max_tokens):
@@ -1642,6 +1647,7 @@ def _post_chat_completion(payload: dict[str, Any], api_key: str | None) -> dict[
             # Still empty is the model's own answer, not an outage; the caller's
             # parser turns it into a bad reply (2026-11-24: treating it as an
             # outage stopped a whole season).
+            response_payload["_model_ms"] = model_ms[0]
             return response_payload
         except ProviderOutage as outage:
             delay = max(wait_s, outage.retry_after)

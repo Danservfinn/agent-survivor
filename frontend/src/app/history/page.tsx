@@ -26,7 +26,14 @@ type Season = {
 
 type Attempt = { who: string; correct: boolean; ms: number };
 
-type LadderStanding = { who: string; correct: number; sudden_death: number | null; guess?: number | null };
+type LadderStanding = {
+  who: string;
+  correct: number;
+  sudden_death: number | null;
+  guess?: number | null;
+  // answer time; breaks ties between equal scores (seasons from 2026-11-25 on)
+  seconds?: number | null;
+};
 
 type Challenge = {
   type: string;
@@ -34,6 +41,7 @@ type Challenge = {
   standings?: LadderStanding[];
   // the tiebreak guessing game (seasons from 2026-11-24 on)
   guess_target?: number | null;
+  barred_last_winner?: string | null;
   ladder_level?: number | null;
   idol_given?: boolean;
   winner: string;
@@ -127,6 +135,7 @@ function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n:
   const standings = challenge.standings ?? [];
   const suddenDeath = standings.some((row) => row.sudden_death != null);
   const guessed = standings.some((row) => row.guess != null);
+  const timed = !guessed && standings.some((row) => row.seconds != null);
   return (
     <div className="narrative-block">
       <h4 className="narrative-label">challenge: five-puzzle ladder</h4>
@@ -149,6 +158,8 @@ function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n:
         {guessed && challenge.guess_target != null
           ? ` Ties went to the number closest to two-thirds of the average guess (${challenge.guess_target}).`
           : ""}
+        {timed ? " Equal scores went to the fastest answer." : ""}
+        {challenge.barred_last_winner ? ` ${challenge.barred_last_winner} won last round and could not win again.` : ""}
         {challenge.ladder_level ? ` Difficulty level ${challenge.ladder_level} of 2.` : ""}
       </p>
       <table className="bench-table">
@@ -158,6 +169,7 @@ function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n:
             <th className="num">correct of 5</th>
             {suddenDeath && <th className="num">sudden death</th>}
             {guessed && <th className="num">guess</th>}
+            {timed && <th className="num">seconds</th>}
           </tr>
         </thead>
         <tbody>
@@ -167,6 +179,7 @@ function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n:
               <td className="num">{row.correct}</td>
               {suddenDeath && <td className="num">{row.sudden_death ?? "-"}</td>}
               {guessed && <td className="num">{row.guess ?? "-"}</td>}
+              {timed && <td className="num">{row.seconds ?? "-"}</td>}
             </tr>
           ))}
         </tbody>
