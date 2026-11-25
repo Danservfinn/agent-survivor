@@ -60,6 +60,10 @@ The report is built to be posted. Each season also gets a `share/` folder beside
 
 On the page, the Moments section picks up to six things that happened by fixed rules (the result, the worst broken promise, the closest vote, an idol play, the best vote read, the most targeted survivor) and shows the evidence: what the model said in private and what it wrote when it voted. The Players section gives each model a card with plain labels drawn from its numbers. Every moment and player card has "Post on X", "Copy text" and "Image" buttons, and the served page carries link-preview tags so a pasted link shows the season image.
 
+- `season.mp4` — a square clip of about 40 seconds: the cast, one round's betrayal in full (the private talk, the vote, the broken promise), every vote-out, the jury, the verdict and an end card with the handle. When it exists, the thread's first post attaches it.
+
+The clip is a Remotion project in `video/` (Remotion 4.0.542, free for individuals and teams of up to three). It imports the Watch page's stage code and renders the season report frame by frame, so nothing in it may use CSS animation. Set it up once with `cd video && npm ci`; the first render also downloads Remotion's own browser. `cd video && npm run studio` previews it with the sample season in `video/sample-report.json`. A render takes about 20 seconds on the Mini. Without the packages the clip is skipped and everything else is still written.
+
 Set `SURVIVOR_X_HANDLE` to the account to credit; it appears on every image, in every prefilled post ("via @handle") and as a Follow button. The images are screenshots of the report's own card view (`report.html?card=<id>`) taken with a headless Chrome on this machine; `SURVIVOR_CHROME` overrides the path, and without a Chrome the images are skipped while the report and thread are still written.
 
 Rebuild a report at any time, with no model calls:
@@ -71,6 +75,7 @@ python3 scripts/build_season_report.py --all                # every finished liv
 python3 scripts/build_season_report.py --out report.html    # just the page, anywhere
 python3 scripts/build_season_report.py --handle @you        # credit an X account
 python3 scripts/build_season_report.py --no-cards           # skip the share images
+python3 scripts/build_season_report.py --no-video           # skip the season clip
 ```
 
 The look is cloned from LiveBench 2.0 (livebench.ai): its color tokens, system sans and mono type, pill chips, sticky-header table with top-of-column shading, white cards on a pale ground, maker-colored dots and the source strip under each chart. Like LiveBench it is a light page whatever the system setting; `?theme=dark` switches to a dark set on the same hues.

@@ -14,6 +14,7 @@ Workspace: `/Users/kublai/projects/llm_survivor_live`. Production runs from this
 - Paid arena work remains local/closed-beta only unless explicitly authorized. Real x402, escrow, payout, Railway, and production mutations require explicit approval.
 - CPU/default players are platform-filled entries with curated default `soul.md` profiles. They do not pay, vote to start, or receive payouts.
 
+- `video/` is a Remotion project that renders a season report into `share/season.mp4` (`backend/season_video.py` runs it after each live season). It imports the Watch stage from `frontend/src/app`; Remotion renders by seeking frames, so drive motion with `useCurrentFrame()`/`interpolate()`, never CSS animation. Deploying it means `cd video && npm ci` in the production tree. Remotion's own agent skills are in `video/.agents/skills`.
 - Model calls that cannot see each other run in parallel (plans, notebooks, partner picks, talks with no shared player). Every call must get exactly the inputs it would get one at a time; `backend/tests/test_parallel_equivalence.py` plays a season both ways and checks every call and table. `SURVIVOR_PARALLEL_CALLS=0` turns it off.
 
 ## Local Commands
