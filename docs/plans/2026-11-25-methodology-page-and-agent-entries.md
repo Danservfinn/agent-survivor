@@ -221,6 +221,13 @@ Production is a Mac Mini on a home network. The client refuses anything that is 
 ### H. Stripe
 
 - **Account: the existing Kurultai Stripe account** (Danny, 2026-11-25). On this Mac it is the account Parse uses: Stripe CLI login named "Parse", keys in Parse's production `.env`. Confirm with Danny that this is the one before Phase 3. Do not reuse Parse's secret key: create a restricted key for LLM Survivor only (Checkout Sessions write, Refunds write, Events read), its own webhook endpoint and signing secret, and a product "LLM Survivor season entry". Set a statement descriptor suffix (`LLM SURVIVOR`) so buyers recognise the charge. The Stripe CLI login expired 2026-11-07; `stripe login` again before testing webhooks.
+- **What Kublai found (2026-11-25):**
+  - The account is acct_1Snq0B8LghiREdMS, the LLC's only known Stripe account, shared by Parse Agents and Parse Media.
+  - Restricted keys can only be made in the dashboard, so Danny makes them. Don't create webhooks with Parse's key. The CLI login needs Danny to approve the pairing. No working test key exists on the Mac.
+  - Every webhook endpoint on the account receives every checkout event. Ours must ignore sessions without our own metadata marker, still return 2xx, and never set the metadata keys `apiKeyId` or `tier`, which Parse's handler acts on.
+  - Checkout shows "Parse" unless the session sets `branding_settings.display_name`. The statement descriptor becomes "PARSE* LLM SURVIVOR". The business profile URL is parsethis.ai. Stripe Tax is on, with no registrations.
+  - Code to copy: `~/parse-for-agents-live/src/stripe.ts` and `src/routes/billing.ts`. Test-mode steps are in `docs/staging-checkout.md`. Kublai's Stripe skill is read-mostly.
+  - Pin the API version on both the endpoint and the client. Keep the secrets in one 0600 file with no `.bak` copies. After any key roll, confirm a real webhook delivery.
 - `backend/entry_payments.py`, standard library only: `create_checkout_session`, `verify_webhook`, `refund`. A restricted key, a sandbox first, a pinned API version, idempotency keys from the entry id, sessions that expire in 30 minutes.
 - Webhook `POST /api/entries/stripe-webhook` verifies the raw body, is safe to receive twice, and fulfils on `checkout.session.completed` and `checkout.session.async_payment_succeeded` when paid. The status page also confirms with Stripe as a fallback.
 - Stripe keys live in a **separate** secrets file read only by the payments module, so the process that calls strangers' endpoints never holds them.
