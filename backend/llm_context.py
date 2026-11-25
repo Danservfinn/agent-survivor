@@ -121,7 +121,15 @@ def build_agent_episode_context(
             "private_group_events": len(private_group_memory),
             "active_alliances": len(alliance_memory),
             "revealed_votes": _revealed_vote_count(conn),
-            "season_events_seen": len(prior_events),
+            # only events this player can see; counting every event would reveal
+            # how many private talks happened elsewhere
+            "season_events_seen": sum(
+                1
+                for event in prior_events
+                if _is_public_event(event)
+                or (actor_id in event["actor_ids"] and not _participants_only_event(event))
+                or (_participants_only_event(event) and actor_id in _participant_ids(event))
+            ),
         },
     }
     return _fit_budget(context, protected_private=len(static_private_memory) + len(alliance_memory))
@@ -282,7 +290,8 @@ def _actor_alliance_memory(conn, actor_id: str) -> list[dict[str, Any]]:
         FROM Alliances a
         JOIN AllianceMemberships m ON m.alliance_id = a.alliance_id
         WHERE m.agent_id = ? AND m.status = 'active' AND a.status = 'active'
-        ORDER BY a.updated_at DESC
+        -- by game round, then newest: wall-clock order changed with call speed
+        ORDER BY COALESCE(m.last_reinforced_round, m.joined_round) DESC, a.rowid DESC
         """,
         (actor_id,),
     ).fetchall()
@@ -606,6 +615,28 @@ def _eliminations(conn) -> list[dict[str, Any]]:
             """
         ).fetchall()
     ]
+
+
+PROTECTED_PRIVATE_KINDS = {"confessional_memory", "hidden_idol", "active_alliance"}
+
+
+def add_open_promise(context: dict[str, Any], entry: dict[str, Any], *, made_by_you: bool) -> dict[str, Any]:
+    """Add a promise made earlier in the current talk to a context built before
+    the talk, exactly as rebuilding the context from the database would show it
+    (an open entry at the end of the list), then refit the size budget. Used when
+    talks run in parallel and contexts are built once per talk."""
+    promises = context.get("your_promises")
+    if promises is None:
+        return context
+    promises["made_by_you" if made_by_you else "made_to_you"].append(entry)
+    private = context.get("actor_private_memory") or []
+    protected = 0
+    while protected < len(private) and private[protected].get("kind") in PROTECTED_PRIVATE_KINDS:
+        protected += 1
+    already = context["context_digest"].get("trimmed_events", 0)
+    _fit_budget(context, protected_private=protected)
+    context["context_digest"]["trimmed_events"] += already
+    return context
 
 
 def _fit_budget(context: dict[str, Any], *, protected_private: int) -> dict[str, Any]:
