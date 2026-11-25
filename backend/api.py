@@ -154,6 +154,10 @@ app.add_middleware(
 @app.on_event("startup")
 def startup() -> None:
     ensure_database()
+    # paid entries run one at a time when no season is playing (backend/entry_queue.py)
+    from .entry_queue import start_dispatcher
+
+    start_dispatcher()
 
 
 @app.get("/health")
@@ -283,9 +287,13 @@ def api_live_season_public_run(payload: dict | None = Body(default=None)) -> dic
 
     # One season at a time. The runner is a detached process, so the check must
     # look at the runner itself; the lock closes the gap between check and launch.
+    from . import entries_store
+
     with _launch_lock:
         if _detached_runner_alive() or current_status().get("status") == "running":
             raise HTTPException(status_code=409, detail="a season is already running, check status")
+        if entries_store.with_status(*entries_store.OPEN):
+            raise HTTPException(status_code=409, detail="paid entries are waiting to play; try again after them")
         (seasons_dir / "runner_status.json").write_text(json.dumps({"status": "running", "started_at": time.time()}))
         # detached so API restarts can't kill it; it writes its report and
         # status into the seasons dir when done
@@ -471,6 +479,175 @@ def api_methodology_prompt(family: str) -> dict:
     if example is None:
         raise HTTPException(status_code=404, detail="no recorded example yet")
     return example
+
+
+# ---------------------------------------------------------------- paid entries
+# A buyer picks an OpenRouter model to play one season against the house roster
+# (docs/plans/2026-11-25-methodology-page-and-agent-entries.md, "Entries").
+
+_quote_hits: dict[str, list[float]] = {}
+QUOTES_PER_10_MIN = 6
+QUOTES_PER_DAY = 200  # every quote makes one real model call
+
+
+def _client_ip(request: Request) -> str:
+    # traffic arrives through cloudflared, which names the visitor here
+    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "")
+
+
+def _rate_limited(ip: str) -> bool:
+    now = time.time()
+    hits = [t for t in _quote_hits.get(ip, []) if now - t < 600]
+    hits.append(now)
+    _quote_hits[ip] = hits
+    day = [t for t in _quote_hits.get("*", []) if now - t < 86400]
+    day.append(now)
+    _quote_hits["*"] = day
+    return len(hits) > QUOTES_PER_10_MIN or len(day) > QUOTES_PER_DAY
+
+
+def _site() -> str:
+    return (os.environ.get("SURVIVOR_PUBLIC_URL") or "https://llmsurvivor.kurult.ai").rstrip("/")
+
+
+@app.get("/api/entries/config")
+def api_entries_config() -> dict:
+    """Public: whether entries are open, the pricing rule, and the queue."""
+    from . import entries_store, entry_payments, entry_pricing
+
+    from .model_rosters import LAB_MIX_OPENROUTER_MODELS
+
+    cfg = entry_payments.config()
+    return {
+        "players": len(LAB_MIX_OPENROUTER_MODELS),
+        "open": bool(cfg) and entries_store.is_open(),
+        "mode": cfg["mode"] if cfg else None,
+        "floor_cents": entry_pricing.FLOOR_CENTS,
+        "multiplier": entry_pricing.MULTIPLIER,
+        "cap_share": entry_pricing.CAP_SHARE,
+        "queued": len(entries_store.with_status("queued")),
+        "running": len(entries_store.with_status("running")),
+    }
+
+
+@app.post("/api/entries/quote")
+def api_entries_quote(request: Request, payload: dict = Body(...)) -> dict:
+    """Public: the price for entering a model, after a live test call. Rate-limited."""
+    from .entry_pricing import QuoteError, quote
+
+    if _rate_limited(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="too many quotes from here; try again in a few minutes")
+    try:
+        return {"ok": True, **quote(str(payload.get("model_id") or ""))}
+    except QuoteError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@app.post("/api/entries")
+def api_entries_create(request: Request, payload: dict = Body(...)) -> dict:
+    """Public: start an entry. Prices it again, then returns the Stripe Checkout address."""
+    from . import entries_store, entry_payments
+    from .entry_pricing import QuoteError, quote
+    from .model_rosters import EntryError, validate_entry
+
+    if not entry_payments.enabled() or not entries_store.is_open():
+        raise HTTPException(status_code=503, detail="entries are closed right now")
+    if _rate_limited(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="too many tries from here; try again in a few minutes")
+    name = str(payload.get("name") or "").strip()
+    model_id = str(payload.get("model_id") or "").strip()
+    try:
+        validate_entry({"name": name, "model_id": model_id})
+        priced = quote(model_id)
+    except (EntryError, QuoteError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    entry = entries_store.create(
+        name=name, model_id=model_id, price_cents=priced["price_cents"], cap_cents=priced["cap_cents"],
+        estimate=priced["estimate"], ip=_client_ip(request), mode=(entry_payments.config() or {}).get("mode", "test"),
+    )
+    try:
+        session = entry_payments.create_checkout(entry, site=_site())
+    except entry_payments.PaymentError as exc:
+        entries_store.move(entry["entry_id"], ("awaiting_payment",), "expired", note=str(exc))
+        raise HTTPException(status_code=502, detail="the payment page could not be opened; nothing was charged") from None
+    entries_store.update(entry["entry_id"], stripe_session_id=session["id"])
+    return {"ok": True, "checkout_url": session["url"], "status_url": f"/entry?t={entry['token']}", "price_cents": entry["price_cents"]}
+
+
+def _fulfil(session: dict) -> None:
+    """A paid Checkout Session: queue its entry (safe to call twice)."""
+    from . import entries_store
+
+    if session.get("payment_status") not in ("paid", "no_payment_required"):
+        return
+    entry_id = (session.get("metadata") or {}).get("llm_survivor_entry") or session.get("client_reference_id")
+    entry = entries_store.get(str(entry_id)) if entry_id else None
+    if entry and entry.get("stripe_session_id") == session.get("id"):
+        entries_store.move(
+            entry["entry_id"], ("awaiting_payment", "expired"), "queued",
+            paid_at=time.time(), stripe_payment_intent=session.get("payment_intent"),
+        )
+
+
+@app.get("/api/entries/status")
+def api_entries_status(t: str = Query(..., min_length=20, max_length=64)) -> dict:
+    """Public with the private token: where an entry stands."""
+    from . import entries_store, entry_payments
+
+    entry = entries_store.by_token(t)
+    if not entry:
+        raise HTTPException(status_code=404, detail="no entry with that link")
+    if entry["status"] == "awaiting_payment" and entry.get("stripe_session_id"):
+        # if the webhook is late, ask Stripe directly
+        try:
+            session = entry_payments.get_session(entry["stripe_session_id"])
+            _fulfil(session)
+            if session.get("status") == "expired":
+                entries_store.move(entry["entry_id"], ("awaiting_payment",), "expired")
+            entry = entries_store.by_token(t) or entry
+        except entry_payments.PaymentError:
+            pass
+    out = {k: entry[k] for k in ("entry_id", "name", "model_id", "status", "price_cents", "season_id", "note", "created_at", "paid_at", "started_at", "finished_at", "refunded_at")}
+    out["queue_position"] = entries_store.queue_position(entry["entry_id"])
+    out["estimate"] = {k: entry["estimate"].get(k) for k in ("replaced_model_id", "replaced_because")}
+    if entry["season_id"]:
+        out["links"] = {"report": f"/report/{entry['season_id']}", "watch": f"/watch?season={entry['season_id']}"}
+    return out
+
+
+@app.post("/api/entries/stripe-webhook", include_in_schema=False)
+async def api_entries_stripe_webhook(request: Request) -> dict:
+    """Stripe: payment events for entries. Verified on the raw body; other products' events are ignored."""
+    from . import entries_store, entry_payments
+
+    raw = await request.body()
+    try:
+        event = entry_payments.verify_webhook(raw, request.headers.get("stripe-signature"))
+    except entry_payments.PaymentError:
+        raise HTTPException(status_code=400, detail="bad signature") from None
+    obj = (event.get("data") or {}).get("object") or {}
+    if not entry_payments.is_ours(obj) or entries_store.seen_event(str(event.get("id")), str(event.get("type"))):
+        return {"ok": True}
+    kind = event.get("type")
+    if kind in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        _fulfil(obj)
+    elif kind == "checkout.session.expired":
+        entry_id = (obj.get("metadata") or {}).get("llm_survivor_entry")
+        if entry_id:
+            entries_store.move(str(entry_id), ("awaiting_payment",), "expired")
+    return {"ok": True}
+
+
+@app.post("/api/entries/settings")
+def api_entries_settings(payload: dict = Body(...), _: None = Depends(require_operator)) -> dict:
+    """Operator: {"open": bool} takes entries, {"paused": bool} stops taking and starting them,
+    {"allow_test_runs": bool} lets test-mode entries start real seasons (real model fees)."""
+    from . import entries_store
+
+    for key in ("open", "paused", "allow_test_runs"):
+        if key in payload:
+            entries_store.set_setting(key, "1" if payload[key] else "0")
+    return {"ok": True, "open": entries_store.is_open(), "paused": entries_store.paused(), "allow_test_runs": entries_store.runs_test_entries()}
 
 
 @app.get("/api/live-season/budget")

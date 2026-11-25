@@ -64,8 +64,8 @@ def latest_report() -> dict[str, Any]:
         return {"ok": False, "error": "no live seasons recorded"}
     for season_dir in sorted((p for p in SEASONS_DIR.iterdir() if p.is_dir()), reverse=True):
         report_path = season_dir / "scorecard.json"
-        if not report_path.exists():
-            continue
+        if not report_path.exists() or (season_dir / "entry.json").exists():
+            continue  # no result yet, or a paid entry's season (never the site's "latest")
         try:
             report = json.loads(report_path.read_text())
         except Exception as exc:

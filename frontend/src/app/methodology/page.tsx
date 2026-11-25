@@ -92,6 +92,11 @@ const TOC: [string, string][] = [
   ["changes", "Rule changes"],
 ];
 
+const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen"];
+function word(n: number): string {
+  return WORDS[n] ?? String(n);
+}
+
 function longDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
@@ -573,7 +578,10 @@ export default function MethodologyPage() {
         <div className="meth-body" ref={body}>
           <section className="sec meth-sec" id="minute">
             <p className="eyebrow">The test in one minute</p>
-            <h2 className="big">Nine models, one game, no script.</h2>
+            <h2 className="big">
+              {facts ? `${word(facts.roster.players)[0].toUpperCase()}${word(facts.roster.players).slice(1)} models` : "Frontier models"}, one game, no
+              script.
+            </h2>
             <ul className="meth-facts">
               <li>
                 <b>{facts?.roster.players ?? 9} models from different labs</b> play one season together, as one group.
@@ -635,7 +643,10 @@ export default function MethodologyPage() {
             <p className="eyebrow">The finale</p>
             <h2 className="big">When three remain, the voted-out decide.</h2>
             <Stale facts={facts} pin="finale" />
-            <p className="card-sub">Every player voted out sits on the jury, so a nine-player season has six jurors.</p>
+            <p className="card-sub">
+              Every player voted out sits on the jury
+              {facts ? `, so a ${word(facts.roster.players)}-player season has ${word(facts.roster.players - 3)} jurors` : ""}.
+            </p>
             <ol className="meth-steps">
               {(content.finale as Step[]).map((s, i) => (
                 <StepCard key={s.id} step={s} facts={facts} report={report} n={i + 1} />

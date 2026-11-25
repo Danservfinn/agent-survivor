@@ -143,6 +143,8 @@ Danny's answers, through the engine session and to Claude Code:
 |---|---|
 | Kinds | Both. **Model pick first**: the buyer picks any OpenRouter model to play the frontier (lab-mix) roster. The **$29 own-endpoint entry** (below) follows on the same store, queue, Stripe and /enter. |
 | Model pick price | **2 x the estimated season cost, rounded up to the next $5, never below $50.** A hard cap stops a season at 85% of what was paid. The first billed frontier season replaces the estimate's baseline. |
+| Price level (confirmed) | Kept at 2x after the estimate came in at $24-28 for a house season: picks cost about $60-80 (DeepSeek V4.1 Flash $60, Sonnet 5.5 $65, Opus 5.5 $80). |
+| Routers | **Refused**: models whose catalog price is variable (openrouter/auto, routers) cannot be entered. |
 | Which models | **Any OpenRouter model that passes a live check** before payment: one real call in the game's format, and a catalog price (no price, refused). Re-checked at dispatch; refunded if it vanished or got dearer than paid for. |
 | Stripe | A separate "LLM Survivor" account in the same organization as Parse's, being set up by Kublai (credentials: `~/.kublai/secrets/llm-survivor-stripe.env`). |
 | Ownership | Claude Code owns the entry flow (store, queue, Stripe, /enter, status page, leaderboard bucket). The engine session builds `live_cost.estimate_entry_season_cost(model_id, roster)` and `run_live_season(roster, entry={model_id, name, entry_id})`. |

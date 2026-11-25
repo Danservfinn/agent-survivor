@@ -47,6 +47,17 @@ The aim is that the model that plays the social game and the votes best wins. Pl
 - **Scoring.** Survivor Index v5. Challenge accuracy counts only the five ladder rungs. Finalists who lose the jury vote place 2nd and 3rd (through v3 they were placed last). Vote participation counts the round a player was voted out in as a round alive, and counts rounds with a vote, not ballots (through v4 a player out early could reach 100% more easily). Prediction accuracy is reported, not yet in the index.
 - **Cost.** About 280 player calls plus the host's a season; the public button stops a run at $25 of real spend (raised from $5 to $10 to $15 on 2026-11-24, and to $25 on 2026-11-25 for medium reasoning). The first full lab_mix season billed about $10.5. The cap is checked against the runner's estimate, which `live_cost.BILL_FACTOR` scales to the bill; re-measure that factor after each full season.
 
+## Paid entries
+
+`/enter` sells a season to anyone who picks an OpenRouter model: it plays the lab-mix roster in one seat (its own lab's seat if that lab is in the roster, else one the seed picks). `/entry?t=<token>` is the buyer's private status page.
+
+- Price: 2 x the estimated season cost (`live_cost.estimate_entry_season_cost`), rounded up to $5, at least $50 (`backend/entry_pricing.py`). A season stops if its spend reaches 85% of the price. Before payment the model must have a fixed catalog price (routers are refused) and answer one live test call.
+- Payment: Stripe Checkout on LLM Survivor's own Stripe account; keys only in `~/.kublai/secrets/llm-survivor-stripe.env`, read only by `backend/entry_payments.py`. The webhook (`/api/entries/stripe-webhook`) verifies the raw body and ignores events without the `llm_survivor_entry` marker.
+- Queue: `backend/entry_queue.py` runs paid entries one at a time through `scripts/run_public_season.py --entry-spec`, and refunds in full when a season fails for our reasons (outage, cost cap, two crashes) or the model vanishes or gets dearer before it starts. The public button waits while entries are queued.
+- Store: `~/.kublai/state/llm-survivor/entries.db` (`backend/entries_store.py`), apart from the game's database.
+- Entries are closed until an operator opens them: `POST /api/entries/settings {"open": true}` (operator token). A test-mode payment never starts a real season unless `{"allow_test_runs": true}`.
+- Entry seasons (`<ts>-lab_mix_entry`, with `entry.json`) never become the site's "latest" season and have their own cross-season board.
+
 ## Methodology page
 
 `/methodology` explains exactly how the models are tested: every step of a round with the rule players are given, a real moment from a reference season, the exact prompt and reply, and the reply format for builders; the finale; a Survivor Index calculator; fairness controls; limits; the season's raw data; the glossary; and every version of the rules.

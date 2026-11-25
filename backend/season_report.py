@@ -30,6 +30,21 @@ TEMPLATE_PATH = Path(__file__).resolve().parent / "report_template.html"
 
 RULES_SOCIAL = "social-game"
 RULES_LEGACY = "legacy"
+# seasons with a paid entry: compared only with each other, never with house seasons
+RULES_ENTRY = "entry"
+
+
+def entry_record(season_dir: Path) -> dict[str, Any] | None:
+    """The paid entry in a season (entry.json, no secrets), or None for a house season."""
+    path = Path(season_dir) / "entry.json"
+    if not path.exists():
+        return None
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    keep = ("entry_id", "name", "model_id", "agent_id", "alias", "replaced_model_id", "replaced_display_name", "replaced_because", "maker")
+    return {k: record.get(k) for k in keep if k in record}
 
 ORG_NAMES = {
     "x-ai": "xAI",
@@ -765,7 +780,7 @@ def _season_brief(season_dir: Path) -> dict[str, Any] | None:
             card = score_season(db)
             brief = {
                 "season_id": season_dir.name,
-                "rules": _rules_of(agents),
+                "rules": RULES_ENTRY if entry_record(season_dir) else _rules_of(agents),
                 "index_version": card.get("index_version"),
                 "rows": card.get("rows") or [],
             }
@@ -871,6 +886,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "date": _season_date(season_dir.name),
         "roster": stored.get("roster"),
         "rules": rules,
+        "entry": entry_record(season_dir),
         "mode": "live" if live_attempts else "deterministic",
         "index_version": scorecard.get("index_version"),
         "weights": scorecard.get("weights") or WEIGHTS,
@@ -907,7 +923,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "rounds": rounds,
         "finale": finale,
         "vote_matrices": _vote_matrices(rounds, models),
-        "cross_season": _cross_season(seasons_dir, rules),
+        "cross_season": _cross_season(seasons_dir, RULES_ENTRY if entry_record(season_dir) else rules),
     }
 
 
@@ -919,6 +935,8 @@ def reportable_season_dir(seasons_dir: Path | str) -> Path | None:
         return None
     with_events: Path | None = None
     for season_dir in sorted((p for p in seasons_dir.iterdir() if p.is_dir()), reverse=True):
+        if entry_record(season_dir) is not None:
+            continue  # a paid entry's season is never the site's "latest"
         if _season_brief(season_dir) is not None:
             return season_dir
         if with_events is None and (season_dir / "season.db").exists():

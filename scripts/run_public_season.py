@@ -30,25 +30,44 @@ _load_env_file()
 os.environ.setdefault("LLM_PROVIDER", "openrouter")
 
 
+def _entry_spec() -> dict | None:
+    """--entry-spec <file>: a paid entry to seat (written 0600 by backend/entry_queue.py; deleted once read)."""
+    if "--entry-spec" not in sys.argv:
+        return None
+    path = Path(sys.argv[sys.argv.index("--entry-spec") + 1])
+    spec = json.loads(path.read_text())
+    path.unlink(missing_ok=True)
+    return spec
+
+
 def main() -> int:
     from backend.live_season import run_live_season, SEASONS_DIR
     from backend.public_gate import public_run_caps, record_public_run
 
     caps = public_run_caps()
+    entry = _entry_spec()
     started = time.time()
     flag = SEASONS_DIR / "runner_status.json"
     try:
-        flag.write_text(json.dumps({"status": "running", "started_at": started}))
+        flag.write_text(json.dumps({"status": "running", "started_at": started, "entry": bool(entry)}))
     except Exception:
         pass
     report = {"ok": False, "error": "runner crashed"}
     try:
-        report = run_live_season(
-            roster=caps["roster"],
-            season_seed=caps["season_seed"],
-            max_cost_cents=caps["max_cost_cents"],
-        )
-        if report.get("ok"):
+        if entry:
+            # a paid entry: its own cap, set from what was paid; the seat is chosen by the seed
+            report = run_live_season(
+                roster="lab_mix_openrouter",
+                max_cost_cents=entry["cap_cents"],
+                entry={"model_id": entry["model_id"], "name": entry["name"], "entry_id": entry["entry_id"]},
+            )
+        else:
+            report = run_live_season(
+                roster=caps["roster"],
+                season_seed=caps["season_seed"],
+                max_cost_cents=caps["max_cost_cents"],
+            )
+        if report.get("ok") and not entry:
             if os.environ.get("SURVIVOR_BYOK") != "1":
                 # operator-keyed runs hit the public ledger; visitor-keyed runs
                 # spend the visitor's own OpenRouter credits and stay off it.
