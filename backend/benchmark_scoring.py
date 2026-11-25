@@ -18,6 +18,16 @@ out early scored full participation more easily than one who lasted. Rounds
 alive now include the round a player left. Participation counts rounds with
 a vote, so an extra vote won at the auction is not a second round.
 
+v6 (2026-11-25): every part is a share of the councils a player actually sat
+at, read from one council record (backend/council_record.py) that includes
+revote ballots, deadlocks and spoiled ballots. Fixes: the finale counted as a
+voting round, so every finalist lost points; a tied first ballot credited
+whichever target was voted for first; influence was all or nothing; votes
+survived were scaled to the season's most-targeted player. Placement leaves
+the index (it is shown as its own column), because the voting, strategy and
+social parts already reward lasting. Weights: puzzles 25, voting 15,
+strategy 35, social 25. Players still in a stopped season share a place range.
+
 Sources (all read from a season DB):
 - ChallengeAttempts: accuracy, median latency, provider (live vs deterministic)
 - Votes: votes cast, votes received
@@ -26,13 +36,14 @@ Sources (all read from a season DB):
 - JuryVotes: jury votes received
 - Alliances: alliances joined
 
-Survivor Index (0-100):
-  challenge_accuracy   30%
-  vote_participation   20%  (fraction of rounds alive with a recorded vote)
-  strategic_score      20%  (from the votes: 0.5 voted with the plurality, 0.3 a vote
-                             that sent the boot home, 0.2 votes received and survived)
-  placement            15%  (linear by final place)
-  social               15%  (jury votes + alliances, normalized)
+Survivor Index (0-100), v6:
+  challenge_accuracy   25%  (ladder rungs right over rungs attempted)
+  vote_participation   15%  (councils attended with a valid counted ballot)
+  strategic_score      35%  (per council attended: 0.5 the deciding ballot matched the
+                             plurality, 0.3 it named the player who left; plus 0.2 the
+                             share of votes against the player cast at councils it survived)
+  social               25%  (jury votes + alliances, normalized)
+Placement is reported, not scored.
 """
 
 from __future__ import annotations
@@ -42,16 +53,17 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-SURVIVOR_INDEX_VERSION = 5
+SURVIVOR_INDEX_VERSION = 6
 LADDER_RUNGS = 5
 
 WEIGHTS = {
-    "challenge_accuracy": 0.30,
-    "vote_participation": 0.20,
-    "strategic_score": 0.20,
-    "placement": 0.15,
-    "social": 0.15,
+    "challenge_accuracy": 0.25,
+    "vote_participation": 0.15,
+    "strategic_score": 0.35,
+    "social": 0.25,
 }
+# the council kinds of StoryEvents the council record reads
+_COUNCIL_EVENTS = ("revote_booth", "revote_call", "elimination", "deadlock_result", "rock_draw", "tiebreak", "immunity_given")
 
 
 def _prediction_accuracy(votes: list[dict[str, Any]], agent_id: str) -> float | None:
@@ -111,7 +123,9 @@ def _display_name(agent: dict[str, Any]) -> str:
 def score_season(db_path: Path | str) -> dict[str, Any]:
     import sqlite3
 
-    conn = sqlite3.connect(str(db_path))
+    from .council_record import councils as council_records, plurality
+
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
     conn.row_factory = sqlite3.Row
     try:
         game = dict(conn.execute("SELECT * FROM GameState").fetchone() or {})
@@ -126,11 +140,16 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
                 "SELECT actor_ids, payload FROM StoryEvents WHERE payload LIKE '%strategic_score%' ORDER BY id"
             ).fetchall()
         ]
+        marks = ",".join("?" for _ in _COUNCIL_EVENTS)
+        council_events = [dict(r) for r in conn.execute(f"SELECT * FROM StoryEvents WHERE kind IN ({marks}) ORDER BY id", _COUNCIL_EVENTS).fetchall()]
+        try:
+            spoiled = [dict(r) for r in conn.execute("SELECT * FROM SpoiledVotes ORDER BY id").fetchall()]
+        except sqlite3.OperationalError:
+            spoiled = []  # seasons before spoiled ballots were recorded
     finally:
         conn.close()
 
     winner_id = game.get("winner")
-    first_round = min((a["round"] for a in attempts), default=None)
     last_round = game.get("current_round") or 0
 
     # strategic score per agent from event payloads
@@ -170,14 +189,17 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
         ),
     )
     place_by_id = {a["agent_id"]: i + 1 for i, a in enumerate(ordered)}
-    n_agents = max(1, len(agents))
+    # with no winner (a stopped season) the players still in share one place range
+    still_in = [a["agent_id"] for a in agents if a.get("elimination_round") is None]
+    place_range = {aid: (place_by_id[aid], place_by_id[aid]) for aid in place_by_id}
+    if not winner_id and still_in:
+        for aid in still_in:
+            place_range[aid] = (1, len(still_in))
 
     votes_cast = {a["agent_id"]: 0 for a in agents}
-    voted_rounds: dict[str, set[int]] = {a["agent_id"]: set() for a in agents}
     for v in votes:
         if v["voter_id"] in votes_cast and v["target_id"]:
             votes_cast[v["voter_id"]] += 1
-            voted_rounds[v["voter_id"]].add(v["round"])
     votes_received = {a["agent_id"]: 0 for a in agents}
     for v in votes:
         if v["target_id"] in votes_received:
@@ -187,56 +209,21 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
         if m["agent_id"] in alliances_joined:
             alliances_joined[m["agent_id"]] += 1
 
-    # ground-truth strategic metrics from the Votes table (index v2).
-    # replaces self-reported strategic_score, which graded a model's own
-    # confidence instead of its actual play.
-    majority_alignment: dict[str, list[float]] = {}
-    votes_by_round: dict[int, list[dict]] = {}
-    for v in votes:
-        votes_by_round.setdefault(v["round"], []).append(v)
-    for rnd, round_votes in sorted(votes_by_round.items()):
-        tally: dict[str, int] = {}
-        for v in round_votes:
-            if v["target_id"]:
-                tally[v["target_id"]] = tally.get(v["target_id"], 0) + 1
-        if not tally:
-            continue
-        plurality_id, _ = max(tally.items(), key=lambda kv: kv[1])
-        for v in round_votes:
-            voter = v["voter_id"]
-            if voter not in {a["agent_id"] for a in agents}:
-                continue
-            aligned = v["target_id"] == plurality_id
-            majority_alignment.setdefault(voter, []).append(1.0 if aligned else 0.0)
-    majority_rate = {aid: (sum(vals) / len(vals)) for aid, vals in majority_alignment.items()}
-
-    # flip influence: rounds where the agent's stated target WAS the eliminated agent
-    flip_influence: dict[str, list[float]] = {}
-    elim_round_by_agent = {
-        a["agent_id"]: a.get("elimination_round") for a in agents if a.get("elimination_round")
-    }
-    for rnd, round_votes in votes_by_round.items():
-        for v in round_votes:
-            if not v["target_id"]:
-                continue
-            if elim_round_by_agent.get(v["target_id"]) == rnd:
-                flip_influence.setdefault(v["voter_id"], []).append(1.0)
-    influence_rate = {aid: (sum(vals) / max(1, len(vals))) for aid, vals in flip_influence.items()}
-
+    # index v6: every council a player sat at, read from one record that
+    # includes revote ballots, deadlocks and spoiled ballots
     elim_round_lookup = {a["agent_id"]: a.get("elimination_round") for a in agents}
+    records = council_records({"votes": votes, "events": council_events, "spoiled": spoiled})
+    # seasons (and fixtures) without an elimination event: the Agents table says who left when
+    left_in = {rn: aid for aid, rn in elim_round_lookup.items() if rn is not None}
+    for rn, rec in records.items():
+        if not rec["eliminated_id"] and rn in left_in:
+            rec["eliminated_id"] = left_in[rn]
+            rec["decided_by"] = rec["decided_by"] or "vote"
+    held = {rn: rec for rn, rec in records.items() if rec["eliminated_id"]}
 
-    # blindside survival: was targeted in a round and survived it
-    blindside_survivals: dict[str, int] = {}
-    for rnd, round_votes in votes_by_round.items():
-        for v in round_votes:
-            tgt = v["target_id"]
-            if not tgt:
-                continue
-            tgt_elim = elim_round_lookup.get(tgt)
-            survived_this_round = tgt_elim is None or tgt_elim > rnd
-            if survived_this_round:
-                blindside_survivals[tgt] = blindside_survivals.get(tgt, 0) + 1
-    max_blindside = max(blindside_survivals.values()) if blindside_survivals else 0
+    def attended(aid: str) -> list[dict[str, Any]]:
+        elim = elim_round_lookup.get(aid)
+        return [rec for rn, rec in sorted(held.items()) if elim is None or elim >= rn]
 
     rows = []
     for agent in agents:
@@ -247,29 +234,28 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
         latencies = [a["response_ms"] for a in att if a["response_ms"]]
         median_ms = statistics.median(latencies) if latencies else None
 
-        # rounds alive: from the first voting round to the round the player
-        # left (it votes in that round too), or to the end
-        elim = agent.get("elimination_round")
-        if first_round is None:
-            rounds_alive = 0
-        elif elim is None:
-            rounds_alive = max(0, (last_round or first_round) - first_round + 1)
-        else:
-            rounds_alive = max(0, elim - first_round + 1)
-        participation = (len(voted_rounds[aid]) / rounds_alive) if rounds_alive > 0 else 0.0
-        participation = min(1.0, participation)
+        sat = attended(aid)
+        n_sat = len(sat)
+        cast = [rec for rec in sat if aid in rec["deciding"]]
+        participation = len(cast) / n_sat if n_sat else 0.0
 
         strat = strat_scores.get(aid) or []
         mean_strat = (sum(strat) / len(strat)) if strat else 0.0
 
-        # index v2 strategic component: ground truth, not self-report
-        maj = majority_rate.get(aid) or 0.0
-        infl = influence_rate.get(aid) or 0.0
-        blind = blindside_survivals.get(aid, 0)
-        strategic_truth = 0.5 * maj + 0.3 * min(1.0, infl) + 0.2 * (blind / max_blindside if max_blindside else 0.0)
+        # strategy: with the plurality, named who left, and votes against survived
+        with_plurality = sum(
+            1 for rec in cast if rec["deciding"][aid] == (plurality(rec["final_tally"], rec["eliminated_id"]) or rec["eliminated_id"])
+        )
+        named_who_left = sum(1 for rec in cast if rec["deciding"][aid] == rec["eliminated_id"])
+        against = [(rec["final_tally"].get(aid, 0), rec["eliminated_id"] != aid) for rec in sat]
+        drawn = sum(n for n, _ in against)
+        survived = sum(n for n, lived in against if lived)
+        maj = with_plurality / n_sat if n_sat else 0.0
+        infl = named_who_left / n_sat if n_sat else 0.0
+        lasted = (survived / drawn if drawn else 1.0) if n_sat else 0.0
+        strategic_truth = 0.5 * maj + 0.3 * infl + 0.2 * lasted
 
         place = place_by_id[aid]
-        placement_score = (n_agents - place + 1) / n_agents
 
         jury = jury_received[aid]
         alliance_count = alliances_joined[aid]
@@ -281,7 +267,6 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
             WEIGHTS["challenge_accuracy"] * accuracy
             + WEIGHTS["vote_participation"] * participation
             + WEIGHTS["strategic_score"] * strategic_truth
-            + WEIGHTS["placement"] * placement_score
             + WEIGHTS["social"] * social
         ) * 100.0
 
@@ -293,7 +278,11 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
                 "alias": agent.get("pseudonym") if agent.get("display_name") else None,
                 "model_id": agent.get("model_id"),
                 "place": place,
+                "place_low": place_range[aid][0],
+                "place_high": place_range[aid][1],
                 "is_winner": aid == winner_id,
+                "councils_attended": n_sat,
+                "councils_voted": len(cast),
                 "challenge_attempts": len(att),
                 "challenge_correct": len(correct),
                 "challenge_accuracy": round(accuracy, 4),
@@ -312,8 +301,15 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
                     "challenge_accuracy": round(accuracy, 4),
                     "vote_participation": round(participation, 4),
                     "strategic_score": round(strategic_truth, 4),
-                    "placement": round(placement_score, 4),
                     "social": round(social, 4),
+                },
+                # the strategy part's three pieces, as counts, so a report can show k of n
+                "strategy_detail": {
+                    "councils": n_sat,
+                    "with_plurality": with_plurality,
+                    "named_who_left": named_who_left,
+                    "votes_against": drawn,
+                    "votes_against_survived": survived,
                 },
                 "survivor_index": round(index, 2),
             }

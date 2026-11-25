@@ -171,3 +171,26 @@ class EntrySeasonTest(unittest.TestCase):
             self.assertIsNone(model["est_cost_usd"])
             self.assertIsNone(model["est_cost_per_round_usd"])
         self.assertFalse(any(card["label"] == "Cost" for card in report["takeaways"]))
+
+
+class RescoreTest(unittest.TestCase):
+    def test_rescore_keeps_the_old_scorecard_and_the_run_facts(self) -> None:
+        from backend.benchmark_scoring import SURVIVOR_INDEX_VERSION
+
+        with tempfile.TemporaryDirectory() as tmp:
+            season_dir = copy_season(Path(tmp))
+            old = {"index_version": 5, "rows": [], "caps": {"cap_reached": None}, "finished": True, "report_url": "/report/x", "roster": "r"}
+            (season_dir / "scorecard.json").write_text(json.dumps(old))
+            self.assertTrue(season_report.rescore_scorecard(season_dir))
+            fresh = json.loads((season_dir / "scorecard.json").read_text())
+            self.assertEqual(fresh["index_version"], SURVIVOR_INDEX_VERSION)
+            self.assertTrue(fresh["rows"])
+            for key in ("caps", "finished", "report_url", "roster"):
+                self.assertEqual(fresh[key], old[key])
+            self.assertIn("rescored_at", fresh)
+            self.assertEqual(json.loads((season_dir / "scorecard.v5.json").read_text()), old)
+            self.assertFalse(season_report.rescore_scorecard(season_dir))  # already current
+            report = build_season_report(season_dir)
+            self.assertEqual(report["season"]["rescored_at"], fresh["rescored_at"])
+            html = render_report_html(report, site_url="https://example.test", share_base="/report/x/share/")
+            self.assertIn(f"season.png?v={SURVIVOR_INDEX_VERSION}", html)

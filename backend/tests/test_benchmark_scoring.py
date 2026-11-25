@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -106,17 +108,20 @@ class ScoringTest(unittest.TestCase):
         self.report = score_season(self.db)
 
     def test_version_and_weights_frozen(self) -> None:
-        self.assertEqual(SURVIVOR_INDEX_VERSION, 5)
+        self.assertEqual(SURVIVOR_INDEX_VERSION, 6)
+        self.assertNotIn("placement", WEIGHTS)
         self.assertAlmostEqual(sum(WEIGHTS.values()), 1.0)
 
-    def test_participation_counts_the_round_a_player_left(self) -> None:
-        # v5: X left in round 9 having voted in 7 and 8 only (2 of 3 rounds);
-        # Y left in round 8 having voted in 7 and 8 (2 of 2). Through v4 X
-        # scored 2/2 and Y 2/1, capped at 1.
+    def test_participation_counts_councils_held(self) -> None:
+        # v6: councils are the rounds someone left (8: Y, 9: X). X sat at both and
+        # voted only in 8; Y sat at 8 and voted; W and Z sat at both and voted.
+        # Rounds with no one leaving (7, 10 to 12, the finale) are not councils.
         rows = {row["agent_id"]: row for row in self.report["rows"]}
-        self.assertAlmostEqual(rows["agent-x"]["components"]["vote_participation"], 2 / 3, places=3)
+        self.assertAlmostEqual(rows["agent-x"]["components"]["vote_participation"], 1 / 2, places=3)
+        self.assertEqual((rows["agent-x"]["councils_attended"], rows["agent-x"]["councils_voted"]), (2, 1))
         self.assertAlmostEqual(rows["agent-y"]["components"]["vote_participation"], 1.0, places=3)
         self.assertAlmostEqual(rows["agent-w"]["components"]["vote_participation"], 1.0, places=3)
+        self.assertAlmostEqual(rows["agent-z"]["components"]["vote_participation"], 1.0, places=3)
 
     def test_rows_cover_all_agents(self) -> None:
         self.assertEqual(len(self.report["rows"]), 4)
@@ -157,7 +162,7 @@ class ScoringTest(unittest.TestCase):
         # Z reached the final and lost the jury vote; X left in round 9, Y in round 8
         self.assertEqual(places, {"Model W": 1, "Model Z": 2, "Model X": 3, "Model Y": 4})
 
-    def test_rows_carry_the_five_index_parts(self) -> None:
+    def test_rows_carry_the_index_parts(self) -> None:
         for row in self.report["rows"]:
             parts = row["components"]
             self.assertEqual(set(parts), set(WEIGHTS))
@@ -179,6 +184,97 @@ class ScoringTest(unittest.TestCase):
     def test_live_attempt_count(self) -> None:
         self.assertEqual(self.report["totals"]["live_attempts"], 24)
         self.assertEqual(self.report["totals"]["attempts"], 24)
+
+
+def _council_db(path: Path, *, votes, events=(), eliminated=None, winner=None, spoiled=()) -> None:
+    """A season with only the tables the index reads; `eliminated` maps agent to round."""
+    _build_fixture_db(path)
+    conn = sqlite3.connect(str(path))
+    conn.executescript("DELETE FROM Votes; DELETE FROM StoryEvents; DELETE FROM JuryVotes; DELETE FROM AllianceMemberships;"
+                       "CREATE TABLE SpoiledVotes (id INTEGER PRIMARY KEY, round INTEGER, voter_id TEXT, ballot TEXT, reason TEXT);")
+    conn.execute("UPDATE GameState SET winner = ?", (winner,))
+    conn.execute("UPDATE Agents SET elimination_round = NULL")
+    for aid, rn in (eliminated or {}).items():
+        conn.execute("UPDATE Agents SET elimination_round = ? WHERE agent_id = ?", (rn, aid))
+    conn.executemany("INSERT INTO Votes (round, voter_id, target_id) VALUES (?,?,?)", votes)
+    for rn, kind, payload, actors in events:
+        conn.execute("INSERT INTO StoryEvents (round, kind, actor_ids, payload) VALUES (?,?,?,?)", (rn, kind, json.dumps(actors), json.dumps(payload)))
+    conn.executemany("INSERT INTO SpoiledVotes (round, voter_id, ballot, reason) VALUES (?,?,?,?)", spoiled)
+    conn.commit()
+    conn.close()
+
+
+class IndexV6Test(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = Path(self.tmp.name) / "season.db"
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _rows(self, **kw) -> dict:
+        _council_db(self.db, **kw)
+        return {r["agent_id"]: r for r in score_season(self.db)["rows"]}
+
+    def test_a_tied_first_ballot_credits_the_player_who_left(self) -> None:
+        # 2-2 tie between x and y, revote sends y home 3-1
+        rows = self._rows(
+            votes=[(1, "agent-w", "agent-y"), (1, "agent-z", "agent-y"), (1, "agent-x", "agent-x"), (1, "agent-y", "agent-x")],
+            events=[
+                (1, "revote_booth", {"vote_target_id": "agent-y"}, ["agent-w"]),
+                (1, "revote_booth", {"vote_target_id": "agent-y"}, ["agent-z"]),
+                (1, "revote_booth", {"vote_target_id": "agent-y"}, ["agent-x"]),
+                (1, "revote_booth", {"vote_target_id": "agent-x"}, ["agent-y"]),
+                (1, "elimination", {"eliminated_id": "agent-y", "final_tally": {"agent-y": 3, "agent-x": 1}}, ["host"]),
+            ],
+            eliminated={"agent-y": 1},
+        )
+        detail = rows["agent-x"]["strategy_detail"]
+        # x voted for itself first, then with the room in the revote: its deciding ballot counts
+        self.assertEqual((detail["with_plurality"], detail["named_who_left"]), (1, 1))
+        self.assertEqual(rows["agent-y"]["strategy_detail"]["with_plurality"], 0)
+
+    def test_influence_is_a_share_and_survived_has_no_season_maximum(self) -> None:
+        # three councils; w names the player who left in two of three
+        rows = self._rows(
+            votes=[
+                (1, "agent-w", "agent-x"), (1, "agent-z", "agent-y"), (1, "agent-x", "agent-y"), (1, "agent-y", "agent-x"), (1, "agent-y", "agent-w"),
+                (2, "agent-w", "agent-x"), (2, "agent-z", "agent-x"), (2, "agent-x", "agent-w"),
+            ],
+            events=[
+                (1, "elimination", {"eliminated_id": "agent-y", "final_tally": {"agent-y": 2, "agent-x": 2, "agent-w": 1}}, ["host"]),
+                (2, "elimination", {"eliminated_id": "agent-x", "final_tally": {"agent-x": 2, "agent-w": 1}}, ["host"]),
+            ],
+            eliminated={"agent-y": 1, "agent-x": 2},
+            winner="agent-w",
+        )
+        w = rows["agent-w"]["strategy_detail"]
+        self.assertEqual(w["councils"], 2)
+        self.assertEqual(w["named_who_left"], 1)  # voted x in round 1, y left
+        self.assertEqual((w["votes_against"], w["votes_against_survived"]), (2, 2))
+        z = rows["agent-z"]["strategy_detail"]
+        self.assertEqual((z["votes_against"], z["votes_against_survived"]), (0, 0))
+        self.assertAlmostEqual(rows["agent-z"]["components"]["strategic_score"], 0.5 * 1 + 0.3 * 1 + 0.2 * 1.0, places=3)
+
+    def test_a_spoiled_ballot_is_a_council_without_a_vote(self) -> None:
+        rows = self._rows(
+            votes=[(1, "agent-w", "agent-y"), (1, "agent-z", "agent-y"), (1, "agent-y", "agent-w")],
+            events=[(1, "elimination", {"eliminated_id": "agent-y", "final_tally": {"agent-y": 2, "agent-w": 1}}, ["host"])],
+            spoiled=[(1, "agent-x", "vote", "no legal vote")],
+            eliminated={"agent-y": 1},
+        )
+        self.assertEqual((rows["agent-x"]["councils_attended"], rows["agent-x"]["councils_voted"]), (1, 0))
+        self.assertEqual(rows["agent-x"]["components"]["vote_participation"], 0.0)
+
+    def test_a_stopped_season_shares_the_places_of_the_players_still_in(self) -> None:
+        rows = self._rows(
+            votes=[(1, "agent-w", "agent-y"), (1, "agent-z", "agent-y"), (1, "agent-x", "agent-y")],
+            events=[(1, "elimination", {"eliminated_id": "agent-y", "final_tally": {"agent-y": 3}}, ["host"])],
+            eliminated={"agent-y": 1},
+        )
+        for aid in ("agent-w", "agent-x", "agent-z"):
+            self.assertEqual((rows[aid]["place_low"], rows[aid]["place_high"]), (1, 3))
+        self.assertEqual((rows["agent-y"]["place_low"], rows["agent-y"]["place_high"]), (4, 4))
 
 
 if __name__ == "__main__":
