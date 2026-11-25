@@ -11,6 +11,13 @@ v4 (2026-11-24): fixes final places. Finalists who lost the jury vote were
 placed behind every eliminated player, so a runner-up scored the lowest
 placement points. They now place 2nd and 3rd by jury votes.
 
+v5 (2026-11-25): fixes vote participation. A player voted out was counted
+alive only up to the round before its elimination, though it voted in that
+round, so its share could pass 100% and was capped there: a player voted
+out early scored full participation more easily than one who lasted. Rounds
+alive now include the round a player left. Participation counts rounds with
+a vote, so an extra vote won at the auction is not a second round.
+
 Sources (all read from a season DB):
 - ChallengeAttempts: accuracy, median latency, provider (live vs deterministic)
 - Votes: votes cast, votes received
@@ -34,7 +41,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-SURVIVOR_INDEX_VERSION = 4
+SURVIVOR_INDEX_VERSION = 5
 LADDER_RUNGS = 5
 
 WEIGHTS = {
@@ -165,9 +172,11 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
     n_agents = max(1, len(agents))
 
     votes_cast = {a["agent_id"]: 0 for a in agents}
+    voted_rounds: dict[str, set[int]] = {a["agent_id"]: set() for a in agents}
     for v in votes:
         if v["voter_id"] in votes_cast and v["target_id"]:
             votes_cast[v["voter_id"]] += 1
+            voted_rounds[v["voter_id"]].add(v["round"])
     votes_received = {a["agent_id"]: 0 for a in agents}
     for v in votes:
         if v["target_id"] in votes_received:
@@ -239,15 +248,16 @@ def score_season(db_path: Path | str) -> dict[str, Any]:
         latencies = [a["response_ms"] for a in att if a["response_ms"]]
         median_ms = statistics.median(latencies) if latencies else None
 
-        # rounds alive: from first voting round to elimination (or end)
+        # rounds alive: from the first voting round to the round the player
+        # left (it votes in that round too), or to the end
         elim = agent.get("elimination_round")
         if first_round is None:
             rounds_alive = 0
         elif elim is None:
             rounds_alive = max(0, (last_round or first_round) - first_round + 1)
         else:
-            rounds_alive = max(0, elim - first_round)
-        participation = (votes_cast[aid] / rounds_alive) if rounds_alive > 0 else 0.0
+            rounds_alive = max(0, elim - first_round + 1)
+        participation = (len(voted_rounds[aid]) / rounds_alive) if rounds_alive > 0 else 0.0
         participation = min(1.0, participation)
 
         strat = strat_scores.get(aid) or []

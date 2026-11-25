@@ -106,8 +106,17 @@ class ScoringTest(unittest.TestCase):
         self.report = score_season(self.db)
 
     def test_version_and_weights_frozen(self) -> None:
-        self.assertEqual(SURVIVOR_INDEX_VERSION, 4)
+        self.assertEqual(SURVIVOR_INDEX_VERSION, 5)
         self.assertAlmostEqual(sum(WEIGHTS.values()), 1.0)
+
+    def test_participation_counts_the_round_a_player_left(self) -> None:
+        # v5: X left in round 9 having voted in 7 and 8 only (2 of 3 rounds);
+        # Y left in round 8 having voted in 7 and 8 (2 of 2). Through v4 X
+        # scored 2/2 and Y 2/1, capped at 1.
+        rows = {row["agent_id"]: row for row in self.report["rows"]}
+        self.assertAlmostEqual(rows["agent-x"]["components"]["vote_participation"], 2 / 3, places=3)
+        self.assertAlmostEqual(rows["agent-y"]["components"]["vote_participation"], 1.0, places=3)
+        self.assertAlmostEqual(rows["agent-w"]["components"]["vote_participation"], 1.0, places=3)
 
     def test_rows_cover_all_agents(self) -> None:
         self.assertEqual(len(self.report["rows"]), 4)
