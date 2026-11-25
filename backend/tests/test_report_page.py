@@ -118,6 +118,11 @@ class OddDataTest(unittest.TestCase):
             self.assertIn(f'id="{sec}"', dom)
         self.assertNotIn(NOTICE, dom)
         self.assertIn('id="round-1"', dom)
+        # keyboard and screen readers: a skip link, real expand buttons, no unnamed tab stops on chart points
+        self.assertIn('class="skip"', dom)
+        self.assertIn('class="caret-btn"', dom)
+        self.assertIn('aria-expanded="false"', dom)
+        self.assertNotRegex(dom, r'<(span|circle|td)[^>]*tabindex="0"')
 
     def test_nulls_cost_nothing(self) -> None:
         report = json.loads(json.dumps(self.report))

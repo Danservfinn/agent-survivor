@@ -8,8 +8,8 @@ __REPORT_HEAD__
 <meta name="description" content="After-action report and benchmark results for one Agent Survivor season: scores, votes, challenges, promises and the jury.">
 <style>
 /* Theme cloned from LiveBench 2.0 (livebench.ai): its tokens, type scale, table, chips, cards and chart
-   conventions. LiveBench ships one light theme, so this page is light by default whatever the system
-   setting; ?theme=dark switches to a dark set built on the same hues. */
+   conventions. The page follows the system's light or dark setting; the theme button (or ?theme=light,
+   ?theme=dark) pins one. Text colours meet WCAG AA contrast on their backgrounds in both themes. */
 :root {
   color-scheme: light;
   --ground: #f6f8fc;
@@ -17,16 +17,16 @@ __REPORT_HEAD__
   --surface-2: #fbfcfe;
   --ink: #14213d;
   --muted: #5a6b85;
-  --faint: #8a99b5;
+  --faint: #5f6f8a;
   --accent: #2f54eb;
   --accent-rgb: 47, 84, 235;
   --accent-soft: #eaf0ff;
   --row-hover: #f3f6ff;
-  --live: #12b886;
-  --live-rgb: 18, 185, 134;
+  --live: #087f5b;
+  --live-rgb: 8, 127, 91;
   --danger: #c0392b;
   --border: #e4e9f2;
-  --border-strong: #d4dbea;
+  --border-strong: #8d9ab3;
   --radius: 10px;
   --radius-sm: 8px;
   --shadow-sm: 0 1px 3px #14213d0f;
@@ -38,22 +38,43 @@ __REPORT_HEAD__
   --tip-bg: #14213d;
   --tip-ink: #fff;
   --p1: #2f54eb; --p2: #12b886; --p3: #f59e0b; --p4: #ec4899; --p5: #7c3aed;
+  /* index parts: one blue ramp, so a part never reads as a lab's colour */
+  --c1: #1f3fbf; --c2: #2f54eb; --c3: #6f8bf2; --c4: #a9b9f7; --c5: #d5ddfb;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --ground: #0f1522; --surface: #161d2e; --surface-2: #1a2236; --ink: #e8edf7; --muted: #a3b0c7; --faint: #75839d;
+  --ground: #0f1522; --surface: #161d2e; --surface-2: #1a2236; --ink: #e8edf7; --muted: #a3b0c7; --faint: #8391ab;
   --accent: #6f8dff; --accent-rgb: 111, 141, 255; --accent-soft: #1d2a4d; --row-hover: #1b2540;
-  --live: #2bd4a0; --live-rgb: 43, 212, 160; --danger: #ff7b6b; --border: #27314a; --border-strong: #36425f;
+  --live: #2bd4a0; --live-rgb: 43, 212, 160; --danger: #ff7b6b; --border: #27314a; --border-strong: #5a6888;
   --shadow-sm: none; --shadow-md: 0 6px 24px #0008; --nav-bg: #0f1522db; --warn-bg: #2b2412; --warn-line: #6b5a1f;
   --on-accent: #0f1522; --tip-bg: #e8edf7; --tip-ink: #14213d;
   --p1: #6f8dff; --p2: #2bd4a0; --p3: #f5b041; --p4: #f472b6; --p5: #a78bfa;
+  --c1: #c3cefd; --c2: #93a8ff; --c3: #6f8dff; --c4: #4a66d6; --c5: #2f448f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  color-scheme: dark;
+  --ground: #0f1522; --surface: #161d2e; --surface-2: #1a2236; --ink: #e8edf7; --muted: #a3b0c7; --faint: #8391ab;
+  --accent: #6f8dff; --accent-rgb: 111, 141, 255; --accent-soft: #1d2a4d; --row-hover: #1b2540;
+  --live: #2bd4a0; --live-rgb: 43, 212, 160; --danger: #ff7b6b; --border: #27314a; --border-strong: #5a6888;
+  --shadow-sm: none; --shadow-md: 0 6px 24px #0008; --nav-bg: #0f1522db; --warn-bg: #2b2412; --warn-line: #6b5a1f;
+  --on-accent: #0f1522; --tip-bg: #e8edf7; --tip-ink: #14213d;
+  --p1: #6f8dff; --p2: #2bd4a0; --p3: #f5b041; --p4: #f472b6; --p5: #a78bfa;
+  --c1: #c3cefd; --c2: #93a8ff; --c3: #6f8dff; --c4: #4a66d6; --c5: #2f448f;
+  }
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
 a { color: var(--accent); text-decoration: none; }
+main p a, main li a, .note a, .card-sub a { text-decoration: underline; text-underline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip { position: absolute; left: 12px; top: -60px; z-index: 70; background: var(--accent); color: var(--on-accent); padding: 8px 14px; border-radius: 8px; }
+.skip:focus { top: 10px; }
+section.sec, #top, details.round, .player, .moment { scroll-margin-top: 72px; }
+.theme-btn { background: none; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--muted); cursor: pointer; font-size: 12px; padding: 4px 10px; }
 button, select, input { font: inherit; color: inherit; }
 .wrap { max-width: 1360px; margin: 0 auto; padding: 0 22px; }
 .mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
@@ -147,6 +168,12 @@ table.lb { border-collapse: collapse; font-size: 13.5px; min-width: 100%; width:
 .lb thead th.gstart, .lb thead tr.grp th + th, .lb td.gstart { border-left: 1px solid var(--border); }
 .lb thead th.name { text-align: left; left: 0; z-index: 5; max-width: none; }
 .lb th button { all: unset; cursor: pointer; display: inline-flex; gap: 3px; align-items: flex-end; justify-content: flex-end; text-align: right; }
+.lb th button:focus-visible, .lb td button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.lb .caret-btn { all: unset; cursor: pointer; color: var(--muted); width: 14px; display: inline-block; text-align: center; }
+.lb tr.open .caret-btn { color: var(--accent); transform: rotate(90deg); }
+.quote-more { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 12.5px; padding: 0; margin: -4px 0 10px; text-decoration: underline; }
+blockquote.open { display: block !important; -webkit-line-clamp: unset !important; overflow: visible !important; }
+.col-def { color: var(--faint); font-size: 10px; margin-left: 2px; text-decoration: none !important; }
 .lb th button:hover { color: var(--accent); }
 .lb th .unit { display: block; font-weight: 400; color: var(--faint); letter-spacing: 0; text-transform: none; }
 .lb th .arr { color: var(--faint); font-size: 9px; flex: none; }
@@ -380,14 +407,28 @@ html.card-mode .sc { width: 1200px; height: 675px; padding: 42px 56px 34px; disp
   .bar-row .lab { flex-basis: 108px; }
   .card-pad { padding: 16px; }
 }
-@media (max-width: 560px) { .top nav { display: none; } .top-in { justify-content: space-between; } }
+@media (max-width: 560px) { .top-in { justify-content: space-between; } .top nav { order: 3; width: 100%; } }
+@media (max-width: 640px) {
+  .tbl-wrap { max-height: none; }
+  .tl-scroll { overflow: visible; }
+  .tl-track { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); row-gap: 14px; min-width: 0; }
+  .tl-track::before { display: none; }
+}
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } html { scroll-behavior: auto; } }
-@media print { .top, .controls { display: none !important; } details > * { display: block !important; } }
+@media print {
+  .top, .controls, .share-row, .cta, .skip, .theme-btn, .quote-more, #tip { display: none !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .tbl-wrap { overflow: visible !important; max-height: none !important; }
+  .card, .player, .moment, details.round, .vote, tr { break-inside: avoid; }
+  section.sec { break-before: auto; }
+  body { font-size: 12px; }
+  blockquote { display: block !important; -webkit-line-clamp: unset !important; overflow: visible !important; }
+}
 </style>
 </head>
 <body>
 <div id="app"></div>
-<div id="tip" role="tooltip"></div>
+<div id="tip" aria-hidden="true"></div>
 <script id="report-data" type="application/json">__REPORT_DATA__</script>
 <script>
 (function () {
@@ -407,7 +448,7 @@ var S = D.season, M = D.models, NAMES = D.names || {}, ALIAS = D.aliases || {}, 
 var EV = D.entry_view || null, ENT = EV ? EV.agent_id : null;
 var byId = {}; M.forEach(function (m) { byId[m.agent_id] = m; });
 var COMP = Object.keys(S.weights);
-var COMP_COLOR = ["var(--p1)", "var(--p2)", "var(--p3)", "var(--p4)", "var(--p5)"];
+var COMP_COLOR = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)"];
 /* one color per maker, as on LiveBench; makers it does not list get the last four, anything else the grey */
 var ORG_COLOR = { OpenAI: "#10A37F", Google: "#EA4335", Anthropic: "#CC785C", DeepSeek: "#7C3AED", Alibaba: "#F59E0B", "Moonshot AI": "#EC4899",
   xAI: "var(--ink)", Meta: "#4267B2", Mistral: "#FF7000", Cohere: "#39C5BB", "Z.AI": "#0EA5E9", MiniMax: "#DB2777", NVIDIA: "#76B900", Microsoft: "#0078D4",
@@ -416,8 +457,21 @@ function orgColor(org) { return ORG_COLOR[org] || "#7A8AA8"; }
 function mdot(m) { return h("span", { class: "mdot", style: "background:" + orgColor(m.org), "data-tip": m.org || null }); }
 var SVGNS = "http://www.w3.org/2000/svg";
 /* ?theme=light or ?theme=dark pins the colors, e.g. for a screenshot; default follows the system */
-var wanted = /[?&]theme=(light|dark)\b/.exec(location.search);
-if (wanted) document.documentElement.setAttribute("data-theme", wanted[1]);
+var wanted = /[?&]theme=(light|dark)\b/.exec(location.search), savedTheme = null;
+try { savedTheme = localStorage.getItem("report-theme"); } catch (e) { /* storage blocked */ }
+var pinned = wanted ? wanted[1] : (savedTheme === "light" || savedTheme === "dark" ? savedTheme : null);
+if (pinned) document.documentElement.setAttribute("data-theme", pinned);
+function currentTheme() {
+  var set = document.documentElement.getAttribute("data-theme");
+  return set || (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+}
+function toggleTheme(btn) {
+  var next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("report-theme", next); } catch (e) { /* storage blocked */ }
+  btn.textContent = next === "dark" ? "Light" : "Dark";
+  btn.setAttribute("aria-label", "Switch to the " + (next === "dark" ? "light" : "dark") + " theme");
+}
 
 /* every value from the report goes in through textContent or setAttribute, never innerHTML:
    speeches, vote reasons and model names are model-written text */
@@ -489,7 +543,14 @@ function orNeg(x) { return x == null ? -1 : x; }
 function f1(x) { return x == null ? "–" : Number(x).toFixed(1); }
 function pct(x) { return x == null ? "–" : Math.round(x * 100) + "%"; }
 function frac(a, b) { return b ? a + "/" + b : "–"; }
-function usd(x) { return x == null ? "–" : "$" + (x >= 1 ? x.toFixed(2) : x >= 0.01 ? x.toFixed(3) : x.toFixed(4)); }
+/* money: cents from a dollar up, else two significant figures */
+function usd(x) { return x == null ? "–" : "$" + (x >= 1 ? x.toFixed(2) : Number(x.toPrecision(2)).toString()); }
+/* text on a heat cell: white only where the blue is dark enough for it */
+/* a rate as "k/n", with the percentage only from ten events up */
+function ratio(k, n) { return !n ? "–" : (n >= 10 ? Math.round(100 * k / n) + "% · " : "") + k + "/" + n; }
+function heatText(alpha) { return alpha >= 0.85 ? ";color:var(--on-accent)" : ";color:var(--ink)"; }
+function announce(text) { var el = document.getElementById("live"); if (el) { el.textContent = ""; setTimeout(function () { el.textContent = text; }, 30); } }
+function slug(t) { return String(t).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 function mix(color, share) { return "rgba(var(--accent-rgb)," + Math.round(share * 100) / 100 + ")"; }
 function sourceLine() {
   return h("div", { class: "attrib" }, h("span", null, "Source: ", h("b", { text: "Agent Survivor" }), " season " + (S.date || S.season_id)),
@@ -516,6 +577,9 @@ document.addEventListener("mousemove", function (e) {
   var y = e.clientY + 18 + ht > window.innerHeight ? e.clientY - ht - 10 : e.clientY + 18;
   tip.style.left = x + "px"; tip.style.top = y + "px";
 });
+document.addEventListener("keydown", function (e) { if (e.key === "Escape") tip.className = ""; });
+document.addEventListener("focusout", function () { tip.className = ""; });
+window.addEventListener("scroll", function () { tip.className = ""; }, { passive: true });
 document.addEventListener("focusin", function (e) {
   var el = e.target.closest ? e.target.closest("[data-tip]") : null;
   if (!el) { tip.className = ""; return; }
@@ -552,7 +616,7 @@ function hero() {
       h("div", { class: "who", text: S.winner }), h("div", { class: "how", text: jt ? "jury " + jt : "winner" })));
   }
   return h("header", { class: "hero" }, h("div", { class: "wrap" },
-    h("p", { class: "kicker", text: "Agent Survivor · Season " + (S.date || S.season_id) }),
+    h("p", { class: "kicker", text: "Agent Survivor · Season " + (S.started_utc ? S.started_utc.slice(0, 10) : S.date || S.season_id) }),
     h("h1", { text: title }),
     h("p", { class: "hero-sub", text: blurb + " " + facts.join(", ") + "." }),
     h("details", { class: "run" }, h("summary", { text: "Run details" }), h("div", { class: "tags" }, tags.map(function (t) { return h("span", { class: "tag", text: t }); }))),
@@ -561,7 +625,7 @@ function hero() {
     stops.length ? h("div", { class: "card tl" },
       h("div", { class: "tl-head" }, h("span", { class: "tl-label", text: "Elimination order" }), h("span", { class: "tl-winner", text: S.winner ? "Winner: " + S.winner : "" })),
       h("div", { class: "tl-scroll" }, h("div", { class: "tl-track" }, stops))) : null,
-    S.recorded_at ? h("p", { class: "updated", text: "Recorded " + S.recorded_at + (S.elapsed_s >= 60 ? " · ran " + Math.round(S.elapsed_s / 60) + " min" : "") }) : null,
+    S.started_utc || S.recorded_at ? h("p", { class: "updated" }, S.started_utc ? ["Started ", h("time", { datetime: S.started_utc.replace(" ", "T").replace(" UTC", "Z"), text: S.started_utc })] : ["Recorded " + S.recorded_at], S.elapsed_s >= 60 ? " · ran " + Math.round(S.elapsed_s / 60) + " min" : "") : null,
     D.takeaways.length ? h("div", { class: "takes" }, D.takeaways.map(function (t) {
       var lead = t.lead || (t.models && t.models.length ? nm(t.models[0]) : (S.finished ? "–" : STOPPED ? "Stopped" : "In progress"));
       return h("div", { class: "card take" + (t.label === "Winner" ? " hl" : "") }, h("div", { class: "k-lab", text: t.label }), h("div", { class: "k-val", text: lead }), h("p", { class: "k-sub", text: t.text }));
@@ -575,27 +639,47 @@ var hasCost = M.some(function (m) { return m.est_cost_per_round_usd != null; });
 var COST_WORD = S.cost_basis === "measured" ? "Cost" : "Est. cost";
 var hasTime = M.some(function (m) { return m.median_response_ms != null; });
 var COLS = [
-  { g: "Result", k: "survivor_index", label: "Survivor Index", unit: "0 to 100", get: function (m) { return m.survivor_index; }, fmt: f1, cls: "idx" },
-  { g: "Result", k: "place", label: "Place", unit: "of " + M.length, get: function (m) { return m.place_known ? m.place : null; }, fmt: String, low: true },
+  { g: "Result", k: "survivor_index", def: "Survivor Index", label: "Survivor Index", unit: "0 to 100", get: function (m) { return m.survivor_index; }, fmt: f1, cls: "idx" },
+  { g: "Result", k: "place", def: "Place", label: "Place", unit: "of " + M.length, get: function (m) { return m.place_known ? m.place : null; }, fmt: String, low: true },
   { g: "Result", k: "jury", label: "Jury votes", get: function (m) { return m.jury_votes; }, fmt: String },
-  { g: "Challenge", k: "acc", label: "Puzzles right", unit: "share", get: function (m) { return m.challenge_attempts ? m.challenge_accuracy : null; }, fmt: pct, tip: function (m) { return frac(m.challenge_correct, m.challenge_attempts) + " puzzles"; } },
+  { g: "Challenge", k: "acc", def: "Challenge", show: function (m) { return ratio(m.challenge_correct, m.challenge_attempts); }, label: "Puzzles right", unit: "share", get: function (m) { return m.challenge_attempts ? m.challenge_accuracy : null; }, fmt: pct, tip: function (m) { return frac(m.challenge_correct, m.challenge_attempts) + " puzzles"; } },
   { g: "Challenge", k: "imm", label: "Immunity", unit: "wins", get: function (m) { return m.immunity_wins; }, fmt: String },
   hasTime ? { g: "Challenge", k: "ms", label: "Answer time", unit: "median s", get: function (m) { return m.median_response_ms == null ? null : m.median_response_ms / 1000; }, fmt: f1, low: true } : null,
-  { g: "Votes", k: "with", label: "Voted with outcome", unit: "share of councils", get: function (m) { return m.with_outcome_rate; }, fmt: pct, tip: function (m) { return m.voted_with_outcome + " of " + m.votes_decided + " councils"; } },
+  { g: "Votes", k: "with", def: "Voted with outcome", show: function (m) { return ratio(m.voted_with_outcome, m.votes_decided); }, label: "Voted with outcome", unit: "share of councils", get: function (m) { return m.with_outcome_rate; }, fmt: pct, tip: function (m) { return m.voted_with_outcome + " of " + m.votes_decided + " councils"; } },
   { g: "Votes", k: "against", label: "Votes against", unit: "season", get: function (m) { return m.votes_received; }, fmt: String, noheat: true },
-  hasPred ? { g: "Votes", k: "pred", label: "Votes predicted", unit: "share right", get: function (m) { return m.prediction_accuracy; }, fmt: pct } : null,
-  hasProm ? { g: "Social", k: "prom", label: "Promises kept", unit: "share", get: function (m) { return m.promises_made ? m.promises_kept / m.promises_made : null; }, fmt: pct, tip: function (m) { return m.promises_kept + " kept, " + m.promises_broken + " broken of " + m.promises_made; } } : null,
-  hasCost ? { g: "Cost", k: "cost", label: COST_WORD, unit: "USD per round", get: function (m) { return m.est_cost_per_round_usd; }, fmt: usd, low: true, tip: function (m) { return m.calls + " calls, " + usd(m.est_cost_usd) + " for the season"; } } : null
+  hasPred ? { g: "Votes", k: "pred", def: "Votes predicted", show: function (m) { return ratio(m.predictions_right, m.predictions_of); }, label: "Votes predicted", unit: "share right", get: function (m) { return m.prediction_accuracy; }, fmt: pct } : null,
+  hasProm ? { g: "Social", k: "prom", def: "Promises kept", show: function (m) { return ratio(m.promises_kept, m.promises_made); }, label: "Promises kept", unit: "share", get: function (m) { return m.promises_made ? m.promises_kept / m.promises_made : null; }, fmt: pct, tip: function (m) { return m.promises_kept + " kept, " + m.promises_broken + " broken of " + m.promises_made; } } : null,
+  hasCost ? { g: "Cost", k: "cost", def: "Cost", label: COST_WORD, unit: "USD per round", get: function (m) { return m.est_cost_per_round_usd; }, fmt: usd, low: true, tip: function (m) { return m.calls + " calls, " + usd(m.est_cost_usd) + " for the season"; } } : null
 ].filter(Boolean);
 var PARTS = COMP.map(function (key) {
   return { g: "Index parts (points)", k: "p_" + key, label: D.component_labels[key] || key, unit: "max " + Math.round(S.weights[key] * 100), part: true,
     get: function (m) { return m.points[key]; }, fmt: f1, tip: function (m) { return pct(m.components[key]) + " of the " + Math.round(S.weights[key] * 100) + " points"; } };
 });
-var lbState = { sort: "survivor_index", dir: -1, parts: false, ids: false, q: "", open: {} };
+var STATE = (function () {
+  var q = new URLSearchParams(location.search), out = {};
+  if (q.get("sort")) out.sort = q.get("sort");
+  if (q.get("dir")) out.dir = q.get("dir") === "asc" ? 1 : -1;
+  if (q.get("rows")) out.rows = q.get("rows").split(",");
+  if (q.get("rounds")) out.rounds = q.get("rounds").split(",").map(Number);
+  return out;
+})();
+function saveState() {
+  try {
+    var q = new URLSearchParams(location.search);
+    q.set("sort", lbState.sort); q.set("dir", lbState.dir > 0 ? "asc" : "desc");
+    var rows = Object.keys(lbState.open).filter(function (k) { return lbState.open[k]; });
+    if (rows.length) q.set("rows", rows.join(",")); else q.delete("rows");
+    var rounds = [].map.call(document.querySelectorAll("details.round[open]"), function (d) { return d.id.replace("round-", ""); });
+    if (rounds.length) q.set("rounds", rounds.join(",")); else q.delete("rounds");
+    history.replaceState(null, "", location.pathname + "?" + q.toString() + location.hash);
+  } catch (e) { /* file:// or a sandbox: state is not kept */ }
+}
+var lbState = { sort: STATE.sort || "survivor_index", dir: STATE.dir || -1, parts: false, ids: false, q: "", open: {} };
+(STATE.rows || []).forEach(function (id) { lbState.open[id] = true; });
 if (ENT) lbState.open[ENT] = true;
 
 function leaderboard() {
-  var sec = section("leaderboard", "02", "Leaderboard", "One row per model, sortable by any column. Click a row for its round-by-round record. Shading marks the top three in a column." + (Object.keys(ALIAS).length ? " The name in brackets is the one the other players knew the model by." : ""));
+  var sec = section("leaderboard", "02", "Leaderboard", "One row per model, sortable by any column. Open a row for its round-by-round record. Shading marks a column's one best value, when no other model ties it. One season is one game: the order says what happened, not which model is better." + (Object.keys(ALIAS).length ? " The name in brackets is the one the other players knew the model by." : ""));
   var wrap = h("div", { class: "card tbl-wrap" });
   function draw() {
     var cols = lbState.parts ? COLS.slice(0, 3).concat(PARTS, COLS.slice(3)) : COLS;
@@ -607,12 +691,14 @@ function leaderboard() {
       if (x == null) return 1; if (y == null) return -1;
       return (x - y) * lbState.dir || a.rank - b.rank;
     });
+    /* shade a column's one best value, and only when no other player ties it */
     var top = {};
     cols.forEach(function (c) {
       if (c.noheat) return;
       var vals = M.map(c.get).filter(function (v) { return v != null; });
-      var uniq = vals.filter(function (v, i) { return vals.indexOf(v) === i; }).sort(function (a, b) { return c.low ? a - b : b - a; });
-      top[c.k] = uniq.slice(0, Math.min(3, uniq.length - 1));
+      if (vals.length < 2) return;
+      var best = c.low ? Math.min.apply(null, vals) : Math.max.apply(null, vals);
+      if (vals.filter(function (v) { return v === best; }).length === 1) top[c.k] = [best];
     });
     var groups = [];
     cols.forEach(function (c) { var last = groups[groups.length - 1]; if (last && last.g === c.g) last.n++; else groups.push({ g: c.g, n: 1 }); });
@@ -624,31 +710,41 @@ function leaderboard() {
       h("tr", { class: "cols" }, h("th", { class: "name", text: "Model" }), cols.map(function (c) {
         var active = lbState.sort === c.k;
         return h("th", { class: gstart[c.k] ? "gstart" : null, "aria-sort": active ? (lbState.dir < 0 ? "descending" : "ascending") : null },
-          h("button", { type: "button", onclick: function () {
+          h("button", { type: "button", "data-k": c.k, onclick: function () {
             if (active) lbState.dir = -lbState.dir; else { lbState.sort = c.k; lbState.dir = c.low ? 1 : -1; }
             draw();
-          } }, h("span", null, c.label, c.unit ? h("span", { class: "unit", text: c.unit }) : null), h("span", { class: "arr", text: active ? (lbState.dir < 0 ? "▼" : "▲") : "↕" })));
+            var again = wrap.querySelector('th button[data-k="' + c.k + '"]'); if (again) again.focus();
+            announce("Sorted by " + c.label + (lbState.dir < 0 ? ", highest first" : ", lowest first"));
+          } }, h("span", null, c.label, c.unit ? h("span", { class: "unit", text: c.unit }) : null), h("span", { class: "arr", "aria-hidden": "true", text: active ? (lbState.dir < 0 ? "▼" : "▲") : "↕" })),
+          c.def ? h("a", { class: "col-def", href: "#def-" + slug(c.def), "aria-label": "What " + c.label + " means", text: "?" }) : null);
       })));
     var tbody = h("tbody");
-    rows.forEach(function (m) {
+    rows.forEach(function (m, position) {
       var open = !!lbState.open[m.agent_id];
-      tbody.appendChild(h("tr", { class: "row" + (open ? " open" : "") + (m.agent_id === ENT ? " you" : ""), onclick: function () { lbState.open[m.agent_id] = !open; draw(); } },
+      function flip(e) {
+        if (e) e.stopPropagation();
+        lbState.open[m.agent_id] = !open; draw(); saveState();
+        var again = wrap.querySelector('button[data-row="' + m.agent_id + '"]'); if (again) again.focus();
+      }
+      tbody.appendChild(h("tr", { class: "row" + (open ? " open" : "") + (m.agent_id === ENT ? " you" : ""), onclick: function () { flip(); } },
         h("td", { class: "name" }, h("div", { class: "who" },
-          h("span", { class: "caret", text: "▸" }),
-          h("span", { class: "rk", text: m.rank }), mdot(m),
+          h("button", { class: "caret-btn", type: "button", "data-row": m.agent_id, "aria-expanded": String(open), "aria-label": (open ? "Hide " : "Show ") + m.model + "'s round-by-round record", onclick: flip, text: "▸" }),
+          h("span", { class: "rk", text: position + 1 }), mdot(m),
           h("span", null,
             h("span", { class: "m" }, m.model, m.alias ? h("span", { class: "alias", text: " (" + m.alias + ")" }) : null), m.is_winner ? h("span", { class: "badge", text: "winner" }) : null, m.agent_id === ENT ? h("span", { class: "badge entry", text: "entry" }) : null,
             h("div", { class: "a", text: (lbState.ids && m.model_id ? m.model_id + " · " : "") + m.fate })))),
         cols.map(function (c) {
           var v = c.get(m), rank = v == null || !top[c.k] ? -1 : top[c.k].indexOf(v);
           var shade = rank < 0 ? null : "background-color: rgba(var(--accent-rgb)," + [0.24, 0.15, 0.07][rank] + ")";
-          return h("td", { class: "num" + (c.cls ? " " + c.cls : "") + (gstart[c.k] ? " gstart" : "") + (v == null ? " na" : ""), style: shade, "data-tip": v != null && c.tip ? c.tip(m) : null, text: v == null ? "–" : c.fmt(v) });
+          return h("td", { class: "num" + (c.cls ? " " + c.cls : "") + (gstart[c.k] ? " gstart" : "") + (v == null ? " na" : ""), style: shade, "data-tip": v != null && c.tip ? c.tip(m) : null, text: v == null ? "–" : (c.show ? c.show(m) : c.fmt(v)) });
         })));
       if (open) tbody.appendChild(h("tr", null, h("td", { class: "detail", colspan: cols.length + 1 }, modelDetail(m))));
     });
     if (!rows.length) tbody.appendChild(h("tr", null, h("td", { class: "name", colspan: cols.length + 1, text: "No model matches that filter." })));
     wrap.textContent = "";
-    wrap.appendChild(h("table", { class: "lb" }, thead, tbody));
+    wrap.appendChild(h("table", { class: "lb", "aria-label": "Leaderboard: one row per model" }, thead, tbody));
+    if (lbState.q) announce(rows.length ? rows.length + (rows.length === 1 ? " model matches" : " models match") : "No model matches that filter");
+    saveState();
   }
   function toggle(label, key) {
     var b = h("button", { class: "chip", type: "button", "aria-pressed": "false", text: label, onclick: function () {
@@ -658,7 +754,7 @@ function leaderboard() {
   }
   var search = h("input", { class: "search", type: "search", placeholder: "Filter models" + (M.length ? ", e.g. " + M[M.length - 1].model.split(" ")[0] + ", " + (M[M.length - 1].org || "") : ""), "aria-label": "Filter models", oninput: function () { lbState.q = search.value.trim().toLowerCase(); draw(); } });
   add(sec, [h("div", { class: "controls" }, search, toggle("Index parts", "parts"), toggle("Model ids", "ids")), wrap,
-    h("p", { class: "foot", text: "// Survivor Index v" + S.index_version + " = " + COMP.map(function (k) { return (D.component_labels[k] || k).toLowerCase() + " ×" + Math.round(S.weights[k] * 100); }).join(" + ") + " · shading = top 3 per column" + (hasCost ? (S.cost_basis === "measured" ? " · cost = billed model fees for each player's calls" : " · cost = estimated: recorded calls × token budget × list price") : "") })]);
+    h("p", { class: "foot", text: "// Survivor Index v" + S.index_version + " = " + COMP.map(function (k) { return (D.component_labels[k] || k).toLowerCase() + " ×" + Math.round(S.weights[k] * 100); }).join(" + ") + " · rows numbered in the current order · shading = a column's one best value, when no one ties it" + (hasCost ? (S.cost_basis === "measured" ? " · cost = billed model fees for each player's calls" : " · cost = estimated: recorded calls × token budget × list price") : "") })]);
   draw();
   return sec;
 }
@@ -705,7 +801,7 @@ function composition() {
     bars.appendChild(h("div", { class: "bar-row" }, h("span", { class: "lab", title: m.model }, mdot(m), h("span", { text: m.model })),
       h("div", { class: "track" }, COMP.map(function (k, i) {
         var pts = m.points[k];
-        return pts > 0 ? h("span", { style: "width:" + pts + "%;background:" + COMP_COLOR[i], tabindex: "0", "data-tip": m.model + "\n" + (D.component_labels[k] || k) + ": " + f1(pts) + " of " + Math.round(S.weights[k] * 100) + " points" }) : null;
+        return pts > 0 ? h("span", { style: "width:" + pts + "%;background:" + COMP_COLOR[i], "data-tip": m.model + "\n" + (D.component_labels[k] || k) + ": " + f1(pts) + " of " + Math.round(S.weights[k] * 100) + " points" }) : null;
       })), h("span", { class: "val", text: f1(m.survivor_index) })));
   });
   return add(card, [bars, sourceLine()]);
@@ -719,7 +815,7 @@ function ranked(title, sub, get, fmt, lowFirst, byMaker) {
   var bars = h("div", { class: "bars" });
   rows.forEach(function (m) {
     bars.appendChild(h("div", { class: "bar-row" }, h("span", { class: "lab", title: m.model }, mdot(m), h("span", { text: m.model })),
-      h("div", { class: "track single" }, h("span", { style: "width:" + Math.max(1.5, get(m) / max * 100) + "%;background:" + (byMaker ? orgColor(m.org) : "var(--accent)"), tabindex: "0", "data-tip": m.model + "\n" + fmt(get(m)) + (m.calls ? "\n" + m.calls + " calls over " + m.rounds_played + " rounds" : "") })),
+      h("div", { class: "track single" }, h("span", { style: "width:" + Math.max(1.5, get(m) / max * 100) + "%;background:" + (byMaker ? orgColor(m.org) : "var(--accent)"), "data-tip": m.model + "\n" + fmt(get(m)) + (m.calls ? "\n" + m.calls + " calls over " + m.rounds_played + " rounds" : "") })),
       h("span", { class: "val", text: fmt(get(m)) })));
   });
   return add(card, [bars, sourceLine()]);
@@ -757,7 +853,7 @@ function scatter() {
     pts.slice().sort(function (a, b) { return b.survivor_index - a.survivor_index; }).forEach(function (m) {
       var cx = X(m.est_cost_per_round_usd), cy = Y(m.survivor_index), w = m.model.length * 6.6 + 4;
       var onFrontier = frontier.indexOf(m) >= 0;
-      dots.appendChild(s("circle", { cx: cx, cy: cy, r: 7, fill: orgColor(m.org), stroke: "var(--surface)", "stroke-width": 2, tabindex: "0",
+      dots.appendChild(s("circle", { cx: cx, cy: cy, r: 7, fill: orgColor(m.org), stroke: "var(--surface)", "stroke-width": 2,
         "data-tip": m.model + "\nIndex " + f1(m.survivor_index) + "\n" + usd(m.est_cost_per_round_usd) + " a round, " + usd(m.est_cost_usd) + " for the season" + (onFrontier ? "\nOn the value frontier" : "") }));
       var opts = [{ x: cx + 12, y: cy - 8 }, { x: cx - 14 - w, y: cy - 8 }, { x: cx - w / 2, y: cy - 27 }, { x: cx - w / 2, y: cy + 11 }];
       for (var i = 0; i < opts.length; i++) {
@@ -791,7 +887,7 @@ function radar() {
     chosen.forEach(function (id) {
       var m = byId[id], col = colors[slotOf[id]];
       svg.appendChild(s("polygon", { fill: col, "fill-opacity": .12, stroke: col, "stroke-width": 2, "stroke-linejoin": "round", points: COMP.map(function (k, i) { return pt(i, m.components[k] || 0).join(","); }).join(" ") }));
-      COMP.forEach(function (k, i) { var p = pt(i, m.components[k] || 0); svg.appendChild(s("circle", { cx: p[0], cy: p[1], r: 4, fill: col, stroke: "var(--surface)", "stroke-width": 2, tabindex: "0", "data-tip": m.model + "\n" + (D.component_labels[k] || k) + ": " + pct(m.components[k]) })); });
+      COMP.forEach(function (k, i) { var p = pt(i, m.components[k] || 0); svg.appendChild(s("circle", { cx: p[0], cy: p[1], r: 4, fill: col, stroke: "var(--surface)", "stroke-width": 2, "data-tip": m.model + "\n" + (D.component_labels[k] || k) + ": " + pct(m.components[k]) })); });
     });
     box.textContent = ""; box.appendChild(svg);
     ctl.textContent = "";
@@ -819,7 +915,7 @@ function ladder() {
     h("p", { class: "card-sub", text: "Puzzles answered right in each round's challenge; in a strategy round (#), the number the model picked, where the lowest number nobody else picked won. A dark outline marks the immunity winner; a red underline marks the round a model was voted out." }));
   if (!rounds.length) return add(card, [h("div", { class: "empty", text: "No challenge was recorded." })]);
   var order = M.slice().sort(byPlace);
-  var table = h("table", { class: "heat" }, h("thead", null, h("tr", null, h("th"), rounds.map(function (r) { return h("th", { text: "R" + r.round }); }), h("th", { text: "all" }))));
+  var table = h("table", { class: "heat", "aria-label": "Challenge record: puzzles answered right by each model in each round" }, h("thead", null, h("tr", null, h("th"), rounds.map(function (r) { return h("th", { text: "R" + r.round }); }), h("th", { text: "all" }))));
   var tb = h("tbody");
   order.forEach(function (m) {
     var tr = h("tr", null, h("th", { text: m.model }));
@@ -828,7 +924,7 @@ function ladder() {
         var pk = (r.challenge.picks || []).filter(function (x) { return x.agent_id === m.agent_id; })[0];
         if (!pk) { tr.appendChild(h("td", { class: "off" })); return; }
         var won = r.challenge.immunity_ids.indexOf(m.agent_id) >= 0, gone = r.eliminated_id === m.agent_id;
-        tr.appendChild(h("td", { class: (won ? "imm " : "") + (gone ? "out" : ""), tabindex: "0",
+        tr.appendChild(h("td", { class: (won ? "imm " : "") + (gone ? "out" : ""),
           "data-tip": m.model + ", round " + r.round + "\nStrategy round: picked " + pk.pick + (won ? "\nLowest unique number: won immunity" : "") + (gone ? "\nVoted out this round" : ""),
           text: "#" + pk.pick }));
         return;
@@ -837,7 +933,7 @@ function ladder() {
       if (!st) { tr.appendChild(h("td", { class: "off" })); return; }
       var share = st.of ? st.correct / st.of : 0;
       var imm = r.challenge.immunity_ids.indexOf(m.agent_id) >= 0, out = r.eliminated_id === m.agent_id;
-      tr.appendChild(h("td", { class: (imm ? "imm " : "") + (out ? "out" : ""), tabindex: "0", style: "background:" + mix("var(--accent)", share * 0.9) + (share > 0.55 ? ";color:var(--on-accent)" : ""),
+      tr.appendChild(h("td", { class: (imm ? "imm " : "") + (out ? "out" : ""), style: "background:" + mix("var(--accent)", share * 0.9) + heatText(share * 0.9),
         "data-tip": m.model + ", round " + r.round + "\n" + st.correct + " of " + st.of + " right" + (st.sudden_death ? "\nSudden death: " + st.sudden_death.filter(Boolean).length + " of " + st.sudden_death.length : "") + (imm ? "\nWon immunity" : "") + (out ? "\nVoted out this round" : ""),
         text: st.of > 1 ? st.correct : (st.correct ? "✓" : "·") }));
     });
@@ -856,7 +952,7 @@ function voteMap() {
     sub.textContent = mode === "targeted"
       ? "How many votes each model (row) cast against each other model (column) over the season, revotes included."
       : "How often two models voted for the same player, out of the councils where both voted. High shares point to a voting bloc.";
-    var table = h("table", { class: "heat" }, h("thead", null, h("tr", null, h("th"), VM.order.map(function (id) { return h("th", { class: "vert" }, h("span", { text: nm(id) })); }))));
+    var table = h("table", { class: "heat", "aria-label": "Vote map: rows are voters, columns are the players they voted for" }, h("thead", null, h("tr", null, h("th"), VM.order.map(function (id) { return h("th", { class: "vert" }, h("span", { text: nm(id) })); }))));
     var tb = h("tbody");
     var max = 1; VM.order.forEach(function (a) { VM.order.forEach(function (b) { max = Math.max(max, VM.targeted[a][b]); }); });
     VM.order.forEach(function (a) {
@@ -865,11 +961,11 @@ function voteMap() {
         if (a === b) { tr.appendChild(h("td", { class: "self" })); return; }
         if (mode === "targeted") {
           var n = VM.targeted[a][b];
-          tr.appendChild(h("td", { tabindex: n ? "0" : null, style: n ? "background:" + mix("var(--accent)", 0.25 + 0.65 * n / max) + (n / max > 0.5 ? ";color:var(--on-accent)" : "") : null, "data-tip": n ? nm(a) + " voted for " + nm(b) + " " + n + (n === 1 ? " time" : " times") : null, text: n || "" }));
+          tr.appendChild(h("td", { style: n ? "background:" + mix("var(--accent)", 0.25 + 0.65 * n / max) + heatText(0.25 + 0.65 * n / max) : null, "data-tip": n ? nm(a) + " voted for " + nm(b) + " " + n + (n === 1 ? " time" : " times") : null, text: n || "" }));
         } else {
           var sh = VM.shared_rounds[a][b], tg = VM.together[a][b];
           if (!sh) { tr.appendChild(h("td", { class: "off" })); return; }
-          tr.appendChild(h("td", { tabindex: "0", style: "background:" + mix("var(--accent)", 0.9 * tg / sh) + (tg / sh > 0.6 ? ";color:var(--on-accent)" : ""), "data-tip": nm(a) + " and " + nm(b) + "\nvoted the same way in " + tg + " of " + sh + " councils", text: tg + "/" + sh }));
+          tr.appendChild(h("td", { style: "background:" + mix("var(--accent)", 0.9 * tg / sh) + heatText(0.9 * tg / sh), "data-tip": nm(a) + " and " + nm(b) + "\nvoted the same way in " + tg + " of " + sh + " councils", text: tg + "/" + sh }));
         }
       });
       tb.appendChild(tr);
@@ -1098,7 +1194,9 @@ function rounds() {
     all = !all; btn.textContent = all ? "Close all rounds" : "Open all rounds";
     [].forEach.call(sec.querySelectorAll("details.round"), function (d) { d.open = all; });
   } });
-  return add(sec, [h("div", { class: "controls" }, btn), h("div", { class: "rounds-list" }, D.rounds.map(function (r, i) { return roundCard(r, i === 0); }))]);
+  var list = h("div", { class: "rounds-list" }, D.rounds.map(function (r, i) { return roundCard(r, STATE.rounds ? STATE.rounds.indexOf(r.round) >= 0 : i === 0); }));
+  list.addEventListener("toggle", function () { saveState(); }, true);
+  return add(sec, [h("div", { class: "controls" }, btn), list]);
 }
 
 /* ---------- finale */
@@ -1177,18 +1275,18 @@ function method() {
     ["Which model won this season?", winner ? winner + " won. " + (D.takeaways[0] ? D.takeaways[0].text : "") : "The season has no winner yet."],
     ["Which model has the highest Survivor Index?", top ? top.model + ", at " + f1(top.survivor_index) + " out of 100." + (M[1] ? " " + M[1].model + " is second at " + f1(M[1].survivor_index) + "." : "") : "No model has a score yet."],
     ["Why can the winner differ from the top of the index?", "The jury picks the winner from the finalists. The index scores every model's whole season, including models that were voted out early, so a strong player who misses the final can outscore the winner."],
-    ["How much can one season tell me?", "One season is one sample. A single vote can end a strong model's run, so treat this page as a record of what happened, and use the totals across seasons to compare models."],
+    ["How much can one season tell me?", "One season is one game. A single vote can end a strong model's run, and players of equal skill spread widely in one season, so this page is a record of what happened, not a ranking of which model is better. Counts are shown as k of n; a percentage and a 95% range appear only from ten events up, and a \u201cbest at\u201d label only when one player's range clears every other's."],
     social ? ["Do the models know which models they are playing against?", "No. Players go by neutral tree names such as Ash and Cedar and never see a model name or id. Model names on this page are for readers."] : null,
     ["Can I get the data?", "Yes. The Download data button saves everything on this page as one JSON file."]
   ].filter(Boolean);
-  function terms(items) { return h("div", { class: "card card-pad" }, h("ul", { class: "terms" }, items.map(function (it) { return h("li", null, h("b", { text: it[0] }), h("span", { text: it[1] })); }))); }
+  function terms(items, anchors) { return h("div", { class: "card card-pad" }, h("ul", { class: "terms" }, items.map(function (it) { return h("li", { id: anchors ? "def-" + slug(it[0]) : null }, h("b", { text: it[0] }), h("span", { text: it[1] })); }))); }
   // which rules this season was played under, and where the full rules and their changes are described
   var R = D.rules || {};
   var rulesNote = R.version
     ? h("p", { class: "card-sub" }, "Played under rules version " + R.version + (R.current && R.current !== R.version ? "; the current rules are version " + R.current + ". " : ". "),
         h("a", { href: (LINKS.site || "") + "/methodology#changes", text: "How the game works, and what changed" }), ".")
     : null;
-  return add(sec, [rulesNote, h("h3", { class: "meth-head first", text: "Key definitions" }), terms(defs), h("h3", { class: "meth-head", text: "Questions" }), terms(faqs)].filter(Boolean));
+  return add(sec, [rulesNote, h("h3", { class: "meth-head first", text: "Key definitions" }), terms(defs, true), h("h3", { class: "meth-head", text: "Questions" }), terms(faqs)].filter(Boolean));
 }
 
 /* ---------- shell */
@@ -1216,7 +1314,7 @@ function intentUrl(text, anchor) {
 function copyButton(label, getText) {
   var b = h("button", { class: "chip", type: "button", text: label, onclick: function () {
     var text = getText();
-    function done(ok) { b.textContent = ok ? "Copied" : "Copy failed"; setTimeout(function () { b.textContent = label; }, 1600); }
+    function done(ok) { b.textContent = ok ? "Copied" : "Copy failed"; announce(ok ? "Copied to the clipboard" : "Copy failed"); setTimeout(function () { b.textContent = label; }, 1600); }
     function fallback() {
       var area = h("textarea", { style: "position:fixed;left:-999px;top:0" }); area.value = text; document.body.appendChild(area); area.select();
       var ok = false; try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
@@ -1262,11 +1360,17 @@ function playerPost(m) {
   return bits.join(" ");
 }
 function ordinal(n) { var t = n % 100; return n + (t >= 10 && t <= 20 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" })[n % 10] || "th"); }
+function quoteBlock(text) {
+  var q = h("blockquote", { text: text });
+  if (text.length < 220) return q;
+  var more = h("button", { class: "quote-more", type: "button", "aria-expanded": "false", text: "Show more", onclick: function () {
+    var open = q.classList.toggle("open"); more.textContent = open ? "Show less" : "Show more"; more.setAttribute("aria-expanded", String(open));
+  } });
+  return [q, more];
+}
 function playerStats(m) {
-  var stats = [["Index", f1(m.survivor_index)], ["Place", m.place_known ? ordinal(m.place) : "–"], ["Puzzles", frac(m.challenge_correct, m.challenge_attempts)], ["With the vote", m.votes_decided ? m.voted_with_outcome + "/" + m.votes_decided : "–"]];
-  if (m.promises_made) stats.push(["Promises kept", m.promises_kept + "/" + m.promises_made]);
-  else stats.push(["Votes against", String(m.votes_received)]);
-  return stats;
+  return [["Index", f1(m.survivor_index)], ["Place", m.place_known ? ordinal(m.place) : "–"], ["Puzzles", frac(m.challenge_correct, m.challenge_attempts)],
+    ["With the vote", m.votes_decided ? m.voted_with_outcome + "/" + m.votes_decided : "–"], ["Promises kept", m.promises_made ? m.promises_kept + "/" + m.promises_made : "–"]];
 }
 function players() {
   var byPlaceEntryFirst = function (a, b) { return (b.agent_id === ENT) - (a.agent_id === ENT) || byPlace(a, b); };
@@ -1280,7 +1384,7 @@ function players() {
       m.tags.length ? h("div", { class: "tags" }, m.tags.map(function (t) { return h("span", { class: "tag", text: t }); })) : null,
       h("div", { class: "player-s" }, playerStats(m).map(function (st) { return h("div", null, h("div", { class: "k-lab", text: st[0] }), h("div", { class: "k-val", text: st[1] })); })),
       (function () { var f = failureParts(m); return f && f.length ? h("p", { class: "note fail-note", text: "Failed to answer: " + f.join("; ") + "." }) : null; })(),
-      m.quote ? h("blockquote", { text: m.quote }) : null,
+      m.quote ? quoteBlock(m.quote) : null,
       shareRow(id, playerPost(m)));
   }))]);
 }
@@ -1352,15 +1456,23 @@ if (cardWanted) {
   app.appendChild(shareCard(cardWanted[1]));
   return;
 }
-app.appendChild(h("div", { class: "top" }, h("div", { class: "wrap top-in" },
+app.appendChild(h("a", { class: "skip", href: "#main", text: "Skip to the report" }));
+app.appendChild(h("div", { id: "live", class: "sr", "aria-live": "polite" }));
+var themeBtn = h("button", { class: "theme-btn", type: "button", onclick: function () { toggleTheme(themeBtn); } });
+themeBtn.textContent = currentTheme() === "dark" ? "Light" : "Dark";
+themeBtn.setAttribute("aria-label", "Switch to the " + (currentTheme() === "dark" ? "light" : "dark") + " theme");
+app.appendChild(h("header", { class: "top" }, h("div", { class: "wrap top-in" },
   h("a", { class: "brand", href: LINKS.site || "#" }, h("span", { class: "pulse" }), "Agent Survivor", h("span", { class: "sub", text: " · Season report" })),
   h("nav", { "aria-label": "Report sections" }, (EV ? [["entry", "The entry"]] : []).concat([["moments", "Moments"], ["leaderboard", "Leaderboard"], ["players", "Players"], ["insights", "Insights"], ["character", "Character"], ["rounds", "Rounds"], ["finale", "Finale"], ["method", "Method"]]).map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
-  h("button", { class: "btn", type: "button", text: "Download data", onclick: download }))));
-var main = h("main", null, guarded("top", "Summary", hero), (EV ? [["entry", "The entry", entryView]] : []).concat([
+  h("button", { class: "btn", type: "button", text: "Download data", onclick: download }), themeBtn)));
+var main = h("main", { id: "main", tabindex: "-1" }, guarded("top", "Summary", hero), (EV ? [["entry", "The entry", entryView]] : []).concat([
   ["moments", "Moments", moments], ["leaderboard", "Leaderboard", leaderboard], ["players", "Players", players], ["insights", "Insights", insights],
   ["character", "Character", character], ["rounds", "Round by round", rounds], ["finale", "Finale", finale], ["method", "Method", method]
 ]).map(function (sec) { return guarded(sec[0], sec[1], sec[2]); }));
 app.appendChild(main);
+/* print or save as PDF: every round and talk open */
+window.addEventListener("beforeprint", function () { [].forEach.call(document.querySelectorAll("details"), function (d) { d.setAttribute("data-was", d.open ? "1" : ""); d.open = true; }); });
+window.addEventListener("afterprint", function () { [].forEach.call(document.querySelectorAll("details[data-was]"), function (d) { d.open = d.getAttribute("data-was") === "1"; d.removeAttribute("data-was"); }); });
 app.appendChild(h("footer", null, h("div", { class: "wrap" },
   !EV && LINKS.site ? h("div", { class: "card cta" }, h("p", { text: "Enter a model of your choice in the next season: it plays the house models under the same rules, and you get this report about it." }), h("a", { class: "btn-solid", href: LINKS.site.replace(/\/$/, "") + "/enter", text: "Enter a model" })) : null,
   HANDLE ? h("div", { class: "card cta" }, h("p", { text: "A new season runs with new models. The results and the best moments are posted on X first." }), h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE })) : null,

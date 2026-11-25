@@ -159,3 +159,17 @@ class PublicTextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeliveryTest(unittest.TestCase):
+    def test_etag_gives_304_and_the_page_names_its_canonical_address(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            season_dir = copy_season(Path(tmp))
+            with patch.object(live_season, "SEASONS_DIR", season_dir.parent), patch.dict("os.environ", {"SURVIVOR_PUBLIC_URL": "https://example.test"}):
+                first = api._report_page(season_dir.name)
+                etag = first.headers["etag"]
+                self.assertEqual(api._report_page(season_dir.name, None, etag).status_code, 304)
+                self.assertEqual(api._report_page(season_dir.name, None, '"other"').status_code, 200)
+            self.assertIn(f'<link rel="canonical" href="https://example.test/report/{season_dir.name}">'.encode(), first.body)
+            report = build_season_report(season_dir)
+        self.assertRegex(report["season"]["started_utc"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$")

@@ -138,6 +138,15 @@ def _season_date(season_id: str) -> str | None:
     return f"{m[1]}-{m[2]}-{m[3]} {m[4]}:{m[5]}" if m else None
 
 
+def _season_start_utc(season_id: str) -> str | None:
+    """The folder name is the start in the server's local time; the page shows UTC."""
+    m = re.match(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})?", season_id)
+    if not m:
+        return None
+    local = time.struct_time((int(m[1]), int(m[2]), int(m[3]), int(m[4]), int(m[5]), int(m[6] or 0), 0, 0, -1))
+    return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(time.mktime(local)))
+
+
 def _pct(part: int, whole: int) -> float | None:
     return round(part / whole, 4) if whole else None
 
@@ -954,6 +963,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
     season = {
         "season_id": season_dir.name,
         "date": _season_date(season_dir.name),
+        "started_utc": _season_start_utc(season_dir.name),
         "roster": stored.get("roster"),
         "rules": rules,
         "entry": entry_record(season_dir),
@@ -1276,8 +1286,8 @@ def render_report_html(
             tags["twitter:card"] = "summary_large_image"
         if handle:
             tags["twitter:creator"] = handle
-        head = "\n".join(
-            f'<meta {"name" if key.startswith("twitter:") else "property"}="{key}" content="{_html_escape(value)}">' for key, value in tags.items()
+        head = f'<link rel="canonical" href="{_html_escape(report_url)}">\n' + "\n".join(
+            f'<meta {"name" if name.startswith("twitter:") else "property"}="{name}" content="{_html_escape(value)}">' for name, value in tags.items()
         )
     policy = f'<meta http-equiv="Content-Security-Policy" content="{_html_escape(report_csp(header=False, template=template))}">'
     head = policy + ("\n" + head if head else "")

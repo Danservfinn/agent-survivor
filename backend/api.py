@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -1142,7 +1143,7 @@ def api_live_season_report(season_id: str, k: str | None = None) -> dict:
     return cached_season_report(_report_season_dir(season_id, k))
 
 
-def _report_page(season_id: str | None, key: str | None = None) -> Response:
+def _report_page(season_id: str | None, key: str | None = None, request_etag: str | None = None) -> Response:
     from . import season_visibility
     from .season_report import cached_season_report, render_report_html
 
@@ -1162,20 +1163,23 @@ def _report_page(season_id: str | None, key: str | None = None) -> Response:
         video=has_video,
         link_key=season_visibility.link_key(season_dir),
     )
-    headers = {"Cache-Control": PAGE_CACHE_CONTROL, "Content-Security-Policy": REPORT_CSP, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
+    etag = '"' + hashlib.sha256(html.encode("utf-8")).hexdigest()[:32] + '"'
+    headers = {"Cache-Control": PAGE_CACHE_CONTROL, "Content-Security-Policy": REPORT_CSP, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "ETag": etag}
+    if request_etag and etag in [t.strip() for t in request_etag.split(",")]:
+        return Response(status_code=304, headers=headers)
     if season_visibility.link_key(season_dir):
         headers["X-Robots-Tag"] = "noindex"  # an unlisted report stays out of search engines
     return Response(content=html, media_type="text/html; charset=utf-8", headers=headers)
 
 
 @app.api_route("/report", methods=["GET", "HEAD"], include_in_schema=False)
-def season_report_latest_page() -> Response:
-    return _report_page(None)
+def season_report_latest_page(request: Request = None) -> Response:  # type: ignore[assignment]
+    return _report_page(None, None, request.headers.get("if-none-match") if request is not None else None)
 
 
 @app.api_route("/report/{season_id}", methods=["GET", "HEAD"], include_in_schema=False)
-def season_report_page(season_id: str, k: str | None = None) -> Response:
-    return _report_page(season_id, k)
+def season_report_page(season_id: str, k: str | None = None, request: Request = None) -> Response:  # type: ignore[assignment]
+    return _report_page(season_id, k, request.headers.get("if-none-match") if request is not None else None)
 
 
 @app.api_route("/report/{season_id}/share/{name}", methods=["GET", "HEAD"], include_in_schema=False)
