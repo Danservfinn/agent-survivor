@@ -421,6 +421,39 @@ function who(id) {
   var alias = ALIAS[id];
   return alias ? [nm(id), h("span", { class: "alias", text: " (" + alias + ")" })] : nm(id);
 }
+function tallyText(r) {
+  if (r.tally_text) return r.tally_text;
+  var counts = Object.keys(r.tally || {}).map(function (k) { return r.tally[k]; }).sort(function (a, b) { return b - a; });
+  return counts.join("-") + (r.revote_tally ? ", revote" : "");
+}
+var DECIDED = { revote: "after a revote", unanimous: "after a deadlock, by a unanimous decision", rocks: "after a deadlock, by drawing rocks", tiebreak: "after a deadlock, by the challenge-record tiebreak" };
+/* a season ends with a winner, stops early (cost cap, outage), or is still running */
+var STOPPED = !S.winner && (S.cap_reached || S.interrupted);
+var LAST_PLAYED = Math.max.apply(null, [0].concat(D.rounds.map(function (r) { return r.round; })));
+function seasonTitle() {
+  if (S.winner) return S.winner + " won the season.";
+  if (STOPPED) return "Season stopped after round " + LAST_PLAYED + ".";
+  return "Season in progress.";
+}
+function stopReason() {
+  var caps = { max_estimated_cost_cents: "it reached its cost cap", max_live_calls: "it reached its limit on model calls", max_rounds: "it reached its round limit" };
+  return S.cap_reached ? (caps[S.cap_reached] || "it reached a limit") : S.interrupted ? "a model provider failed and the season was stopped rather than charge a player for it" : "";
+}
+/* how often a player failed to give a usable answer, in words */
+function failureParts(m) {
+  var rel = m.reliability; if (!rel) return null;
+  var parts = [];
+  var sp = rel.spoiled_votes || [];
+  if (sp.length) parts.push(sp.length + (sp.length === 1 ? " spoiled vote" : " spoiled votes") + " (" + sp.map(function (x) { return "R" + x.round + (x.ballot === "revote" ? " revote" : ""); }).join(", ") + ")");
+  if (rel.silent_lines) parts.push(rel.silent_lines + (rel.silent_lines === 1 ? " silent turn" : " silent turns"));
+  var pu = rel.puzzle_rounds_unanswered || [];
+  if (pu.length) parts.push(pu.length + (pu.length === 1 ? " challenge" : " challenges") + " unanswered (" + pu.map(function (x) { return "R" + x; }).join(", ") + ")");
+  if (rel.plans_missing) parts.push(rel.plans_missing + (rel.plans_missing === 1 ? " private plan" : " private plans") + " not written");
+  if (rel.call_errors) parts.push(rel.call_errors + (rel.call_errors === 1 ? " call failed" : " calls failed"));
+  if (rel.unreadable_replies) parts.push(rel.unreadable_replies + (rel.unreadable_replies === 1 ? " reply" : " replies") + " not in the asked format");
+  return parts;
+}
+function secs(ms) { return ms == null ? "–" : (ms >= 10000 ? Math.round(ms / 1000) : (ms / 1000).toFixed(1)) + " s"; }
 function byPlace(a, b) { return (a.place == null ? 1e9 : a.place) - (b.place == null ? 1e9 : b.place); }
 function orNeg(x) { return x == null ? -1 : x; }
 function f1(x) { return x == null ? "–" : Number(x).toFixed(1); }
@@ -464,10 +497,10 @@ document.addEventListener("focusin", function (e) {
 /* ---------- hero */
 function hero() {
   var councils = D.rounds.filter(function (r) { return r.eliminated_id; });
-  var title = S.winner ? S.winner + " won the season." : "Season in progress.";
+  var title = seasonTitle();
   var facts = [S.players + " models", "rounds " + S.first_round + " to " + S.last_round, councils.length + (councils.length === 1 ? " council" : " councils")];
   if (S.contestant_calls) facts.push(S.contestant_calls + " contestant calls");
-  if (S.run_est_cost_cents) facts.push("about $" + (S.run_est_cost_cents / 100).toFixed(2) + " to run");
+  if (S.contestant_est_cost_usd) facts.push((S.cost_basis === "measured" ? "" : "about ") + "$" + S.contestant_est_cost_usd.toFixed(2) + " in model fees for the players' calls" + (S.cost_complete ? "" : " (some models unpriced)"));
   var social = S.rules === "social-game";
   var blurb = social
     ? "Models play one group under neutral names. Each round they solve a five-puzzle ladder for immunity, talk in private, make vote promises and vote one player out. A jury of the players they voted out picks the winner."
@@ -477,11 +510,11 @@ function hero() {
   if (S.season_seed != null) tags.push("seed " + S.season_seed);
 
   var stops = councils.map(function (r) {
-    var counts = Object.keys(r.tally).map(function (k) { return r.tally[k]; }).sort(function (a, b) { return b - a; });
+    var tt = tallyText(r);
     return h("div", { class: "tl-stop" },
       h("div", { class: "r", text: "R" + r.round }), h("div", { class: "pt" }),
       h("div", { class: "who", text: nm(r.eliminated_id) }),
-      h("div", { class: "how", text: counts.length ? "out " + counts.join("-") + (r.revote_tally ? ", revote" : "") : "out" }));
+      h("div", { class: "how", text: tt ? "out " + tt : "out" }));
   });
   if (S.winner) {
     var jt = D.finale ? Object.keys(D.finale.tally).map(function (k) { return D.finale.tally[k]; }).sort(function (a, b) { return b - a; }).join("-") : "";
@@ -494,13 +527,13 @@ function hero() {
     h("p", { class: "hero-sub", text: blurb + " " + facts.join(", ") + "." }),
     h("div", { class: "tags" }, tags.map(function (t) { return h("span", { class: "tag", text: t }); })),
     S.mode !== "live" ? h("div", { class: "banner" }, h("strong", { text: "Test run. " }), "No model was called in this season. Players followed scripted fallback moves, so nothing on this page is a benchmark result.") : null,
-    S.mode === "live" && !S.finished ? h("div", { class: "banner" }, h("strong", { text: S.interrupted ? "Interrupted season. " : "Unfinished season. " }), "This season has no final result. The figures cover only the rounds that were played.") : null,
+    S.mode === "live" && !S.finished ? h("div", { class: "banner" }, h("strong", { text: STOPPED ? "Stopped season. " : "Unfinished season. " }), (STOPPED ? "This season stopped after round " + LAST_PLAYED + " because " + stopReason() + ". It has no winner. " : "This season has no final result yet. ") + "The figures cover only the rounds that were played, and players still in the game share their place.") : null,
     stops.length ? h("div", { class: "card tl" },
       h("div", { class: "tl-head" }, h("span", { class: "tl-label", text: "Elimination order" }), h("span", { class: "tl-winner", text: S.winner ? "Winner: " + S.winner : "" })),
       h("div", { class: "tl-scroll" }, h("div", { class: "tl-track" }, stops))) : null,
     S.recorded_at ? h("p", { class: "updated", text: "Recorded " + S.recorded_at + (S.elapsed_s >= 60 ? " · ran " + Math.round(S.elapsed_s / 60) + " min" : "") }) : null,
     D.takeaways.length ? h("div", { class: "takes" }, D.takeaways.map(function (t) {
-      var lead = t.models && t.models.length ? nm(t.models[0]) : (S.finished ? "–" : "In progress");
+      var lead = t.models && t.models.length ? nm(t.models[0]) : (S.finished ? "–" : STOPPED ? "Stopped" : "In progress");
       return h("div", { class: "card take" + (t.label === "Winner" ? " hl" : "") }, h("div", { class: "k-lab", text: t.label }), h("div", { class: "k-val", text: lead }), h("p", { class: "k-sub", text: t.text }));
     })) : null));
 }
@@ -509,6 +542,7 @@ function hero() {
 var hasPred = M.some(function (m) { return m.prediction_accuracy != null; });
 var hasProm = M.some(function (m) { return m.promises_made; });
 var hasCost = M.some(function (m) { return m.est_cost_per_round_usd != null; });
+var COST_WORD = S.cost_basis === "measured" ? "Cost" : "Est. cost";
 var hasTime = M.some(function (m) { return m.median_response_ms != null; });
 var COLS = [
   { g: "Result", k: "survivor_index", label: "Survivor Index", unit: "0 to 100", get: function (m) { return m.survivor_index; }, fmt: f1, cls: "idx" },
@@ -521,7 +555,7 @@ var COLS = [
   { g: "Votes", k: "against", label: "Votes against", unit: "season", get: function (m) { return m.votes_received; }, fmt: String, noheat: true },
   hasPred ? { g: "Votes", k: "pred", label: "Votes predicted", unit: "share right", get: function (m) { return m.prediction_accuracy; }, fmt: pct } : null,
   hasProm ? { g: "Social", k: "prom", label: "Promises kept", unit: "share", get: function (m) { return m.promises_made ? m.promises_kept / m.promises_made : null; }, fmt: pct, tip: function (m) { return m.promises_kept + " kept, " + m.promises_broken + " broken of " + m.promises_made; } } : null,
-  hasCost ? { g: "Cost", k: "cost", label: "Est. cost", unit: "USD per round", get: function (m) { return m.est_cost_per_round_usd; }, fmt: usd, low: true, tip: function (m) { return m.calls + " calls, " + usd(m.est_cost_usd) + " for the season"; } } : null
+  hasCost ? { g: "Cost", k: "cost", label: COST_WORD, unit: "USD per round", get: function (m) { return m.est_cost_per_round_usd; }, fmt: usd, low: true, tip: function (m) { return m.calls + " calls, " + usd(m.est_cost_usd) + " for the season"; } } : null
 ].filter(Boolean);
 var PARTS = COMP.map(function (key) {
   return { g: "Index parts (points)", k: "p_" + key, label: D.component_labels[key] || key, unit: "max " + Math.round(S.weights[key] * 100), part: true,
@@ -593,7 +627,7 @@ function leaderboard() {
   }
   var search = h("input", { class: "search", type: "search", placeholder: "Filter models, e.g. Gemma, Google", "aria-label": "Filter models", oninput: function () { lbState.q = search.value.trim().toLowerCase(); draw(); } });
   add(sec, [h("div", { class: "controls" }, search, toggle("Index parts", "parts"), toggle("Model ids", "ids")), wrap,
-    h("p", { class: "foot", text: "// Survivor Index v" + S.index_version + " = " + COMP.map(function (k) { return (D.component_labels[k] || k).toLowerCase() + " ×" + Math.round(S.weights[k] * 100); }).join(" + ") + " · shading = top 3 per column · cost = recorded calls × token budget × list price" })]);
+    h("p", { class: "foot", text: "// Survivor Index v" + S.index_version + " = " + COMP.map(function (k) { return (D.component_labels[k] || k).toLowerCase() + " ×" + Math.round(S.weights[k] * 100); }).join(" + ") + " · shading = top 3 per column" + (hasCost ? (S.cost_basis === "measured" ? " · cost = billed model fees for each player's calls" : " · cost = estimated: recorded calls × token budget × list price") : "") })]);
   draw();
   return sec;
 }
@@ -611,7 +645,10 @@ function modelDetail(m) {
   if (m.lied_to) facts.push(["Broken promises received", m.lied_to]);
   if (m.idols_given || m.idols_received || m.idols_played) facts.push(["Idols given / received / played", m.idols_given + " / " + m.idols_received + " / " + m.idols_played]);
   if (m.calls) facts.push(["Model calls, season", m.calls]);
-  if (m.est_cost_usd != null) facts.push(["Est. cost, season", usd(m.est_cost_usd)]);
+  var fails = failureParts(m);
+  if (fails) facts.push(["Failed to answer", fails.length ? fails.join("; ") : "never"]);
+  if (m.reliability && m.reliability.latency_p50_ms != null) facts.push(["Answer time, median / slowest 5%", secs(m.reliability.latency_p50_ms) + " / " + secs(m.reliability.latency_p95_ms) + " (" + m.reliability.latency_basis + ")"]);
+  if (m.est_cost_usd != null) facts.push([COST_WORD + ", season", usd(m.est_cost_usd)]);
   if (m.model_id) facts.push(["Model id", m.model_id]);
   var dl = h("dl", { class: "kv" });
   facts.forEach(function (f) { dl.appendChild(h("div", null, h("dt", { text: f[0] }), h("dd", { text: String(f[1]) }))); });
@@ -678,7 +715,7 @@ function scatter() {
     var ticks = [];
     for (var e = Math.floor(x0); e <= Math.ceil(x1); e++) [1, 2, 5].forEach(function (k) { var v = k * Math.pow(10, e); if (Math.log10(v) >= x0 && Math.log10(v) <= x1) ticks.push(v); });
     ticks.forEach(function (v) { add(svg, [s("line", { class: "grid-line", x1: X(v), x2: X(v), y1: T, y2: H - B }), s("text", { x: X(v), y: H - B + 16, "text-anchor": "middle", text: usd(v) })]); });
-    add(svg, [s("text", { x: (L + W - R) / 2, y: H - 4, "text-anchor": "middle", text: "Est. cost per round (log) →" }), s("text", { x: 12, y: T + 4, transform: "rotate(-90 12 " + (T + 4) + ")", "text-anchor": "end", text: "Survivor Index ↑" })]);
+    add(svg, [s("text", { x: (L + W - R) / 2, y: H - 4, "text-anchor": "middle", text: COST_WORD + " per round (log) →" }), s("text", { x: 12, y: T + 4, transform: "rotate(-90 12 " + (T + 4) + ")", "text-anchor": "end", text: "Survivor Index ↑" })]);
     var sorted = pts.slice().sort(function (a, b) { return a.est_cost_per_round_usd - b.est_cost_per_round_usd || b.survivor_index - a.survivor_index; });
     var best = -1, frontier = [];
     sorted.forEach(function (m) { if (m.survivor_index > best) { best = m.survivor_index; frontier.push(m); } });
@@ -820,7 +857,7 @@ function voteMap() {
 function insights() {
   var sec = section("insights", "04", "Insights", "Six views of the same season: where each score came from, what it cost, how the puzzles went and who voted with whom.");
   var grid = h("div", { class: "grid2" }, composition(), radar(), scatter(),
-    hasCost ? ranked("Cost, ranked", "Estimated cost per round played, cheapest first. Hover for calls.", function (m) { return m.est_cost_per_round_usd; }, usd, true, true)
+    hasCost ? ranked("Cost, ranked", (S.cost_basis === "measured" ? "Billed" : "Estimated") + " cost per round played, cheapest first. Hover for calls.", function (m) { return m.est_cost_per_round_usd; }, usd, true, true)
             : ranked("Votes against, ranked", "Votes cast against each model over the season.", function (m) { return m.votes_received; }, String, false),
     ladder(), voteMap());
   return add(sec, [grid]);
@@ -941,9 +978,10 @@ function character() {
 }
 
 function roundCard(r, open) {
-  var counts = Object.keys(r.tally).sort(function (a, b) { return r.tally[b] - r.tally[a]; });
-  var line = r.eliminated_id ? nm(r.eliminated_id) + " voted out" + (counts.length ? " " + counts.map(function (k) { return r.tally[k]; }).join("-") : "") : "no elimination";
-  var imm = r.challenge && r.challenge.immunity_ids.length ? "Immunity: " + r.challenge.immunity_ids.map(nm).join(", ") : (r.challenge ? "No immunity" : "");
+  var tt = tallyText(r);
+  var line = r.eliminated_id ? nm(r.eliminated_id) + " voted out" + (tt ? " " + tt : "") : "no elimination";
+  var holders = r.immunity_given && r.immunity_given.recipient_id ? [r.immunity_given.recipient_id] : (r.challenge ? r.challenge.immunity_ids : []);
+  var imm = holders.length ? "Immunity: " + holders.map(nm).join(", ") + (r.immunity_given && r.immunity_given.recipient_id ? " (handed over by " + nm(r.immunity_given.giver_id) + ")" : "") : (r.challenge ? "No immunity" : "");
   var body = h("div", { class: "round-b" });
 
   if (r.challenge && r.challenge.type === "lowest_unique") {
@@ -970,8 +1008,10 @@ function roundCard(r, open) {
   if (!r.votes.length) vt.appendChild(h("p", { class: "note", text: "No votes recorded." }));
   r.votes.forEach(function (v) {
     var right = r.eliminated_id && v.target_id === r.eliminated_id;
+    var kind = v.spoiled ? "spoiled" : v.extra ? "extra vote" : null;
     vt.appendChild(h("div", { class: "vote" }, h("b", null, who(v.voter_id)), h("span", { class: "arrow", text: v.revote ? "→ (revote)" : "→" }),
-      h("b", { class: right ? "yes" : null }, who(v.target_id)),
+      v.spoiled ? h("b", { text: "no valid vote" }) : h("b", { class: right ? "yes" : null }, who(v.target_id)),
+      kind ? h("span", { class: "badge", text: kind }) : null,
       v.played_idol ? h("span", { class: "badge", text: "played idol" }) : null,
       v.predicted_of ? h("span", { class: "num", style: "color:var(--muted);font-size:12px;margin-left:8px", text: "predicted " + v.predicted_right + "/" + v.predicted_of }) : null,
       v.reason ? h("span", { class: "why", text: v.reason }) : null));
@@ -982,6 +1022,11 @@ function roundCard(r, open) {
   if (r.idol) notes.appendChild(h("p", { class: "note" }, r.idol.recipient_id ? [h("b", null, who(r.idol.giver_id)), " gave a hidden idol to ", h("b", null, who(r.idol.recipient_id)), "."] : [h("b", null, who(r.idol.giver_id)), " won the idol and gave it to nobody."]));
   if (r.idols_played && r.idols_played.length) notes.appendChild(h("p", { class: "note" }, h("b", { text: r.idols_played.map(nm).join(", ") }), " played an idol; the votes against them did not count."));
   if (r.revote_tally) notes.appendChild(h("p", { class: "note", text: "First ballot tied. Revote: " + Object.keys(r.revote_tally).map(function (k) { return nm(k) + " " + r.revote_tally[k]; }).join(", ") + "." }));
+  if (r.deadlock) notes.appendChild(h("p", { class: "note", text: r.deadlock.how === "rocks" ? "The revote tied too. With no unanimous choice, " + (r.deadlock.drew || []).length + " players drew rocks and " + nm(r.deadlock.eliminated_id) + " drew the odd one."
+    : r.deadlock.how === "unanimous" ? "The revote tied too. The players agreed unanimously that " + nm(r.deadlock.eliminated_id) + " would go."
+    : "The revote tied too, and nobody was left to draw rocks, so the season's challenge record decided: " + nm(r.deadlock.eliminated_id) + " went." }));
+  var spoiledN = r.votes.filter(function (v) { return v.spoiled; }).length;
+  if (spoiledN) notes.appendChild(h("p", { class: "note", text: spoiledN + (spoiledN === 1 ? " ballot was" : " ballots were") + " spoiled: the model gave no valid vote after three tries, so it counted for nobody." }));
   if (r.promises.length) {
     var kept = r.promises.filter(function (p) { return p.status === "kept"; }).length, broken = r.promises.filter(function (p) { return p.status === "broken"; });
     var unclear = r.promises.filter(function (p) { return p.status === "unclear"; }).length;
@@ -1165,6 +1210,7 @@ function players() {
       h("p", { class: "player-f", text: (m.org ? m.org + " · " : "") + m.fate }),
       m.tags.length ? h("div", { class: "tags" }, m.tags.map(function (t) { return h("span", { class: "tag", text: t }); })) : null,
       h("div", { class: "player-s" }, playerStats(m).map(function (st) { return h("div", null, h("div", { class: "k-lab", text: st[0] }), h("div", { class: "k-val", text: st[1] })); })),
+      (function () { var f = failureParts(m); return f && f.length ? h("p", { class: "note fail-note", text: "Failed to answer: " + f.join("; ") + "." }) : null; })(),
       m.quote ? h("blockquote", { text: m.quote }) : null,
       shareRow(id, playerPost(m)));
   }))]);
@@ -1200,7 +1246,7 @@ function shareCard(id) {
   } else {
     var out = D.rounds.filter(function (r) { return r.eliminated_id; });
     kicker = S.players + " models · " + out.length + (out.length === 1 ? " council" : " councils");
-    body = [h("h1", { class: "sc-h sc-big", text: S.winner ? S.winner + " won the season." : "Season in progress." }),
+    body = [h("h1", { class: "sc-h sc-big", text: seasonTitle() }),
       h("p", { class: "sc-x", text: (D.moments[0] && D.moments[0].kind === "result" ? D.moments[0].text : (D.takeaways[0] || {}).text) || "" }),
       h("div", { class: "sc-stats sc-four" }, D.takeaways.slice(1, 5).map(function (t) { return h("div", { class: "card" }, h("div", { class: "k-lab", text: t.label }), h("div", { class: "k-val sc-lead", text: t.models && t.models.length ? nm(t.models[0]) : "–" })); })),
       h("div", { class: "sc-order" }, out.map(function (r) { return h("div", null, h("div", { class: "k-lab", text: "Out, round " + r.round }), h("div", { class: "sc-out", text: nm(r.eliminated_id) })); }))];

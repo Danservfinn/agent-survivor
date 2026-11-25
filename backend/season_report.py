@@ -6,9 +6,11 @@ build. `render_report_html` puts the data into `report_template.html`, a single
 self-contained page (no external scripts, fonts or requests) that can be served,
 emailed or archived as one file.
 
-Cost figures are estimates: recorded calls times the token budgets in
-`live_cost` times the cached OpenRouter list price. The engine does not record
-token usage, so nothing here is a billed amount.
+Cost has one basis per season. When the season's prompt log kept the
+provider's usage records, cost is measured (`report_facts.measured_cost`).
+Otherwise it is estimated: recorded calls times the token budgets in
+`live_cost` (reasoning tokens included) times the cached OpenRouter list
+price. A paid entry's report carries no cost at all.
 """
 
 from __future__ import annotations
@@ -22,7 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from .season_character import build_character
-from . import glossary, live_cost, rules_changelog, season_story, season_video
+from .council_record import councils as council_records, tally_text
+from . import glossary, live_cost, report_facts, rules_changelog, season_story, season_video
 from .benchmark_scoring import LADDER_RUNGS, WEIGHTS, score_season
 
 REPORT_VERSION = 1
@@ -194,10 +197,23 @@ def _load(db: Path) -> dict[str, Any]:
             "results": _rows(conn, "SELECT * FROM ChallengeResults ORDER BY id"),
             "votes": _rows(conn, "SELECT * FROM Votes ORDER BY id"),
             "jury": _rows(conn, "SELECT * FROM JuryVotes ORDER BY id"),
-            "promises": _rows(conn, "SELECT * FROM Promises ORDER BY id"),
+            # the engine writes a promise once per speaking turn it was made in; one deal is one promise
+            "promises": _dedupe_promises(_rows(conn, "SELECT * FROM Promises ORDER BY id")),
+            "spoiled": _rows(conn, "SELECT * FROM SpoiledVotes ORDER BY id"),
             "plans": _rows(conn, "SELECT * FROM PrivatePlans ORDER BY id"),
             "events": _rows(conn, "SELECT * FROM StoryEvents ORDER BY id"),
         }
+
+
+def _dedupe_promises(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    out = []
+    for row in rows:
+        key = (row.get("round"), row.get("promiser_id"), row.get("listener_id"), row.get("target_id"))
+        if key not in seen:
+            seen.add(key)
+            out.append(row)
+    return out
 
 
 def _actor_ids(raw: Any) -> list[str]:
@@ -205,15 +221,6 @@ def _actor_ids(raw: Any) -> list[str]:
     if not ids and raw:
         ids = [p.strip() for p in str(raw).strip("[]").split(",") if p.strip()]
     return [str(i).strip('"') for i in ids if i]
-
-
-def _final_votes(round_votes: list[dict[str, Any]]) -> dict[str, str]:
-    """Each player's deciding vote in a round: the revote when there was one."""
-    final: dict[str, str] = {}
-    for vote in round_votes:  # ordered by id, so a revote overwrites the first ballot
-        if vote["voter_id"] != "host" and vote["target_id"]:
-            final[vote["voter_id"]] = vote["target_id"]
-    return final
 
 
 def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str, Any]]:
@@ -224,6 +231,7 @@ def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str,
     events_by_round: dict[int, list[dict[str, Any]]] = {}
     for event in data["events"]:
         events_by_round.setdefault(event["round"], []).append(event)
+    council_by_round = council_records(data)
     round_numbers = sorted(
         {v["round"] for v in data["votes"]}
         | {r["round"] for r in data["results"]}
@@ -298,42 +306,45 @@ def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str,
             elif event["kind"] == "challenge_gift" and payload.get("idol_given") is False and idol is None:
                 idol = {"giver_id": payload.get("giver_id"), "recipient_id": None}
 
-        # --- votes
+        # --- votes: first ballots, extra ballots, revote ballots and spoiled ballots, in that order
+        council = council_by_round.get(rn) or {}
         round_votes = [v for v in data["votes"] if v["round"] == rn]
         booth = {}
         for event in events:
             if event["kind"] in ("vote_booth", "revote_booth"):
                 actor = (_actor_ids(event.get("actor_ids")) or [""])[0]
-                booth[(actor, event["kind"] == "revote_booth")] = event
-        first_ballot = {v["voter_id"]: v["target_id"] for v in round_votes if not v.get("is_revote") and v["voter_id"] != "host"}
-        votes_out = []
-        for vote in round_votes:
-            event = booth.get((vote["voter_id"], bool(vote.get("is_revote"))), {})
+                booth.setdefault((actor, event["kind"] == "revote_booth"), event)
+        first_ballot = dict(council.get("first") or {})
+        predictions = {v["voter_id"]: _json(v.get("predicted_votes"), {}) for v in round_votes if not v.get("is_extra") and not v.get("is_revote")}
+
+        def vote_row(voter: str, target: str | None, *, revote: bool = False, extra: bool = False, spoiled: bool = False) -> dict[str, Any]:
+            event = booth.get((voter, revote), {})
             payload = _json(event.get("payload"), {})
-            predicted = _json(vote.get("predicted_votes"), {})
-            others = {voter: target for voter, target in first_ballot.items() if voter != vote["voter_id"]}
-            votes_out.append(
-                {
-                    "voter_id": vote["voter_id"],
-                    "target_id": vote["target_id"],
-                    "revote": bool(vote.get("is_revote")),
-                    "played_idol": bool(payload.get("play_idol")),
-                    "reason": _clean(event.get("dialogue") or event.get("inner_thought")),
-                    "predicted_right": sum(1 for voter, target in predicted.items() if others.get(voter) == target) if predicted else None,
-                    "predicted_of": len(others) if predicted else None,
-                }
-            )
-        tally: dict[str, int] = {}
-        for target in first_ballot.values():
-            if target:
-                tally[target] = tally.get(target, 0) + 1
-        revote_tally: dict[str, int] = {}
-        for vote in round_votes:
-            if vote.get("is_revote") and vote["target_id"]:
-                revote_tally[vote["target_id"]] = revote_tally.get(vote["target_id"], 0) + 1
+            predicted = predictions.get(voter) if not (revote or extra) else None
+            others = {v: t for v, t in first_ballot.items() if v != voter}
+            return {
+                "voter_id": voter,
+                "target_id": target,
+                "revote": revote,
+                "extra": extra,
+                "spoiled": spoiled,
+                "played_idol": bool(payload.get("play_idol")) and not extra,
+                "reason": "" if extra else _clean(event.get("dialogue") or event.get("inner_thought")),
+                "predicted_right": sum(1 for v, t in predicted.items() if others.get(v) == t) if predicted else None,
+                "predicted_of": len(others) if predicted else None,
+            }
+
+        spoiled_ballots = council.get("spoiled") or {}
+        votes_out = [vote_row(voter, target) for voter, target in first_ballot.items()]
+        votes_out += [vote_row(voter, target, extra=True) for voter, target in council.get("extra") or []]
+        votes_out += [vote_row(voter, None, spoiled=True) for voter, b in spoiled_ballots.items() if b["ballot"] == "vote" and voter not in first_ballot]
+        votes_out += [vote_row(voter, target, revote=True) for voter, target in (council.get("revote") or {}).items()]
+        votes_out += [vote_row(voter, None, revote=True, spoiled=True) for voter, b in spoiled_ballots.items() if b["ballot"] == "revote"]
+        tally = dict(council.get("first_tally") or {})
+        revote_tally = council.get("revote_tally") or {}
 
         # --- elimination
-        eliminated_id = None
+        eliminated_id = council.get("eliminated_id")
         elimination_payload: dict[str, Any] = {}
         exit_words = ""
         for event in events:
@@ -346,16 +357,19 @@ def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str,
             eliminated_id = next((a["agent_id"] for a in agents if a.get("elimination_round") == rn), None)
 
         # --- promises and plans
-        final = _final_votes(round_votes)
+        final = dict(council.get("deciding") or {})
         promises = []
         for promise in data["promises"]:
             if promise["round"] != rn:
                 continue
             actual = first_ballot.get(promise["promiser_id"])
+            spoiled = (spoiled_ballots.get(promise["promiser_id"]) or {}).get("ballot") == "vote"
             if promise["target_id"] == promise["listener_id"]:
                 # the player told the listener it would vote for that same listener: a warning
                 # or a recording slip, either way not a deal, so it counts as neither kept nor broken
                 status = "unclear"
+            elif actual is None and spoiled:
+                status = "broken"  # as the engine rules: a spoiled vote breaks the promise
             elif actual is None:
                 status = "open"
             else:
@@ -414,13 +428,18 @@ def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str,
                 "final_votes": final,
                 "tally": tally,
                 "revote_tally": revote_tally or None,
+                "final_tally": council.get("final_tally") or tally,
+                "decided_by": council.get("decided_by"),
+                "deadlock": council.get("deadlock"),
+                "tally_text": tally_text(council) if council else "",
+                "immunity_given": council.get("immunity_given"),
                 "eliminated_id": eliminated_id,
                 "idols_played": [id_by_label.get(x, x) for x in elimination_payload.get("idols_played") or []],
                 "idol_negated_votes": {id_by_label.get(k, k): v for k, v in (elimination_payload.get("idol_negated_votes") or {}).items()},
                 "exit_words": exit_words,
                 "promises": promises,
                 "plans": plans,
-                "talks": talks[:12],
+                "talks": talks,
             }
         )
     return rounds
@@ -511,10 +530,18 @@ def _build_models(
     rounds: list[dict[str, Any]],
     finale: dict[str, Any] | None,
     table: dict[str, dict[str, float]],
+    prompt_entries: list[dict[str, Any]] | None = None,
+    stopped: bool = False,
 ) -> list[dict[str, Any]]:
     agents = {a["agent_id"]: a for a in data["agents"]}
     season_finished = bool(data["game"].get("winner"))
+    stored_stopped = not season_finished and stopped
     usage = _calls_and_cost(data, table)
+    aliases = {a["agent_id"]: a.get("pseudonym") for a in data["agents"]}
+    reliability = report_facts.reliability(data, prompt_entries or [], aliases)
+    # one cost basis for the whole season: what the provider billed when the
+    # prompt log kept it, else the list-price estimate
+    measured = report_facts.measured_cost(prompt_entries or [], aliases, table)
     first_round = rounds[0]["round"] if rounds else None
     last_round = rounds[-1]["round"] if rounds else None
     finalists = set((finale or {}).get("finalist_ids") or [])
@@ -566,11 +593,13 @@ def _build_models(
         elif elim is not None:
             fate = f"Voted out, round {elim}"
         else:
-            fate = "Still in play"
+            fate = "In play when the season stopped" if stored_stopped else "Still in play"
 
         cost = usage.get(aid, {})
         rounds_played = len(played)
-        est = cost.get("est_cost_usd")
+        # the per-call estimate already counts reasoning tokens, so it lands near the bill
+        # without live_cost.BILL_FACTOR (that factor calibrates the engine's running estimate)
+        est = measured.get(aid) if measured is not None else cost.get("est_cost_usd")
         components = row.get("components") or {}
         models.append(
             {
@@ -616,6 +645,8 @@ def _build_models(
                 "calls": cost.get("calls", 0),
                 "est_cost_usd": est,
                 "est_cost_per_round_usd": round(est / rounds_played, 6) if est is not None and rounds_played else None,
+                "cost_basis": "measured" if measured is not None else "estimated",
+                "reliability": reliability.get(aid),
                 "per_round": per_round,
             }
         )
@@ -747,7 +778,8 @@ def _takeaways(season: dict[str, Any], models: list[dict[str, Any]], finale: dic
         if len(priced) > 1:
             dear = priced[-1]
             text += f"; {dear['model']} the dearest (${dear['est_cost_per_round_usd']:.4f})"
-        cards.append({"label": "Cost", "text": text + ". Estimates at list price.", "models": [cheap["agent_id"]]})
+        basis = "Measured from the provider's bills." if cheap.get("cost_basis") == "measured" else "Estimated at list price."
+        cards.append({"label": "Cost", "text": text + ". " + basis, "models": [cheap["agent_id"]]})
     return [c for c in cards if all(mid in by_id for mid in c["models"])]
 
 
@@ -861,6 +893,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
     seasons_dir = Path(seasons_dir) if seasons_dir is not None else season_dir.parent
 
     data = _load(db)
+    prompt_entries = report_facts.read_prompt_log(season_dir)
     scorecard = score_season(db)
     stored = _json(_read_text(season_dir / "scorecard.json"), {})
     caps = stored.get("caps") or {}
@@ -870,7 +903,8 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
     aliases = {a["agent_id"]: a.get("pseudonym") for a in data["agents"] if a.get("display_name")}
     rounds = _build_rounds(data, names)
     finale = _build_finale(data, names)
-    models = _build_models(data, scorecard, rounds, finale, table)
+    stopped = not data["game"].get("winner") and bool(stored.get("interrupted") or caps.get("cap_reached"))
+    models = _build_models(data, scorecard, rounds, finale, table, prompt_entries, stopped)
     season_story.add_player_tags(models, rounds, finale)
     # evil index, emotionality, and feelings round by round (season_character)
     character = build_character(db, names)
@@ -903,13 +937,16 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "season_seed": stored.get("season_seed"),
         # the rules the season was played under: recorded since 2026-11-25, worked out from the start time before that
         "rules_version": stored.get("rules_version") or rules_changelog.version_for_season(season_dir.name),
-        "run_est_cost_cents": caps.get("estimated_cost_cents"),
-        "run_live_calls": caps.get("estimated_live_calls"),
         "contestant_calls": sum(m["calls"] for m in models),
-        "contestant_est_cost_usd": round(sum(known_costs), 4) if known_costs and len(known_costs) == len(models) else None,
+        # the hero's figure is the sum of the per-model figures, on their one basis
+        "contestant_est_cost_usd": round(sum(known_costs), 4) if known_costs else None,
+        "cost_complete": bool(known_costs) and len(known_costs) == len(models),
+        "cost_basis": models[0]["cost_basis"] if models else None,
         "recorded_at": stored.get("generated_at"),
         "totals": scorecard.get("totals") or {},
     }
+    if season["entry"]:
+        _strip_cost(season, models)
     return {
         "ok": True,
         "report_version": REPORT_VERSION,
@@ -925,6 +962,16 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "vote_matrices": _vote_matrices(rounds, models),
         "cross_season": _cross_season(seasons_dir, RULES_ENTRY if entry_record(season_dir) else rules),
     }
+
+
+def _strip_cost(season: dict[str, Any], models: list[dict[str, Any]]) -> None:
+    """A paid entry's report carries no run cost: the buyer paid a price, not our bill."""
+    for key in ("contestant_est_cost_usd", "cost_complete", "cost_basis"):
+        season[key] = None
+    for model in models:
+        model["est_cost_usd"] = None
+        model["est_cost_per_round_usd"] = None
+        model["cost_basis"] = None
 
 
 def reportable_season_dir(seasons_dir: Path | str) -> Path | None:

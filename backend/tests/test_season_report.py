@@ -126,7 +126,11 @@ class SeasonReportTest(unittest.TestCase):
         matrices = self.report["vote_matrices"]
         total = sum(sum(row.values()) for row in matrices["targeted"].values())
         recorded = self.conn.execute("SELECT COUNT(*) FROM Votes WHERE voter_id != 'host' AND target_id IS NOT NULL").fetchone()[0]
-        self.assertEqual(total, recorded)
+        # revote ballots live only in revote_booth events; the map counts them too
+        revotes = self.conn.execute(
+            "SELECT COUNT(*) FROM StoryEvents WHERE kind = 'revote_booth' AND COALESCE(json_extract(payload, '$.spoiled'), 0) = 0"
+        ).fetchone()[0]
+        self.assertEqual(total, recorded + revotes)
         for a in matrices["order"]:
             for b in matrices["order"]:
                 self.assertEqual(matrices["together"][a][b], matrices["together"][b][a])
@@ -333,7 +337,8 @@ class SeasonStoryTest(unittest.TestCase):
         # the quoted line is the one that names the promised target, not the first thing said
         self.assertEqual(promise["receipts"][0], {"who": "a", "context": "in private to", "to": "d", "text": "Dogwood, I am voting Cedar with you."})
         self.assertEqual(promise["receipts"][1]["context"], "casting the vote")
-        self.assertEqual(moments["vote"]["title"], "Round 1 was decided by one vote")
+        # round 1 went 2-1-1: no single player would have gone instead, so round 2 (2-1) is the close one
+        self.assertEqual(moments["vote"]["title"], "Round 2 was decided by one vote")
         self.assertIn("the 1 votes against it did not count", moments["idol"]["text"])
         self.assertEqual(moments["read"]["title"], "Model A called 3 of 4 votes in round 1")
         self.assertEqual(moments["target"]["title"], "Model A took 4 votes and survived 4")
