@@ -59,3 +59,15 @@ class PublicGateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SeedTest(unittest.TestCase):
+    def test_the_public_seed_is_random_not_the_clock(self) -> None:
+        from unittest.mock import patch
+
+        from backend import public_gate
+
+        with patch.object(public_gate.time, "time", return_value=1795567149.0):
+            seeds = {public_gate.public_run_caps()["season_seed"] for _ in range(20)}
+        self.assertGreater(len(seeds), 1)
+        self.assertTrue(all(1 <= s <= 99999 for s in seeds))
