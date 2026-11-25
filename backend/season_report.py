@@ -929,7 +929,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "recorded_at": stored.get("generated_at"),
         "totals": scorecard.get("totals") or {},
     }
-    if season["entry"]:
+    if season.get("entry"):
         _strip_cost(season, models)
     return {
         "ok": True,

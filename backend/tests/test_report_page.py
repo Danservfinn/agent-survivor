@@ -152,6 +152,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
+@unittest.skipUnless(hasattr(season_report, "entry_record"), "this checkout has no paid entries")
 class EntrySeasonTest(unittest.TestCase):
     """A paid entry's report: no run cost anywhere."""
 
