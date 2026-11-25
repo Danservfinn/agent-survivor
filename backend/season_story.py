@@ -456,6 +456,10 @@ def render_cards(html_path: Path, out_dir: Path, ids: list[str], *, chrome: str 
                 "--hide-scrollbars",
                 "--no-first-run",
                 f"--user-data-dir={profile}",
+                # the page holds model-written text: no network at all while it renders
+                "--host-resolver-rules=MAP * ~NOTFOUND",
+                "--disable-extensions",
+                "--disable-background-networking",
                 "--force-device-scale-factor=2",
                 f"--window-size={CARD_SIZE[0]},{CARD_SIZE[1]}",
                 "--virtual-time-budget=3000",

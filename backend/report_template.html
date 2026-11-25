@@ -1141,7 +1141,8 @@ function download() {
 /* ---------- sharing: every moment and player card can be posted with its image and its credit */
 var HANDLE = LINKS.handle, SHARE = LINKS.share, REPORT_URL = LINKS.report;
 /* images are cached at the edge for hours; a rescore changes the index version, so the URL changes too */
-var IMGV = S.index_version ? "?v=" + S.index_version : "";
+var IMGV = "?" + [S.index_version ? "v=" + S.index_version : null, LINKS.key ? "k=" + encodeURIComponent(LINKS.key) : null].filter(Boolean).join("&");
+if (IMGV === "?") IMGV = "";
 var KIND = { result: "The result", promise: "Broken promise", vote: "Close vote", idol: "Hidden idol", read: "Vote read", puzzle: "Puzzles", target: "Target" };
 function withCredit(text) { return text + (HANDLE ? "\n\nvia " + HANDLE : ""); }
 function intentUrl(text, anchor) {
@@ -1179,7 +1180,7 @@ function moments() {
   var thread = (D.thread || []).map(function (p, i) { return (i + 1) + "/" + D.thread.length + "\n" + p.text; }).join("\n\n");
   return add(sec, [
     h("div", { class: "controls" }, copyButton("Copy the draft thread (" + (D.thread || []).length + " posts)", function () { return thread; }),
-      SHARE && LINKS.video ? h("a", { class: "chip chip-x", href: SHARE + "season.mp4", target: "_blank", rel: "noopener", text: "Season video" }) : null,
+      SHARE && LINKS.video ? h("a", { class: "chip chip-x", href: SHARE + "season.mp4" + (LINKS.key ? "?k=" + encodeURIComponent(LINKS.key) : ""), target: "_blank", rel: "noopener", text: "Season video" }) : null,
       SHARE ? h("a", { class: "chip", href: SHARE + "season.png" + IMGV, target: "_blank", rel: "noopener", text: "Season image" }) : null,
       SHARE ? h("a", { class: "chip", href: SHARE + "leaderboard.png" + IMGV, target: "_blank", rel: "noopener", text: "Leaderboard image" }) : null),
     h("div", { class: "moment-grid" }, list.map(function (m) {

@@ -11,10 +11,17 @@ export default function WatchPage() {
   const [report, setReport] = useState<StageReport | null>(null);
   const [failed, setFailed] = useState(false);
   const [seasonId, setSeasonId] = useState<string | null>(null);
+  // an unlisted season (a paid entry) opens only with the key from its private link
+  const [linkKey, setLinkKey] = useState<string | null>(null);
 
   useEffect(() => {
-    const wanted = new URLSearchParams(window.location.search).get("season");
-    const url = wanted ? `/api/live-season/report/${encodeURIComponent(wanted)}` : "/api/live-season/report";
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get("season");
+    const key = params.get("k");
+    setLinkKey(key);
+    const url = wanted
+      ? `/api/live-season/report/${encodeURIComponent(wanted)}${key ? `?k=${encodeURIComponent(key)}` : ""}`
+      : "/api/live-season/report";
     fetch(url)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -47,7 +54,7 @@ export default function WatchPage() {
           {report && <SeasonStage report={report} />}
           <div className="row-actions watch-links">
             {seasonId && (
-              <a className="btn-ghost" href={`/report/${seasonId}`}>
+              <a className="btn-ghost" href={`/report/${seasonId}${linkKey ? `?k=${encodeURIComponent(linkKey)}` : ""}`}>
                 Read the full report
               </a>
             )}

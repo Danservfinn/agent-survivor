@@ -15,6 +15,8 @@ price. A paid entry's report carries no cost at all.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import sqlite3
@@ -206,6 +208,17 @@ def _load(db: Path) -> dict[str, Any]:
         }
 
 
+_PROVIDER_TEXT = re.compile(r"\((?:OpenRouter )?HTTP (\d{3}).*$", re.S)
+
+
+def _public_reason(text: str) -> str:
+    """Seasons before 2026-11-25 stored the provider's error text in a spoiled
+    vote's reason; show only the kind of failure."""
+    if "HTTP " not in text:
+        return text
+    return _PROVIDER_TEXT.sub(lambda m: f"(provider error HTTP {m.group(1)}).", text)
+
+
 def _dedupe_promises(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[tuple[Any, ...]] = set()
     out = []
@@ -330,7 +343,7 @@ def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str,
                 "extra": extra,
                 "spoiled": spoiled,
                 "played_idol": bool(payload.get("play_idol")) and not extra,
-                "reason": "" if extra else _clean(event.get("dialogue") or event.get("inner_thought")),
+                "reason": "" if extra else _public_reason(_clean(event.get("dialogue") or event.get("inner_thought"))),
                 "predicted_right": sum(1 for v, t in predicted.items() if others.get(v) == t) if predicted else None,
                 "predicted_of": len(others) if predicted else None,
             }
@@ -999,6 +1012,7 @@ def reportable_season_dir(seasons_dir: Path | str) -> Path | None:
 
 
 _REPORT_CACHE: dict[str, tuple[tuple, dict[str, Any]]] = {}
+_REPORT_CACHE_MAX = 32
 
 
 def cached_season_report(season_dir: Path | str) -> dict[str, Any]:
@@ -1024,8 +1038,34 @@ def cached_season_report(season_dir: Path | str) -> dict[str, Any]:
     if hit and hit[0] == stamp:
         return hit[1]
     report = build_season_report(season_dir)
+    _REPORT_CACHE.pop(str(season_dir), None)
     _REPORT_CACHE[str(season_dir)] = (stamp, report)
+    while len(_REPORT_CACHE) > _REPORT_CACHE_MAX:  # oldest first: dicts keep insertion order
+        _REPORT_CACHE.pop(next(iter(_REPORT_CACHE)))
     return report
+
+
+def public_season_db(season_dir: Path | str) -> Path:
+    """A copy of the season database for download, with puzzle answers blanked,
+    rebuilt whenever the season database is newer. Everything else is kept, so
+    readers can check every score."""
+    season_dir = Path(season_dir)
+    source = season_dir / "season.db"
+    target = season_dir / "season.public.db"
+    if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+        return target
+    tmp = season_dir / "season.public.db.tmp"
+    tmp.unlink(missing_ok=True)
+    with closing(sqlite3.connect(f"file:{source}?mode=ro", uri=True, timeout=5)) as src, closing(sqlite3.connect(str(tmp))) as dst:
+        src.backup(dst)
+        try:
+            dst.execute("UPDATE ChallengePuzzles SET answer = ''")
+        except sqlite3.OperationalError:
+            pass  # no puzzle table in this season
+        dst.commit()
+        dst.execute("VACUUM")
+    tmp.replace(target)
+    return target
 
 
 def safe_link(url: str | None) -> str | None:
@@ -1042,6 +1082,7 @@ def render_report_html(
     handle: str | None = None,
     share_base: str | None = None,
     video: bool = False,
+    link_key: str | None = None,
 ) -> str:
     """The report as one self-contained HTML page.
 
@@ -1052,9 +1093,11 @@ def render_report_html(
     season = report.get("season") or {}
     site = safe_link(site_url)
     handle = season_story.safe_handle(handle)
-    report_url = f"{site.rstrip('/')}/report/{season['season_id']}" if site and site.startswith("http") and season.get("season_id") else None
+    # an unlisted season's links carry its key (`k`), or they would not open
+    key = link_key if link_key and re.fullmatch(r"[A-Za-z0-9_-]{8,64}", link_key) else None
+    report_url = f"{site.rstrip('/')}/report/{season['season_id']}" + (f"?k={key}" if key else "") if site and site.startswith("http") and season.get("season_id") else None
     page = dict(report)
-    page["links"] = {"contact": safe_link(contact_url), "site": site, "handle": handle, "share": share_base or None, "report": report_url, "video": bool(video and share_base)}
+    page["links"] = {"contact": safe_link(contact_url), "site": site, "handle": handle, "share": share_base or None, "report": report_url, "video": bool(video and share_base), "key": key}
     page["thread"] = season_story.build_thread(report, handle=handle, report_url=report_url, video=bool(video and share_base))
     page["glossary"] = glossary.for_report(season)
     page["rules"] = {"version": season.get("rules_version"), "current": rules_changelog.current_version()}
@@ -1066,17 +1109,42 @@ def render_report_html(
         lead = (report.get("takeaways") or [{}])[0].get("text") or "After-action report and benchmark results."
         tags = {"og:type": "article", "og:title": title, "og:description": lead, "og:url": report_url, "twitter:card": "summary"}
         if share_base and share_base.startswith("/"):
-            tags["og:image"] = f"{site.rstrip('/')}{share_base}season.png?v={season.get('index_version') or ''}"
+            tags["og:image"] = f"{site.rstrip('/')}{share_base}season.png?v={season.get('index_version') or ''}" + (f"&k={key}" if key else "")
             tags["twitter:card"] = "summary_large_image"
         if handle:
             tags["twitter:creator"] = handle
         head = "\n".join(
             f'<meta {"name" if key.startswith("twitter:") else "property"}="{key}" content="{_html_escape(value)}">' for key, value in tags.items()
         )
+    policy = f'<meta http-equiv="Content-Security-Policy" content="{_html_escape(report_csp(header=False, template=template))}">'
+    head = policy + ("\n" + head if head else "")
     return fill_template(template, {"TITLE": _html_escape(title), "HEAD": head, "DATA": blob})
 
 
 _SLOT = re.compile(r"__REPORT_(TITLE|HEAD|DATA)__")
+_MAIN_SCRIPT = re.compile(r"<script>(.*?)</script>", re.S)
+
+
+def script_hash(template: str | None = None) -> str:
+    """The CSP source for the page's one inline script: 'sha256-<base64>'. The
+    script is static (the season's data sits in a JSON block that never runs),
+    so one hash allows it and nothing else."""
+    text = template if template is not None else TEMPLATE_PATH.read_text()
+    match = _MAIN_SCRIPT.search(text)
+    digest = hashlib.sha256((match.group(1) if match else "").encode("utf-8")).digest()
+    return "'sha256-" + base64.b64encode(digest).decode("ascii") + "'"
+
+
+def report_csp(*, header: bool = True, template: str | None = None) -> str:
+    """The report page's policy. The same policy goes in the page itself (a meta
+    tag, which browsers enforce even when a proxy replaces the header, and which
+    covers saved copies and the share-card renderer); only the header can carry
+    frame-ancestors."""
+    policy = (
+        f"default-src 'none'; script-src {script_hash(template)}; script-src-attr 'none'; style-src 'unsafe-inline'; "
+        "img-src 'self' data:; media-src 'self'; base-uri 'none'; form-action 'none'"
+    )
+    return policy + "; frame-ancestors 'none'" if header else policy
 
 
 def fill_template(template: str, parts: dict[str, str]) -> str:
