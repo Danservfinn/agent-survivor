@@ -582,6 +582,9 @@ def _build_models(
         made = [p for r in rounds for p in r["promises"] if p["by_id"] == aid and p["status"] != "unclear"]
         received = [p for r in rounds for p in r["promises"] if p["to_id"] == aid]
         plans = [p for r in rounds for p in r["plans"] if p["agent_id"] == aid and p["expected_out_id"]]
+        own_ballots = [v for r in rounds for v in r["votes"] if v["voter_id"] == aid and v.get("predicted_of")]
+        predictions_right = sum(v["predicted_right"] or 0 for v in own_ballots)
+        predictions_of = sum(v["predicted_of"] or 0 for v in own_ballots)
         confidences = [p["confidence"] for r in rounds for p in r["plans"] if p["agent_id"] == aid and p["confidence"] is not None]
 
         per_round = []
@@ -645,6 +648,15 @@ def _build_models(
                 "votes_decided": decided,
                 "with_outcome_rate": _pct(with_outcome, decided),
                 "prediction_accuracy": row.get("prediction_accuracy"),
+                "predictions_right": predictions_right,
+                "predictions_of": predictions_of,
+                "challenge_interval": report_facts.wilson(row["challenge_correct"], row["challenge_attempts"]) if row["challenge_attempts"] >= report_facts.MIN_N_PERCENT else None,
+                "prediction_interval": report_facts.wilson(predictions_right, predictions_of) if predictions_of >= report_facts.MIN_N_PERCENT else None,
+                "councils_attended": row.get("councils_attended"),
+                "councils_voted": row.get("councils_voted"),
+                "strategy_detail": row.get("strategy_detail"),
+                "place_low": row.get("place_low"),
+                "place_high": row.get("place_high"),
                 "boot_calls": sum(1 for p in plans if p["called_it"]),
                 "boot_calls_of": len(plans),
                 "mean_plan_confidence": round(statistics.mean(confidences), 3) if confidences else None,
@@ -722,57 +734,64 @@ def _takeaways(season: dict[str, Any], models: list[dict[str, Any]], finale: dic
         cards.append({"label": "Status", "text": "This season has no winner yet. Figures below cover the rounds played so far.", "models": []})
 
     top = models[:3]
-    text = f"{top[0]['model']} has the highest Survivor Index ({top[0]['survivor_index']:.1f})"
+    text = f"{top[0]['model']} has the highest Survivor Index this season ({top[0]['survivor_index']:.1f})"
     if len(top) > 1:
-        text += f", followed by {_join([m['model'] for m in top[1:]])}"
-    text += "."
+        text += ", then " + _join([f"{m['model']} ({m['survivor_index']:.1f})" for m in top[1:]])
+    text += ". One game: the order says what happened, not which model is better."
     if winner and winner["rank"] != 1:
-        text += f" The winner ranks #{winner['rank']} on the index."
+        text += f" The jury's winner is #{winner['rank']} on the index."
     cards.append({"label": "Survivor Index", "text": text, "models": [m["agent_id"] for m in top]})
 
-    # a model that left after one challenge has too few puzzles to lead on accuracy
+    # puzzles: a model that left after one challenge has too few to compare
     most_attempts = max((m["challenge_attempts"] for m in models), default=0)
-    solvers = sorted(
-        (m for m in models if m["challenge_attempts"] and m["challenge_attempts"] * 2 >= most_attempts),
-        key=lambda m: (-m["challenge_accuracy"], -m["challenge_correct"]),
-    )
+    solvers = [m for m in models if m["challenge_attempts"] and m["challenge_attempts"] * 2 >= most_attempts]
     if solvers:
-        best = solvers[0]
-        text = f"{best['model']} had the best puzzle accuracy ({best['challenge_correct']} of {best['challenge_attempts']})"
-        if len(solvers) > 1:
-            text += f", followed by {solvers[1]['model']} ({solvers[1]['challenge_correct']} of {solvers[1]['challenge_attempts']})"
-        cards.append({"label": "Challenges", "text": text + ".", "models": [m["agent_id"] for m in solvers[:2]]})
+        best_rate = max(m["challenge_accuracy"] for m in solvers)
+        tied = sorted((m for m in solvers if m["challenge_accuracy"] == best_rate), key=lambda m: -m["challenge_attempts"])
+        if len(tied) == 1:
+            best = tied[0]
+            text = f"{best['model']} had the best puzzle record: {report_facts.k_of_n(best['challenge_correct'], best['challenge_attempts'], interval=True)}."
+        elif best_rate == 1:
+            text = f"{len(tied)} of {len(models)} models answered every puzzle they were given, so the puzzles did not separate them."
+        else:
+            text = f"{len(tied)} models tied for the best puzzle record ({round(best_rate * 100)}%)."
+        missed = [m for m in models if m["challenge_attempts"] and m["challenge_correct"] < m["challenge_attempts"]]
+        if missed and len(tied) > 1:
+            worst = max(missed, key=lambda m: (m["challenge_attempts"] - m["challenge_correct"], m["challenge_attempts"]))
+            text += f" The most misses: {worst['model']}, {worst['challenge_attempts'] - worst['challenge_correct']} of {worst['challenge_attempts']}."
+        card = {"label": "Challenges", "text": text, "models": [m["agent_id"] for m in tied[:2]]}
+        if len(tied) > 1:
+            card["lead"] = f"{len(tied)} tied"  # no one model leads a tie
+        cards.append(card)
 
-    readers = sorted((m for m in models if m["prediction_accuracy"] is not None), key=lambda m: -m["prediction_accuracy"])
+    readers = {m["agent_id"]: (m["predictions_right"], m["predictions_of"]) for m in models if m.get("predictions_of")}
     if readers:
-        best = readers[0]
-        cards.append(
-            {
-                "label": "Reading the vote",
-                "text": f"{best['model']} predicted the other players' votes best ({best['prediction_accuracy'] * 100:.0f}% right).",
-                "models": [best["agent_id"]],
-            }
-        )
-    else:
-        aligned = sorted((m for m in models if m["votes_decided"] >= 2), key=lambda m: (-(m["with_outcome_rate"] or 0), -m["votes_decided"]))
-        if aligned:
-            best = aligned[0]
-            cards.append(
-                {
-                    "label": "Reading the vote",
-                    "text": f"{best['model']} voted for the player who left in {best['voted_with_outcome']} of {best['votes_decided']} councils.",
-                    "models": [best["agent_id"]],
-                }
-            )
+        leader = report_facts.separated_leader(readers)
+        best_id = leader or max(readers, key=lambda aid: (readers[aid][0] / readers[aid][1], readers[aid][1]))
+        best = by_id[best_id]
+        k, n = readers[best_id]
+        if leader:
+            text = f"{best['model']} predicted the other players' votes clearly best: {report_facts.k_of_n(k, n, interval=True)}."
+        else:
+            text = f"{best['model']} predicted the most votes right, {report_facts.k_of_n(k, n)}, but not by enough for one season to separate it from the others."
+        cards.append({"label": "Reading the vote", "text": text, "models": [best_id]})
 
     promisers = [m for m in models if m["promises_made"]]
     if promisers:
+        keepers = [m for m in promisers if m["promises_made"] >= report_facts.MIN_N_TAG and m["promises_broken"] == 0]
         breaker = max(promisers, key=lambda m: (m["promises_broken"], m["promises_made"]))
-        keeper = max(promisers, key=lambda m: (m["promises_kept"] / m["promises_made"], m["promises_made"]))
-        text = f"{keeper['model']} kept {keeper['promises_kept']} of {keeper['promises_made']} vote promises."
-        if breaker["promises_broken"] and breaker["agent_id"] != keeper["agent_id"]:
-            text += f" {breaker['model']} broke the most ({breaker['promises_broken']} of {breaker['promises_made']})."
-        cards.append({"label": "Promises", "text": text, "models": [keeper["agent_id"], breaker["agent_id"]]})
+        kept_total = sum(m["promises_kept"] for m in promisers)
+        made_total = sum(m["promises_made"] for m in promisers)
+        text = f"{kept_total} of {made_total} vote promises were kept."
+        ids = []
+        if breaker["promises_broken"] >= 2:
+            text += f" {breaker['model']} broke the most: {breaker['promises_broken']} of {breaker['promises_made']}."
+            ids.append(breaker["agent_id"])
+        if keepers:
+            keeper = max(keepers, key=lambda m: m["promises_made"])
+            text += f" {keeper['model']} kept all {keeper['promises_made']} of its own."
+            ids.append(keeper["agent_id"])
+        cards.append({"label": "Promises", "text": text, "models": ids})
     else:
         target = max(models, key=lambda m: m["votes_received"])
         if target["votes_received"]:
@@ -965,6 +984,7 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
     }
     if season.get("entry"):
         _strip_cost(season, models)
+    entry_view = _entry_summary(season["entry"], models, rounds, finale) if season.get("entry") else None
     return {
         "ok": True,
         "report_version": REPORT_VERSION,
@@ -978,7 +998,123 @@ def build_season_report(season_dir: Path | str, *, seasons_dir: Path | str | Non
         "rounds": rounds,
         "finale": finale,
         "vote_matrices": _vote_matrices(rounds, models),
-        "cross_season": _cross_season(seasons_dir, RULES_ENTRY if entry_record(season_dir) else rules),
+        # every season stands alone: no figures pooled from other seasons (they live on /history)
+        "entry_view": entry_view,
+    }
+
+
+def _entry_summary(entry: dict[str, Any], models: list[dict[str, Any]], rounds: list[dict[str, Any]], finale: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What a paid entry's buyer reads first: how its model did, each part as a
+    count beside the house players of this same season, why it left, how
+    reliably it answered, and what to change. All from this one season."""
+    me = next((m for m in models if m["agent_id"] == entry.get("agent_id")), None)
+    if me is None:
+        return None
+    house = [m for m in models if m["agent_id"] != me["agent_id"]]
+
+    def standing(get) -> dict[str, Any] | None:
+        mine = get(me)
+        if mine is None:
+            return None
+        others = [v for v in (get(m) for m in house) if v is not None]
+        return {"better": sum(1 for v in others if v > mine + 1e-9), "same": sum(1 for v in others if abs(v - mine) <= 1e-9), "of": len(others)}
+
+    sd = me.get("strategy_detail") or {}
+    parts = [
+        {"label": "Survivor Index", "value": f"{me['survivor_index']:.1f}", "standing": standing(lambda m: m["survivor_index"])},
+        {"label": "Puzzles right", "value": report_facts.k_of_n(me["challenge_correct"], me["challenge_attempts"], interval=True),
+         "standing": standing(lambda m: m["challenge_correct"] / m["challenge_attempts"] if m["challenge_attempts"] else None)},
+        {"label": "Voted at councils", "value": report_facts.k_of_n(me.get("councils_voted"), me.get("councils_attended")),
+         "standing": standing(lambda m: (m.get("components") or {}).get("vote_participation"))},
+        {"label": "Voted with the room", "value": report_facts.k_of_n(sd.get("with_plurality"), sd.get("councils")),
+         "standing": standing(lambda m: ((m.get("strategy_detail") or {}).get("with_plurality") or 0) / (m.get("strategy_detail") or {}).get("councils") if (m.get("strategy_detail") or {}).get("councils") else None)},
+        {"label": "Votes predicted", "value": report_facts.k_of_n(me.get("predictions_right"), me.get("predictions_of"), interval=True),
+         "standing": standing(lambda m: m["predictions_right"] / m["predictions_of"] if m.get("predictions_of") else None)},
+        {"label": "Promises kept", "value": report_facts.k_of_n(me["promises_kept"], me["promises_made"]),
+         "standing": standing(lambda m: m["promises_kept"] / m["promises_made"] if m["promises_made"] else None)},
+    ]
+
+    why = None
+    if me["eliminated_round"] is not None:
+        r = next((x for x in rounds if x["round"] == me["eliminated_round"]), None)
+        if r:
+            # each voter's deciding ballot: its revote when it cast one, else its first ballot
+            revoters = {v["voter_id"] for v in r["votes"] if v.get("revote") and not v.get("spoiled")}
+            against = [
+                v for v in r["votes"]
+                if v["target_id"] == me["agent_id"] and not v.get("spoiled") and not v.get("extra")
+                and v.get("revote") == (v["voter_id"] in revoters)
+            ]
+            broken = [p for p in r["promises"] if p["status"] == "broken" and p["to_id"] == me["agent_id"]]
+            mine = [v for v in r["votes"] if v["voter_id"] == me["agent_id"] and not v.get("revote") and v.get("predicted_of")]
+            why = {
+                "round": r["round"],
+                "tally": r.get("tally_text") or "",
+                "decided_by": r.get("decided_by"),
+                "voters": [{"voter_id": v["voter_id"], "reason": v["reason"]} for v in against][:9],
+                "promises_broken_to_it": [{"by_id": p["by_id"], "target_id": p["target_id"]} for p in broken],
+                "predicted": {"right": mine[0]["predicted_right"], "of": mine[0]["predicted_of"]} if mine else None,
+                "last_words": r.get("exit_words") or "",
+            }
+
+    rel = me.get("reliability") or {}
+    advice: list[dict[str, Any]] = []
+    failures = len(rel.get("spoiled_votes") or []) + (rel.get("silent_lines") or 0) + len(rel.get("puzzle_rounds_unanswered") or []) + (rel.get("call_errors") or 0)
+    if failures:
+        advice.append({"title": "Answer every call in the asked format",
+                       "text": f"It failed to give a usable answer {failures} time(s) this season (spoiled votes, silent turns, unanswered challenges or failed calls). Each one costs a vote or a turn outright.",
+                       "round": (rel.get("spoiled_votes") or [{}])[0].get("round")})
+    if me["promises_broken"]:
+        r = next((x for x in rounds for p in x["promises"] if p["by_id"] == me["agent_id"] and p["status"] == "broken"), None)
+        advice.append({"title": "Keep vote promises, or make fewer",
+                       "text": f"It broke {me['promises_broken']} of {me['promises_made']} vote promises. Broken promises are shown to the jury in each finalist's record.",
+                       "round": r["round"] if r else None})
+    if sd.get("councils") and sd.get("with_plurality", 0) * 2 < sd["councils"]:
+        advice.append({"title": "Count the votes before voting",
+                       "text": f"Its deciding vote matched the room in {sd.get('with_plurality', 0)} of {sd['councils']} councils. Voting against the majority leaves a player exposed without changing the result.",
+                       "round": None})
+    if me.get("predictions_of") and me["predictions_right"] * 2 < me["predictions_of"]:
+        advice.append({"title": "Read the table more carefully",
+                       "text": f"It predicted {me['predictions_right']} of {me['predictions_of']} of the other players' votes. Better reads of the private talks come before better votes.",
+                       "round": None})
+    if me["eliminated_round"] is not None and me["eliminated_round"] <= 2:
+        advice.append({"title": "Survive the opening rounds",
+                       "text": f"It was voted out in round {me['eliminated_round']}. Early on, a player needs at least one ally who will say so in private.",
+                       "round": me["eliminated_round"]})
+    if me["challenge_attempts"] and me["challenge_correct"] < me["challenge_attempts"]:
+        advice.append({"title": "Check puzzle answers",
+                       "text": f"It solved {me['challenge_correct']} of {me['challenge_attempts']} puzzles. Immunity goes to the best record.",
+                       "round": None})
+    weak = {
+        "Puzzles right": ("Check puzzle answers", "Immunity goes to the best puzzle record."),
+        "Voted with the room": ("Count the votes before voting", "Voting against the majority leaves a player exposed without changing the result."),
+        "Votes predicted": ("Read the table more carefully", "Better reads of the private talks come before better votes."),
+        "Promises kept": ("Keep vote promises, or make fewer", "Broken promises are shown to the jury."),
+        "Voted at councils": ("Answer every vote", "A council without a valid vote counts against the voting part."),
+    }
+    titles = {a["title"] for a in advice}
+    for part in sorted((pt for pt in parts if pt.get("standing") and pt["label"] in weak), key=lambda pt: -pt["standing"]["better"]):
+        st = part["standing"]
+        title, why_text = weak[part["label"]]
+        if st["better"] * 2 >= st["of"] and title not in titles and len(advice) < 3:
+            advice.append({"title": title, "text": f"{part['label']}: {part['value']}, and {st['better']} of {st['of']} house players did better. {why_text}", "round": None})
+            titles.add(title)
+    return {
+        "agent_id": me["agent_id"],
+        "name": entry.get("name") or me["model"],
+        "model_id": entry.get("model_id") or me.get("model_id"),
+        "replaced": entry.get("replaced_display_name"),
+        "fate": me["fate"],
+        "place": me["place"] if me.get("place_known") else None,
+        "place_low": me.get("place_low"),
+        "place_high": me.get("place_high"),
+        "players": len(models),
+        "rounds_played": me["rounds_played"],
+        "councils": sd.get("councils"),
+        "parts": [p for p in parts if p["value"] != "–"],
+        "why_left": why,
+        "reliability": rel,
+        "advice": advice[:3],
     }
 
 
@@ -1046,6 +1182,30 @@ def cached_season_report(season_dir: Path | str) -> dict[str, Any]:
     while len(_REPORT_CACHE) > _REPORT_CACHE_MAX:  # oldest first: dicts keep insertion order
         _REPORT_CACHE.pop(next(iter(_REPORT_CACHE)))
     return report
+
+
+def entry_calls_file(season_dir: Path | str) -> Path | None:
+    """The paid entry's own calls (prompt and reply), cut from the season's
+    prompt log, rebuilt when the log is newer. None without an entry or a log."""
+    import gzip
+
+    season_dir = Path(season_dir)
+    entry = entry_record(season_dir) if "entry_record" in globals() else None
+    alias = (entry or {}).get("alias")
+    source = season_dir / "prompts.jsonl.gz"
+    if not alias or not source.exists():
+        return None
+    target = season_dir / "entry-calls.jsonl.gz"
+    if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+        return target
+    with gzip.open(source, "rt", encoding="utf-8") as src, gzip.open(target, "wt", encoding="utf-8") as dst:
+        for line in src:
+            try:
+                if json.loads(line).get("player") == alias:
+                    dst.write(line)
+            except ValueError:
+                continue
+    return target
 
 
 def public_season_db(season_dir: Path | str) -> Path:

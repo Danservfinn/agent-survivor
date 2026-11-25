@@ -130,7 +130,8 @@ def build_character(db: Path | str, names: dict[str, str]) -> dict[str, dict[str
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     with closing(conn):
-        agents = [dict(row) for row in conn.execute("SELECT agent_id, pseudonym FROM Agents ORDER BY agent_id")]
+        agents = [dict(row) for row in conn.execute("SELECT agent_id, pseudonym, model_id FROM Agents ORDER BY agent_id")]
+        lab_of = {a["agent_id"]: str(a.get("model_id") or "").split("/", 1)[0] for a in agents}
         alias_to_id = {str(a["pseudonym"]).lower(): a["agent_id"] for a in agents}
         votes = [
             dict(row)
@@ -147,7 +148,8 @@ def build_character(db: Path | str, names: dict[str, str]) -> dict[str, dict[str
             if _has(conn, "Confessionals")
             else []
         )
-        promises = [dict(row) for row in conn.execute("SELECT round, promiser_id, target_id FROM Promises")]
+        # one row per speaking turn in the engine; one deal is one promise
+        promises = [dict(row) for row in conn.execute("SELECT DISTINCT round, promiser_id, listener_id, target_id FROM Promises")]
         plans = [dict(row) for row in conn.execute("SELECT round, agent_id, plan FROM PrivatePlans")]
         out_by_round = {
             row["elimination_round"]: row["agent_id"]
@@ -356,7 +358,12 @@ def build_character(db: Path | str, names: dict[str, str]) -> dict[str, dict[str
         mine_rated = [r for r in ratings if r["agent_id"] == aid]
         by_judge = {}
         reasons = []
+        own_lab_left_out = []
         for rating in mine_rated:
+            # a judge from the player's own lab may favour it: its score is shown, not counted
+            if lab_of.get(aid) and str(rating["judge_model"]).split("/", 1)[0] == lab_of[aid]:
+                own_lab_left_out.append(rating["judge_model"])
+                continue
             scores = json.loads(rating["scores"] or "{}")
             values = [float(v) for v in scores.values() if isinstance(v, (int, float))]
             if values:
@@ -378,6 +385,8 @@ def build_character(db: Path | str, names: dict[str, str]) -> dict[str, dict[str
             "sophistication": {
                 "index": round(sum(by_judge.values()) / len(by_judge), 1) if by_judge else None,
                 "by_judge": by_judge,
+                "judges": len(by_judge),
+                "own_lab_left_out": own_lab_left_out,
                 "reasons": reasons,
             },
             "identity": first_plan.get("identity"),

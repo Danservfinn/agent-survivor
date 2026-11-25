@@ -1199,6 +1199,8 @@ SEASON_DATA_FILES = {
     "report.json": ("report.json", "application/json"),
     "prompts.jsonl.gz": ("prompts.jsonl.gz", "application/gzip"),
     "season.db": ("season.db", "application/vnd.sqlite3"),
+    # a paid entry's own prompts and replies, cut from the season's prompt log
+    "entry-calls.jsonl.gz": ("entry-calls.jsonl.gz", "application/gzip"),
 }
 _clean_files: dict[tuple[str, float], bool] = {}
 
@@ -1217,7 +1219,7 @@ def _safe_to_publish(path: Path) -> bool:
 def season_report_data(season_id: str, name: str, k: str | None = None) -> Response:
     """Public: one data file of a finished season (report.json, prompts.jsonl.gz, season.db).
     The database is served with puzzle answers blanked (season.public.db)."""
-    from .season_report import public_season_db
+    from .season_report import entry_calls_file, public_season_db
 
     if name not in SEASON_DATA_FILES:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -1228,6 +1230,8 @@ def season_report_data(season_id: str, name: str, k: str | None = None) -> Respo
         finished = False
     filename, media_type = SEASON_DATA_FILES[name]
     path = season_dir / filename
+    if finished and name == "entry-calls.jsonl.gz":
+        path = entry_calls_file(season_dir) or path
     if finished and name == "season.db" and path.is_file():
         try:
             path = public_season_db(season_dir)

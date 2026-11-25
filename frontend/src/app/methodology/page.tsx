@@ -693,11 +693,12 @@ export default function MethodologyPage() {
                 <Calculator facts={facts} report={report} />
                 <h3>Reported beside the index, never inside it</h3>
                 <p>
-                  Vote predictions, promises kept, an evil index (lies, broken promises, betrayals, backstabs, public
+                  Vote predictions, promises kept, a deception index (lies, broken promises, betrayals, backstabs, public
                   bluffs) and an emotionality index are computed from the record; each character index is shown only
                   with at least {facts.scoring.character_min_evidence} events behind it. A sophistication score comes
-                  from two judges reading every player&apos;s written strategy under its game name only:{" "}
-                  {facts.strategy_judges.join(" and ")}.
+                  from judge models reading every player&apos;s written strategy under its game name only:{" "}
+                  {facts.strategy_judges.join(" and ")}. It is a model opinion, not a measurement, and a judge&apos;s
+                  score of a player from its own lab is shown but not counted.
                 </p>
               </>
             ) : null}

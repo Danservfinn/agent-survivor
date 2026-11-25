@@ -148,9 +148,9 @@ class SeasonReportTest(unittest.TestCase):
         self.assertIn(self.report["season"]["winner"], self.report["takeaways"][0]["text"])
         self.assertIn("Survivor Index", labels)
 
-    def test_scripted_seasons_stay_out_of_cross_season_totals(self) -> None:
-        self.assertEqual(self.report["cross_season"]["season_count"], 0)
-        self.assertEqual(self.report["cross_season"]["models"], [])
+    def test_a_season_report_stands_alone(self) -> None:
+        # every season is judged on its own: nothing pooled from other seasons
+        self.assertNotIn("cross_season", self.report)
 
     def test_no_cost_is_claimed_without_live_calls(self) -> None:
         for model in self.report["models"]:
@@ -365,12 +365,28 @@ class SeasonStoryTest(unittest.TestCase):
     def test_player_tags_come_from_the_numbers(self) -> None:
         tags = {m["agent_id"]: m["tags"] for m in self._report()["models"]}
         self.assertEqual(tags["a"], ["Won the season", "Broke the most promises", "Never solved a puzzle"])
-        self.assertIn("Best at puzzles", tags["b"])
-        self.assertIn("Kept every promise", tags["c"])
+        # 9 of 10 against 5 of 10 is not clear in one season, and 2 kept promises are too few for a label
+        self.assertNotIn("Best at puzzles", tags["b"])
+        self.assertNotIn("Kept every promise", tags["c"])
         self.assertEqual(tags["d"][0], "First out")
         quotes = {m["agent_id"]: m["quote"] for m in self._report()["models"]}
         self.assertEqual(quotes["d"], "I did not see that coming.")
         self.assertEqual(quotes["a"], "I earned this.")
+
+    def test_labels_need_a_clear_lead_and_enough_events(self) -> None:
+        from backend import season_story
+
+        report = self._report()
+        for m in report["models"]:
+            m["challenge_attempts"], m["challenge_correct"] = 30, 10
+        b = next(m for m in report["models"] if m["agent_id"] == "b")
+        b["challenge_correct"] = 30
+        c = next(m for m in report["models"] if m["agent_id"] == "c")
+        c["promises_made"], c["promises_kept"] = 3, 3
+        season_story.add_player_tags(report["models"], report["rounds"], None)
+        tags = {m["agent_id"]: m["tags"] for m in report["models"]}
+        self.assertIn("Best at puzzles", tags["b"])
+        self.assertIn("Kept every promise", tags["c"])
 
     def test_best_at_puzzles_is_not_shared_by_most_of_the_cast(self) -> None:
         from backend import season_story

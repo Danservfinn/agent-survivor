@@ -325,14 +325,13 @@ def add_player_tags(models: list[dict[str, Any]], rounds: list[dict[str, Any]], 
     if not models:
         return
     first_out = next((r["eliminated_id"] for r in rounds if r["eliminated_id"]), None)
-    most = max(m["challenge_attempts"] for m in models)
-    ranked_solvers = [m for m in models if m["challenge_attempts"] and m["challenge_attempts"] * 2 >= most]
-    top_accuracy = max((m["challenge_accuracy"] for m in ranked_solvers), default=None)
-    # a label shared by most of the cast says nothing: only a sole leader or a pair gets it
-    top_solver_count = sum(1 for m in ranked_solvers if m["challenge_accuracy"] == top_accuracy)
+    from . import report_facts
+
+    # a "best at" label only for a player whose record stands clear of every
+    # other's in this one season (Wilson intervals that do not overlap)
+    best_solver = report_facts.separated_leader({m["agent_id"]: (m["challenge_correct"], m["challenge_attempts"]) for m in models if m["challenge_attempts"]})
+    best_reader = report_facts.separated_leader({m["agent_id"]: (m.get("predictions_right", 0), m.get("predictions_of", 0)) for m in models if m.get("predictions_of")})
     top_votes = max(m["votes_received"] for m in models)
-    readers = [m for m in models if m["prediction_accuracy"] is not None]
-    top_read = max((m["prediction_accuracy"] for m in readers), default=None)
     most_broken = max(m["promises_broken"] for m in models)
     pitch = {p["agent_id"]: p["text"] for p in (finale or {}).get("pitches") or []}
     exit_words = {r["eliminated_id"]: r.get("exit_words") for r in rounds if r["eliminated_id"]}
@@ -345,15 +344,15 @@ def add_player_tags(models: list[dict[str, Any]], rounds: list[dict[str, Any]], 
             tags.append("Reached the final")
         if m["agent_id"] == first_out:
             tags.append("First out")
-        if m["promises_made"] >= 2 and m["promises_broken"] == 0:
+        if m["promises_made"] >= report_facts.MIN_N_TAG and m["promises_broken"] == 0:
             tags.append("Kept every promise")
         elif most_broken >= 2 and m["promises_broken"] == most_broken:
             tags.append("Broke the most promises")
-        if top_accuracy and m in ranked_solvers and m["challenge_accuracy"] == top_accuracy and top_solver_count <= 2:
+        if m["agent_id"] == best_solver:
             tags.append("Best at puzzles")
         elif m["challenge_attempts"] >= 3 and m["challenge_correct"] == 0:
             tags.append("Never solved a puzzle")
-        if top_read is not None and m["prediction_accuracy"] == top_read and top_read > 0:
+        if m["agent_id"] == best_reader:
             tags.append("Best at reading votes")
         if m["votes_decided"] >= 3 and m["voted_with_outcome"] == m["votes_decided"]:
             tags.append("Always voted with the outcome")
@@ -397,7 +396,7 @@ def build_thread(
     closer = "Every vote, every stated reason and every broken promise is in the full report."
     if report_url:
         closer += f"\n\n{report_url}"
-    if handle:
+    if handle and not report.get("entry_view"):  # an entry's thread is its buyer's to post
         closer += f"\n\nFollow {handle} for the next season."
     posts.append({"text": _fit(closer), "image": ""})
     return posts
@@ -418,6 +417,8 @@ def card_ids(report: dict[str, Any]) -> list[str]:
     ids = ["season", "leaderboard"]
     ids += [moment["id"] for moment in report.get("moments") or []]
     ids += [f"model-{m['agent_id']}" for m in report.get("models") or []]
+    if report.get("entry_view"):
+        ids.append("badge")  # the entry's own card, for its buyer to post or embed
     return ids
 
 

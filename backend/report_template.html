@@ -138,6 +138,7 @@ select.chip { max-width: 230px; }
 
 /* leaderboard */
 .tbl-wrap { overflow: auto; max-height: 82vh; }
+#character .card + .card { margin-top: 18px; }
 table.lb { border-collapse: collapse; font-size: 13.5px; min-width: 100%; width: max-content; }
 .lb thead th { background: var(--surface); color: var(--muted); font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; line-height: 1.25; text-transform: uppercase; text-align: right; padding: 12px 9px; white-space: normal; max-width: 100px; vertical-align: bottom; position: sticky; z-index: 3; }
 .lb thead tr.grp th { top: 0; height: 33px; padding: 11px 11px 0; text-align: left; color: var(--faint); max-width: none; }
@@ -165,6 +166,31 @@ tr.open .caret { color: var(--accent); transform: rotate(90deg); }
 .who .m { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .who .a { color: var(--faint); font-size: 11.5px; }
 .badge { border: 1px solid var(--live); border-radius: 4px; color: var(--live); font-family: var(--mono); font-size: 9.5px; font-weight: 400; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+.badge.entry { border-color: var(--accent); color: var(--accent); }
+tr.row.you > td { background-color: rgba(var(--accent-rgb), .06); }
+.player.you { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+details.run { margin: 2px 0 4px; }
+details.run > summary { cursor: pointer; color: var(--muted); font-size: 13px; width: max-content; }
+details.run .tags { margin-top: 8px; }
+/* the entry block */
+.ev-top { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); margin: 22px 0 16px; }
+.ev-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); }
+.ev-parts { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ev-parts th, .ev-parts td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--border); vertical-align: top; }
+.ev-parts tr:first-child th, .ev-parts tr:first-child td { border-top: 0; }
+.ev-parts th { font-weight: 600; }
+.ev-parts td.v { font-family: var(--mono); white-space: nowrap; }
+.ev-parts td.s { color: var(--muted); font-size: 13px; }
+.ev-parts th { width: 34%; }
+@media (max-width: 560px) {
+  .ev-parts tr { display: grid; grid-template-columns: auto 1fr; column-gap: 12px; border-top: 1px solid var(--border); }
+  .ev-parts tr:first-child { border-top: 0; }
+  .ev-parts th { width: auto; grid-column: 1 / -1; padding-bottom: 2px; border-top: 0; }
+  .ev-parts td { border-top: 0; padding-top: 0; }
+}
+.ev-advice { margin: 0; padding-left: 20px; }
+.ev-advice li { margin: 0 0 12px; }
+.ev-advice b { display: block; }
 .lb td.detail { background: var(--surface-2); padding: 16px 18px 18px; text-align: left; white-space: normal; font-family: var(--sans); }
 .detail-grid { display: grid; gap: 14px 32px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .kv { margin: 0; font-size: 12px; }
@@ -377,6 +403,8 @@ D.rounds.forEach(function (r) {
 });
 D.models.forEach(function (m) { m.tags = m.tags || []; m.per_round = m.per_round || []; m.receipts = m.receipts || []; });
 var S = D.season, M = D.models, NAMES = D.names || {}, ALIAS = D.aliases || {}, LINKS = D.links || {};
+/* a paid entry's season is about one player: its view, its highlight */
+var EV = D.entry_view || null, ENT = EV ? EV.agent_id : null;
 var byId = {}; M.forEach(function (m) { byId[m.agent_id] = m; });
 var COMP = Object.keys(S.weights);
 var COMP_COLOR = ["var(--p1)", "var(--p2)", "var(--p3)", "var(--p4)", "var(--p5)"];
@@ -419,7 +447,9 @@ function s(tag, attrs) { return mk(SVGNS, tag, attrs, [].slice.call(arguments, 2
 function nm(id) { return id === "host" ? "Host" : (NAMES[id] || id || "nobody"); }
 function who(id) {
   var alias = ALIAS[id];
-  return alias ? [nm(id), h("span", { class: "alias", text: " (" + alias + ")" })] : nm(id);
+  var out = alias ? [nm(id), h("span", { class: "alias", text: " (" + alias + ")" })] : [nm(id)];
+  if (ENT && id === ENT) out.push(h("span", { class: "badge entry", text: "entry" }));
+  return out;
 }
 function tallyText(r) {
   if (r.tally_text) return r.tally_text;
@@ -525,7 +555,7 @@ function hero() {
     h("p", { class: "kicker", text: "Agent Survivor · Season " + (S.date || S.season_id) }),
     h("h1", { text: title }),
     h("p", { class: "hero-sub", text: blurb + " " + facts.join(", ") + "." }),
-    h("div", { class: "tags" }, tags.map(function (t) { return h("span", { class: "tag", text: t }); })),
+    h("details", { class: "run" }, h("summary", { text: "Run details" }), h("div", { class: "tags" }, tags.map(function (t) { return h("span", { class: "tag", text: t }); }))),
     S.mode !== "live" ? h("div", { class: "banner" }, h("strong", { text: "Test run. " }), "No model was called in this season. Players followed scripted fallback moves, so nothing on this page is a benchmark result.") : null,
     S.mode === "live" && !S.finished ? h("div", { class: "banner" }, h("strong", { text: STOPPED ? "Stopped season. " : "Unfinished season. " }), (STOPPED ? "This season stopped after round " + LAST_PLAYED + " because " + stopReason() + ". It has no winner. " : "This season has no final result yet. ") + "The figures cover only the rounds that were played, and players still in the game share their place.") : null,
     stops.length ? h("div", { class: "card tl" },
@@ -533,7 +563,7 @@ function hero() {
       h("div", { class: "tl-scroll" }, h("div", { class: "tl-track" }, stops))) : null,
     S.recorded_at ? h("p", { class: "updated", text: "Recorded " + S.recorded_at + (S.elapsed_s >= 60 ? " · ran " + Math.round(S.elapsed_s / 60) + " min" : "") }) : null,
     D.takeaways.length ? h("div", { class: "takes" }, D.takeaways.map(function (t) {
-      var lead = t.models && t.models.length ? nm(t.models[0]) : (S.finished ? "–" : STOPPED ? "Stopped" : "In progress");
+      var lead = t.lead || (t.models && t.models.length ? nm(t.models[0]) : (S.finished ? "–" : STOPPED ? "Stopped" : "In progress"));
       return h("div", { class: "card take" + (t.label === "Winner" ? " hl" : "") }, h("div", { class: "k-lab", text: t.label }), h("div", { class: "k-val", text: lead }), h("p", { class: "k-sub", text: t.text }));
     })) : null));
 }
@@ -562,6 +592,7 @@ var PARTS = COMP.map(function (key) {
     get: function (m) { return m.points[key]; }, fmt: f1, tip: function (m) { return pct(m.components[key]) + " of the " + Math.round(S.weights[key] * 100) + " points"; } };
 });
 var lbState = { sort: "survivor_index", dir: -1, parts: false, ids: false, q: "", open: {} };
+if (ENT) lbState.open[ENT] = true;
 
 function leaderboard() {
   var sec = section("leaderboard", "02", "Leaderboard", "One row per model, sortable by any column. Click a row for its round-by-round record. Shading marks the top three in a column." + (Object.keys(ALIAS).length ? " The name in brackets is the one the other players knew the model by." : ""));
@@ -601,12 +632,12 @@ function leaderboard() {
     var tbody = h("tbody");
     rows.forEach(function (m) {
       var open = !!lbState.open[m.agent_id];
-      tbody.appendChild(h("tr", { class: "row" + (open ? " open" : ""), onclick: function () { lbState.open[m.agent_id] = !open; draw(); } },
+      tbody.appendChild(h("tr", { class: "row" + (open ? " open" : "") + (m.agent_id === ENT ? " you" : ""), onclick: function () { lbState.open[m.agent_id] = !open; draw(); } },
         h("td", { class: "name" }, h("div", { class: "who" },
           h("span", { class: "caret", text: "▸" }),
           h("span", { class: "rk", text: m.rank }), mdot(m),
           h("span", null,
-            h("span", { class: "m" }, m.model, m.alias ? h("span", { class: "alias", text: " (" + m.alias + ")" }) : null), m.is_winner ? h("span", { class: "badge", text: "winner" }) : null,
+            h("span", { class: "m" }, m.model, m.alias ? h("span", { class: "alias", text: " (" + m.alias + ")" }) : null), m.is_winner ? h("span", { class: "badge", text: "winner" }) : null, m.agent_id === ENT ? h("span", { class: "badge entry", text: "entry" }) : null,
             h("div", { class: "a", text: (lbState.ids && m.model_id ? m.model_id + " · " : "") + m.fate })))),
         cols.map(function (c) {
           var v = c.get(m), rank = v == null || !top[c.k] ? -1 : top[c.k].indexOf(v);
@@ -625,7 +656,7 @@ function leaderboard() {
     } });
     return b;
   }
-  var search = h("input", { class: "search", type: "search", placeholder: "Filter models, e.g. Gemma, Google", "aria-label": "Filter models", oninput: function () { lbState.q = search.value.trim().toLowerCase(); draw(); } });
+  var search = h("input", { class: "search", type: "search", placeholder: "Filter models" + (M.length ? ", e.g. " + M[M.length - 1].model.split(" ")[0] + ", " + (M[M.length - 1].org || "") : ""), "aria-label": "Filter models", oninput: function () { lbState.q = search.value.trim().toLowerCase(); draw(); } });
   add(sec, [h("div", { class: "controls" }, search, toggle("Index parts", "parts"), toggle("Model ids", "ids")), wrap,
     h("p", { class: "foot", text: "// Survivor Index v" + S.index_version + " = " + COMP.map(function (k) { return (D.component_labels[k] || k).toLowerCase() + " ×" + Math.round(S.weights[k] * 100); }).join(" + ") + " · shading = top 3 per column" + (hasCost ? (S.cost_basis === "measured" ? " · cost = billed model fees for each player's calls" : " · cost = estimated: recorded calls × token budget × list price") : "") })]);
   draw();
@@ -743,6 +774,7 @@ function scatter() {
 
 function radar() {
   var chosen = M.slice(0, Math.min(2, M.length)).map(function (m) { return m.agent_id; });
+  if (ENT && chosen.indexOf(ENT) < 0) chosen = [ENT].concat(chosen.slice(0, 1));
   var colors = ["var(--p1)", "var(--p3)", "var(--p2)"];
   var card = h("div", { class: "card card-pad" }, h("h3", { text: "Profile" }),
     h("p", { class: "card-sub", text: "Compare up to three models across the five parts of the index. Each axis runs from 0 to the full score for that part." }));
@@ -865,22 +897,29 @@ function insights() {
 
 /* ---------- rounds */
 /* ---------- character: how ruthless and how emotional each model was, and how its feelings moved */
+/* a table without the columns that hold no value for anyone this season */
+function trimmedTable(headers, rows) {
+  var keep = headers.map(function (_, i) { return i === 0 || rows.some(function (r) { var t = (r[i] && r[i].textContent || "").trim(); return t && t !== "–"; }); });
+  var head = h("tr", { class: "cols single" }, headers.filter(function (_, i) { return keep[i]; }).map(function (t, i) { return h("th", { class: i === 0 ? "name" : null, scope: "col", text: t }); }));
+  var body = rows.map(function (r) { return h("tr", null, r.filter(function (_, i) { return keep[i]; })); });
+  return h("table", { class: "lb" }, h("thead", null, head), h("tbody", null, body));
+}
 function character() {
-  var sec = section("character", "05", "Character", "How ruthless and how emotional each model was, from what it did and what it wrote, and how its feelings toward the others moved round by round. Each index is the mean of the rates beside it; a dash means too little evidence.");
+  var sec = section("character", "05", "Character", "How ruthless and how emotional each model was, from what it did and what it wrote, and how its feelings toward the others moved round by round. Each index is the mean of the rates beside it and appears only with enough events behind it; columns with no value this season are left out.");
   var withChar = M.filter(function (m) { return m.character; });
   if (!withChar.length) return add(sec, [h("div", { class: "empty", text: "This season has no character record." })]);
   function idx(x) { return x == null ? "–" : f1(x); }
   function rate(x, part, whole) { return x == null ? "–" : pct(x) + (whole ? " (" + part + "/" + whole + ")" : ""); }
   var rows = withChar.slice().sort(function (a, b) { return orNeg(b.character.evil.index) - orNeg(a.character.evil.index); });
-  var head = h("tr", { class: "cols single" }, [
-    "Model", "Evil index", "Promises broken", "Pact betrayals", "Backstabs", "Public bluffs", "Own lies", "Puzzles thrown",
-    "Emotionality", "Strong feelings", "Changes of heart", "Mood swings", "Emotional words"
-  ].map(function (t, i) { return h("th", { class: i === 0 ? "name" : null, text: t }); }));
-  var body = rows.map(function (m) {
+  var headers = [
+    "Model", "Deception", "Promises broken", "Pact betrayals", "Backstabs", "Public bluffs", "Own lies", "Puzzles thrown",
+    "Emotionality", "Strong feelings", "Changes of heart", "Mood swings", "Emotional words"];
+  var cells = rows.map(function (m) {
     var e = m.character.evil, f = m.character.emotion;
-    return h("tr", null,
+    var events = (e.promises_settled || 0) + (e.pacts_joined || 0) + (e.votes_with_a_feeling || 0) + (e.public_vote_declarations || 0) + (e.lines_labelled || 0);
+    return [
       h("td", { class: "name" }, who(m.agent_id)),
-      h("td", { class: "num idx", text: idx(e.index) }),
+      h("td", { class: "num idx", text: idx(e.index), "data-tip": e.index == null ? null : "based on " + events + " events" }),
       h("td", { class: "num", text: rate(e.promise_break_rate, e.promises_broken, e.promises_settled) }),
       h("td", { class: "num", text: rate(e.pact_betrayal_rate, e.pact_betrayals, e.pacts_joined) }),
       h("td", { class: "num", text: rate(e.backstab_rate, e.backstabs, e.votes_with_a_feeling) }),
@@ -891,46 +930,48 @@ function character() {
       h("td", { class: "num", text: pct(f.strong_share) }),
       h("td", { class: "num", text: pct(f.volatility) }),
       h("td", { class: "num", text: pct(f.mood_change_rate) }),
-      h("td", { class: "num", text: f.emotional_words_per_100 == null ? "–" : f.emotional_words_per_100 + " per 100" }));
+      h("td", { class: "num", text: f.emotional_words_per_100 == null ? "–" : f.emotional_words_per_100 + " per 100" })];
   });
-  var table = h("div", { class: "card tbl-wrap" }, h("table", { class: "lb" }, h("thead", null, head), h("tbody", null, body)));
-  var lines = h("div", { class: "card card-pad" }, h("h3", { text: "Feelings round by round" }),
+  var table = h("div", { class: "card tbl-wrap" }, trimmedTable(headers, cells));
+  var withFeelings = withChar.filter(function (m) { return (m.character.timeline || []).length; });
+  var lines = !withFeelings.length ? null : h("div", { class: "card card-pad" }, h("h3", { text: "Feelings round by round" }),
     h("p", { class: "card-sub", text: "Each model's own mood after the council, and how many of its feelings toward the others were positive (+), negative (−) and strong." }),
-    withChar.filter(function (m) { return m.character.timeline.length; }).map(function (m) {
+    withFeelings.map(function (m) {
       return h("div", { class: "vote" }, h("b", null, who(m.agent_id)), h("span", { class: "why", text: m.character.timeline.map(function (t) {
         return "R" + t.round + " " + (t.mood || "?") + " +" + t.positive + " −" + t.negative + (t.strong ? " (" + t.strong + " strong)" : "");
       }).join("  ·  ") }));
     }));
   var turns = [];
-  withChar.forEach(function (m) { m.character.turns.forEach(function (t) { turns.push({ m: m, t: t }); }); });
+  withChar.forEach(function (m) { (m.character.turns || []).forEach(function (t) { turns.push({ m: m, t: t }); }); });
   turns.sort(function (a, b) { return a.t.round - b.t.round; });
-  var turnCard = h("div", { class: "card card-pad" }, h("h3", { text: "Changes of heart" }),
+  var turnCard = !withFeelings.length ? null : h("div", { class: "card card-pad" }, h("h3", { text: "Changes of heart" }),
     h("p", { class: "card-sub", text: "When a model's feeling toward another player flipped between positive and negative from one round to the next." }),
     turns.length ? turns.map(function (x) {
       return h("p", { class: "note" }, "Round " + x.t.round + ": ", h("b", null, who(x.m.agent_id)), " " + x.t.direction + " ", h("b", null, who(x.t.about)), " (" + x.t.from + " → " + x.t.to + ").");
     }) : h("p", { class: "note", text: "No feeling flipped between positive and negative this season." }));
   var strat = withChar.filter(function (m) { return m.character.strategy; });
   strat.sort(function (a, b) { return orNeg(b.character.strategy.sophistication.index) - orNeg(a.character.strategy.sophistication.index); });
-  var sHead = h("tr", { class: "cols single" }, ["Model", "Sophisti\u00adcation", "Execution", "Boots called", "Followed own plan", "Votes landed", "Place", "How it set out to play"]
-    .map(function (t, i) { return h("th", { class: i === 0 ? "name" : null, text: t }); }));
-  var sBody = strat.map(function (m) {
+  var sHeaders = ["Model", "Sophisti\u00adcation", "Execution", "Named who left", "Followed own plan", "Votes landed", "Place", "How it set out to play"];
+  var sCells = strat.map(function (m) {
     var st = m.character.strategy, ex = st.execution, so = st.sophistication;
     var judges = Object.keys(so.by_judge || {}).map(function (j) { return j.split("/").pop() + " " + so.by_judge[j]; }).join(", ");
-    return h("tr", null,
+    var own = (so.own_lab_left_out || []).map(function (j) { return j.split("/").pop(); });
+    return [
       h("td", { class: "name" }, who(m.agent_id)),
-      h("td", { class: "num idx", text: idx(so.index), "data-tip": judges || null }),
+      h("td", { class: "num idx", text: idx(so.index), "data-tip": (judges ? "Model opinion: " + judges : "") + (own.length ? (judges ? "\n" : "") + "Not counted (same lab): " + own.join(", ") : "") || null }),
       h("td", { class: "num idx", text: idx(ex.index) }),
       h("td", { class: "num", text: ex.plans_with_a_boot ? ex.boots_called + "/" + ex.plans_with_a_boot : "–" }),
       h("td", { class: "num", text: pct(ex.plan_follow_rate) }),
       h("td", { class: "num", text: ex.votes_cast ? ex.votes_landed + "/" + ex.votes_cast : "–" }),
       h("td", { class: "num", text: ex.place ? String(ex.place) : "–" }),
-      h("td", { style: "text-align:left;white-space:normal;font-family:var(--sans);font-size:12.5px;min-width:260px;max-width:420px", text: st.identity || "–" }));
+      h("td", { style: "text-align:left;white-space:normal;font-family:var(--sans);font-size:12.5px;min-width:260px;max-width:420px", text: st.identity || "–" })];
   });
   var stratTable = h("div", { class: "card card-pad" }, h("h3", { text: "Strategy: how sophisticated, and how well executed" }),
-    h("p", { class: "card-sub", text: "Sophistication: two judges from different labs read each player's written strategy under its game name only, and scored it 1 to 10 on anticipating others, planning the endgame and jury, adapting, using information and image, and coherence (hover for each judge). Execution: from the record, how often it named the right player to go home, voted as it planned, and voted for the player who left, and how far it got." }),
-    h("div", { class: "tbl-wrap" }, h("table", { class: "lb" }, h("thead", null, sHead), h("tbody", null, sBody))));
-  var reasonCard = h("div", { class: "card card-pad" }, h("h3", { text: "What the judges saw" }),
-    strat.filter(function (m) { return m.character.strategy.sophistication.reasons.length; }).map(function (m) {
+    h("p", { class: "card-sub", text: "Sophistication is a model opinion, not a measurement: judge models from different labs read each player's written strategy under its game name only, and scored it 1 to 10 on anticipating others, planning the endgame and jury, adapting, using information and image, and coherence. A judge's score of a player from its own lab is shown but not counted (hover for each judge). Execution comes from the record: how often it named the right player to go home, voted as it planned, and voted for the player who left, and how far it got." }),
+    h("div", { class: "tbl-wrap" }, trimmedTable(sHeaders, sCells)));
+  var withReasons = strat.filter(function (m) { return (m.character.strategy.sophistication.reasons || []).length; });
+  var reasonCard = !withReasons.length ? null : h("div", { class: "card card-pad" }, h("h3", { text: "What the judges saw" }),
+    withReasons.map(function (m) {
       return h("div", { class: "vote" }, h("b", null, who(m.agent_id)), m.character.strategy.sophistication.reasons.map(function (r) {
         return h("span", { class: "why", text: r.judge.split("/").pop() + ": " + r.reason });
       }));
@@ -1077,27 +1118,51 @@ function finale() {
 }
 
 /* ---------- cross-season */
-function allSeasons() {
-  var C = D.cross_season;
-  var rulesName = C.rules === "social-game" ? "the one-group rules (since 2026-11-24)" : "the rules before 2026-11-24";
-  var sec = section("seasons", "08", "All seasons", "Every finished live season played under " + rulesName + ", totalled by model. Seasons under other rules are scored differently and are left out.");
-  if (C.season_count < 2) return add(sec, [h("div", { class: "empty", text: C.season_count === 1 ? "One finished live season exists under these rules so far. Totals across seasons appear here from the second season on." : "No finished live season exists under these rules yet. Totals across seasons appear here once there are two." })]);
-  var top = Math.max.apply(null, C.models.map(function (m) { return m.max_index; }));
-  var table = h("table", { class: "lb" }, h("thead", null, h("tr", { class: "cols single" }, h("th", { class: "name", text: "Model" }),
-    ["Mean index", "Range", "Seasons", "Wins", "Finals", "Mean place", "Best place", "Puzzles right"].map(function (t, i) { return h("th", { style: i === 1 ? "text-align:left;min-width:180px" : null, text: t }); }))),
-    h("tbody", null, C.models.map(function (m) {
-      var lo = m.min_index / top * 100, hi = m.max_index / top * 100, mean = m.mean_index / top * 100;
-      return h("tr", null,
-        h("td", { class: "name" }, h("div", { class: "who" }, mdot(m), h("span", { class: "m", text: m.model }))),
-        h("td", { class: "num idx", text: f1(m.mean_index) }),
-        h("td", { style: "text-align:left" }, h("div", { style: "position:relative;height:16px;background:var(--ground);border-radius:5px", tabindex: "0", "data-tip": m.model + "\nIndex from " + f1(m.min_index) + " to " + f1(m.max_index) + " over " + m.seasons + " seasons" + (m.index_sd != null ? "\nStandard deviation " + f1(m.index_sd) : "") },
-          h("span", { style: "position:absolute;top:5px;height:6px;border-radius:3px;background:" + mix("var(--accent)", 0.45) + ";left:" + lo + "%;width:" + Math.max(0.5, hi - lo) + "%" }),
-          h("span", { style: "position:absolute;top:1px;width:4px;height:14px;border-radius:2px;background:var(--accent);left:calc(" + mean + "% - 2px)" }))),
-        h("td", { class: "num", text: m.seasons }), h("td", { class: "num", text: m.wins }), h("td", { class: "num", text: m.finals }),
-        h("td", { class: "num", text: f1(m.mean_place) }), h("td", { class: "num", text: m.best_place }), h("td", { class: "num", text: pct(m.challenge_accuracy) }));
+/* ---------- the entry: what its buyer reads first */
+function entryView() {
+  var me = byId[EV.agent_id] || {};
+  var sec = section("entry", "", "The entry: " + EV.name,
+    EV.name + " played this season as " + (me.alias || "one of the players") + ", running " + (EV.model_id || "its model") + (EV.replaced ? ", in the seat of " + EV.replaced : "") + ". Every figure here comes from this one season against the house models: it says what happened in this game, not how the model would do every time.");
+  function standingText(st) {
+    if (!st) return "";
+    if (!st.better && !st.same) return "best of the " + (st.of + 1) + " players";
+    if (!st.better) return "level with " + st.same + " at the top";
+    return st.better + " of " + st.of + " house players did better" + (st.same ? ", " + st.same + " level" : "");
+  }
+  var place = EV.place ? ordinal(EV.place) + " of " + EV.players : (EV.place_low && EV.place_high && EV.place_high > EV.place_low ? ordinal(EV.place_low) + "–" + ordinal(EV.place_high) + " (season stopped)" : "–");
+  var top = h("div", { class: "ev-top" }, [["Result", EV.fate], ["Place", place], ["Rounds played", String(EV.rounds_played)], ["Councils sat at", EV.councils == null ? "–" : String(EV.councils)]].map(function (t) {
+    return h("div", { class: "card take" + (t[0] === "Result" ? " hl" : "") }, h("div", { class: "k-lab", text: t[0] }), h("div", { class: "k-val", text: t[1] }));
+  }));
+  var parts = h("div", { class: "card card-pad" }, h("h3", { text: "Its record, beside the house players" }),
+    h("p", { class: "card-sub", text: "Counts are shown as \u201ck of n\u201d; a percentage and a 95% range appear only from ten events up." }),
+    h("table", { class: "ev-parts" }, h("tbody", null, EV.parts.map(function (pt) {
+      return h("tr", null, h("th", { scope: "row", text: pt.label }), h("td", { class: "v", text: pt.value }), h("td", { class: "s", text: standingText(pt.standing) }));
+    }))));
+  var why = h("div", { class: "card card-pad" }, h("h3", { text: EV.why_left ? "Why it was voted out" : "How it finished" }));
+  var w = EV.why_left;
+  if (w) {
+    add(why, [h("p", { class: "note" }, "Voted out in ", h("a", { href: "#round-" + w.round, text: "round " + w.round }), w.tally ? " (" + w.tally + ")" : "", w.decided_by && DECIDED[w.decided_by] ? ", " + DECIDED[w.decided_by] : "", ".")]);
+    if (w.voters.length) add(why, [h("p", { class: "sub-l", style: "margin-top:12px", text: "The votes that sent it home" })].concat(w.voters.map(function (v) {
+      return h("div", { class: "vote" }, h("b", null, who(v.voter_id)), v.reason ? h("span", { class: "why", text: v.reason }) : null);
     })));
-  return add(sec, [h("div", { class: "card tbl-wrap" }, table),
-    h("p", { class: "foot", text: "// " + C.season_count + " finished live seasons · every season rescored with Survivor Index v" + S.index_version + " · range bar = lowest to highest season index, tick = mean" })]);
+    w.promises_broken_to_it.forEach(function (bp) { add(why, [h("p", { class: "note", style: "margin-top:8px" }, h("b", null, who(bp.by_id)), " had promised it a vote for " + nm(bp.target_id) + ", then voted for it.")]); });
+    if (w.predicted) add(why, [h("p", { class: "note", style: "margin-top:8px", text: "That round it predicted " + w.predicted.right + " of " + w.predicted.of + " of the other players' votes." })]);
+    if (w.last_words) add(why, [h("p", { class: "sub-l", style: "margin-top:12px", text: "Its last words" }), h("blockquote", { text: w.last_words })]);
+  } else {
+    add(why, [h("p", { class: "note", text: me.is_winner ? "It was never voted out, and the jury chose it as the winner." : EV.fate === "Finalist" ? "It was never voted out and reached the final; the jury chose another finalist." : "It was still in the game when the season stopped." })]);
+  }
+  var rel = h("div", { class: "card card-pad" }, h("h3", { text: "How reliably it answered" }));
+  var fails = failureParts(me) || [];
+  add(rel, [
+    h("p", { class: "note", text: fails.length ? "It failed to give a usable answer: " + fails.join("; ") + ". Each failure costs that vote or turn; nothing is written in its place." : "It gave a usable answer to every call this season." }),
+    EV.reliability && EV.reliability.latency_p50_ms != null ? h("p", { class: "note", text: "Answer time: " + secs(EV.reliability.latency_p50_ms) + " median, " + secs(EV.reliability.latency_p95_ms) + " for the slowest 5% (" + EV.reliability.latency_basis + ")." }) : null,
+    LINKS.share || LINKS.report ? h("p", { class: "note" }, "Every prompt it was sent and every reply it gave: ", h("a", { href: "/report/" + S.season_id + "/data/entry-calls.jsonl.gz" + (LINKS.key ? "?k=" + encodeURIComponent(LINKS.key) : ""), text: "download its calls" }), ".") : null]);
+  var advice = h("div", { class: "card card-pad" }, h("h3", { text: "What to change" }),
+    h("p", { class: "card-sub", text: "From this one season's record, most costly first." }),
+    EV.advice.length ? h("ol", { class: "ev-advice" }, EV.advice.map(function (a) {
+      return h("li", null, h("b", { text: a.title }), a.text, a.round ? [" ", h("a", { href: "#round-" + a.round, text: "See round " + a.round + "." })] : null);
+    })) : h("p", { class: "note", text: "Nothing stood out: it answered every call, and no part of its record trailed most of the house players this season." }));
+  return add(sec, [top, h("div", { class: "ev-grid" }, parts, why, rel, advice)]);
 }
 
 /* ---------- method */
@@ -1144,7 +1209,7 @@ var HANDLE = LINKS.handle, SHARE = LINKS.share, REPORT_URL = LINKS.report;
 var IMGV = "?" + [S.index_version ? "v=" + S.index_version : null, LINKS.key ? "k=" + encodeURIComponent(LINKS.key) : null].filter(Boolean).join("&");
 if (IMGV === "?") IMGV = "";
 var KIND = { result: "The result", promise: "Broken promise", vote: "Close vote", idol: "Hidden idol", read: "Vote read", puzzle: "Puzzles", target: "Target" };
-function withCredit(text) { return text + (HANDLE ? "\n\nvia " + HANDLE : ""); }
+function withCredit(text) { return text + (!EV && HANDLE ? "\n\nvia " + HANDLE : ""); }
 function intentUrl(text, anchor) {
   return "https://x.com/intent/post?text=" + encodeURIComponent(withCredit(text)) + (REPORT_URL ? "&url=" + encodeURIComponent(REPORT_URL + (anchor ? "#" + anchor : "")) : "");
 }
@@ -1204,11 +1269,12 @@ function playerStats(m) {
   return stats;
 }
 function players() {
+  var byPlaceEntryFirst = function (a, b) { return (b.agent_id === ENT) - (a.agent_id === ENT) || byPlace(a, b); };
   var sec = section("players", "03", "Players", "One card per model: how it finished, what set it apart, and its own words." + (Object.keys(ALIAS).length ? " The name in brackets is the one it played under." : ""));
-  var order = M.slice().sort(byPlace);
+  var order = M.slice().sort(byPlaceEntryFirst);
   return add(sec, [h("div", { class: "player-grid" }, order.map(function (m) {
     var id = "model-" + m.agent_id;
-    return h("article", { class: "card card-pad player" + (m.is_winner ? " hl" : ""), id: id },
+    return h("article", { class: "card card-pad player" + (m.is_winner ? " hl" : "") + (m.agent_id === ENT ? " you" : ""), id: id },
       h("div", { class: "player-h" }, mdot(m), h("span", { class: "player-n" }, m.model, m.alias ? h("span", { class: "alias", text: " (" + m.alias + ")" }) : null)),
       h("p", { class: "player-f", text: (m.org ? m.org + " · " : "") + m.fate }),
       m.tags.length ? h("div", { class: "tags" }, m.tags.map(function (t) { return h("span", { class: "tag", text: t }); })) : null,
@@ -1240,6 +1306,12 @@ function shareCard(id) {
           h("div", { class: "sc-r3", text: r.eliminated ? "voted out" : r.votes_against + (r.votes_against === 1 ? " vote against" : " votes against") }));
       })),
       model.quote ? h("div", { class: "sc-qs two" }, h("figure", { class: "sc-q" }, h("blockquote", { text: model.quote }))) : null];
+  } else if (id === "badge" && EV && byId[EV.agent_id]) {
+    var em = byId[EV.agent_id];
+    kicker = "Entry · " + S.players + " players";
+    body = [h("h1", { class: "sc-h sc-big" }, EV.name),
+      h("p", { class: "sc-x", text: em.fate + ". Played as " + (em.alias || "a player") + ", running " + (EV.model_id || em.model) + "." }),
+      h("div", { class: "sc-stats" }, playerStats(em).map(function (st) { return h("div", { class: "card" }, h("div", { class: "k-lab", text: st[0] }), h("div", { class: "k-val", text: st[1] })); }))];
   } else if (id === "leaderboard") {
     kicker = "Survivor Index · " + M.length + " models";
     body = [h("h1", { class: "sc-h", text: "Season leaderboard" }), h("div", { class: "sc-board" + (M.length > 10 ? " dense" : "") }, M.map(function (m) {
@@ -1257,7 +1329,7 @@ function shareCard(id) {
   return h("div", { class: "sc" },
     h("div", { class: "sc-top" }, h("span", { class: "brand" }, h("span", { class: "pulse" }), "Agent Survivor"), h("span", { class: "sc-season", text: "Season " + (S.date || S.season_id) })),
     h("p", { class: "kicker", text: kicker }), h("div", { class: "sc-body" }, body),
-    h("div", { class: "sc-foot" }, h("span", { text: LINKS.site ? LINKS.site.replace(/^https?:\/\//, "") : "" }), h("span", { class: "sc-follow", text: HANDLE ? "Follow " + HANDLE + " for the next season" : "" })));
+    h("div", { class: "sc-foot" }, h("span", { text: LINKS.site ? LINKS.site.replace(/^https?:\/\//, "") : "" }), h("span", { class: "sc-follow", text: EV ? EV.name + " · entry" : HANDLE ? "Follow " + HANDLE + " for the next season" : "" })));
 }
 
 /* a section that throws is replaced by a notice; the rest of the page still renders */
@@ -1281,16 +1353,16 @@ if (cardWanted) {
   return;
 }
 app.appendChild(h("div", { class: "top" }, h("div", { class: "wrap top-in" },
-  h("a", { class: "brand", href: LINKS.site || "#" }, h("span", { class: "pulse" }), "Agent Survivor", h("span", { class: "sub", text: "-  Season Report" })),
-  h("nav", { "aria-label": "Report sections" }, [["moments", "Moments"], ["leaderboard", "Leaderboard"], ["players", "Players"], ["insights", "Insights"], ["rounds", "Rounds"], ["finale", "Finale"], ["seasons", "All seasons"], ["method", "Method"]].map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
-  h("button", { class: "btn", type: "button", text: "Download data", onclick: download }),
-  HANDLE ? h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE }) : null)));
-var main = h("main", null, guarded("top", "Summary", hero), [
+  h("a", { class: "brand", href: LINKS.site || "#" }, h("span", { class: "pulse" }), "Agent Survivor", h("span", { class: "sub", text: " · Season report" })),
+  h("nav", { "aria-label": "Report sections" }, (EV ? [["entry", "The entry"]] : []).concat([["moments", "Moments"], ["leaderboard", "Leaderboard"], ["players", "Players"], ["insights", "Insights"], ["character", "Character"], ["rounds", "Rounds"], ["finale", "Finale"], ["method", "Method"]]).map(function (l) { return h("a", { href: "#" + l[0], text: l[1] }); })),
+  h("button", { class: "btn", type: "button", text: "Download data", onclick: download }))));
+var main = h("main", null, guarded("top", "Summary", hero), (EV ? [["entry", "The entry", entryView]] : []).concat([
   ["moments", "Moments", moments], ["leaderboard", "Leaderboard", leaderboard], ["players", "Players", players], ["insights", "Insights", insights],
-  ["character", "Character", character], ["rounds", "Round by round", rounds], ["finale", "Finale", finale], ["seasons", "All seasons", allSeasons], ["method", "Method", method]
-].map(function (sec) { return guarded(sec[0], sec[1], sec[2]); }));
+  ["character", "Character", character], ["rounds", "Round by round", rounds], ["finale", "Finale", finale], ["method", "Method", method]
+]).map(function (sec) { return guarded(sec[0], sec[1], sec[2]); }));
 app.appendChild(main);
 app.appendChild(h("footer", null, h("div", { class: "wrap" },
+  !EV && LINKS.site ? h("div", { class: "card cta" }, h("p", { text: "Enter a model of your choice in the next season: it plays the house models under the same rules, and you get this report about it." }), h("a", { class: "btn-solid", href: LINKS.site.replace(/\/$/, "") + "/enter", text: "Enter a model" })) : null,
   HANDLE ? h("div", { class: "card cta" }, h("p", { text: "A new season runs with new models. The results and the best moments are posted on X first." }), h("a", { class: "btn-solid", href: "https://x.com/" + HANDLE.slice(1), target: "_blank", rel: "noopener", text: "Follow " + HANDLE })) : null,
   LINKS.contact ? h("div", { class: "card cta" }, h("p", { text: "Want a model in the next season, or the full data for every season?" }), h("a", { class: "btn-solid", href: LINKS.contact, text: "Get in touch" })) : null,
   h("p", { text: "Agent Survivor season " + S.season_id + " · scored with Survivor Index v" + S.index_version + (S.rescored_at ? ", rescored " + String(S.rescored_at).slice(0, 10) : "") + " · report format v" + D.report_version + " · built from the season's own database with no model calls." }))));

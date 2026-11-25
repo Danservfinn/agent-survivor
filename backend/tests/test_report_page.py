@@ -172,6 +172,32 @@ class EntrySeasonTest(unittest.TestCase):
             self.assertIsNone(model["est_cost_per_round_usd"])
         self.assertFalse(any(card["label"] == "Cost" for card in report["takeaways"]))
 
+    def test_entry_view_is_built_and_rendered_first(self) -> None:
+        from backend import season_story
+
+        with tempfile.TemporaryDirectory() as tmp:
+            season_dir = copy_season(Path(tmp))
+            conn = sqlite3.connect(season_dir / "season.db")
+            agent_id, alias = conn.execute("SELECT agent_id, pseudonym FROM Agents WHERE elimination_round IS NOT NULL ORDER BY elimination_round LIMIT 1").fetchone()
+            conn.close()
+            (season_dir / "entry.json").write_text(json.dumps({"entry_id": "e1", "name": "Night Owl", "model_id": "lab/model", "agent_id": agent_id, "alias": alias}))
+            report = build_season_report(season_dir)
+        view = report["entry_view"]
+        self.assertEqual((view["agent_id"], view["name"]), (agent_id, "Night Owl"))
+        self.assertIsNotNone(view["why_left"])
+        self.assertTrue(view["parts"])
+        for part in view["parts"]:
+            self.assertRegex(part["value"], r"^\d|^–")
+        self.assertLessEqual(len(view["advice"]), 3)
+        self.assertIn("badge", season_story.card_ids(report))
+        dom = rendered_dom(render_report_html(report))
+        if dom is None:
+            self.skipTest("no Chrome")
+        self.assertIn('id="entry"', dom)
+        self.assertLess(dom.index('id="entry"'), dom.index('id="moments"'))
+        self.assertNotIn(NOTICE, dom)
+        self.assertIn("The entry: Night Owl", dom)
+
 
 class RescoreTest(unittest.TestCase):
     def test_rescore_keeps_the_old_scorecard_and_the_run_facts(self) -> None:
