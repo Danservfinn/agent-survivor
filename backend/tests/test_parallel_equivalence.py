@@ -93,6 +93,12 @@ class _Stub:
             predicted_eliminated=target,
             predicted_votes={t["agent_id"]: target for t in targets[:3]} if kind == "vote" and target else None,
             prediction_confidence=0.6,
+            # the inner life: lies with a vote goal, and the voter's read of what
+            # others expect of it; both are written and read back, so compared too
+            truth=("true", "half", "lie")[h % 3] if kind in ("group_conversation", "followup", "dialogue") else None,
+            lie_purpose=f"purpose {h % 37}" if h % 3 else None,
+            lie_goal_vote=target if h % 3 else None,
+            expected_of_me={t["agent_id"]: target for t in targets[1:4]} if kind == "vote" and target else None,
         )
 
     def challenge(self, **kwargs) -> ChallengeSolution:
@@ -199,6 +205,8 @@ class ParallelEquivalenceTest(unittest.TestCase):
         self.assertTrue(sequential_dump["SpoiledVotes"])
         self.assertTrue(sequential_dump["Feelings"])
         self.assertTrue(sequential_dump["Confessionals"])
+        self.assertTrue(sequential_dump["RoundThoughts"])
+        self.assertTrue(sequential_dump["Lies"])
         # group talks of three or more happened (column 5 is target_size, the talk's size)
         self.assertTrue(any(row[5] > 2 for row in sequential_dump["GroupDiscussions"]))
         self.assertIn("(says nothing)", json.dumps(sequential_dump["StoryEvents"]))

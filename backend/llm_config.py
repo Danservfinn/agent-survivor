@@ -100,6 +100,20 @@ def secret_ballot() -> bool:
     return os.environ.get("SURVIVOR_SECRET_BALLOT", "1").strip() != "0"
 
 
+def inner_life_enabled() -> bool:
+    """A player's train of thought within a round, its read of what others
+    expect of it, its contradictions, and its private lie ledger (2026-11-25).
+    SURVIVOR_INNER_LIFE=0 turns them off, to compare."""
+    return os.environ.get("SURVIVOR_INNER_LIFE", "1").strip() != "0"
+
+
+def advantages_enabled() -> bool:
+    """Receipts, spying, idol search, shown idols and ballots, giving away
+    immunity, and the auction (2026-11-25). SURVIVOR_ADVANTAGES=0 turns them
+    off, to compare."""
+    return os.environ.get("SURVIVOR_ADVANTAGES", "1").strip() != "0"
+
+
 def feelings_enabled() -> bool:
     """Players record their own feelings after each council and carry them
     forward (default since 2026-11-25). SURVIVOR_FEELINGS=0 turns it off, to

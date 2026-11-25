@@ -230,6 +230,32 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- a player's one-line summary after each of its own calls this
+            -- round: its train of thought, read back to it (private)
+            CREATE TABLE IF NOT EXISTS RoundThoughts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                step TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- a line a player privately marked as a lie or a half-truth, its
+            -- purpose, the vote it wanted, and who heard it
+            CREATE TABLE IF NOT EXISTS Lies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                step TEXT NOT NULL,
+                said TEXT NOT NULL,
+                truth TEXT NOT NULL,
+                purpose TEXT NOT NULL DEFAULT '',
+                goal_vote TEXT,
+                listeners TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- each player's private plan for a round, written before the challenge
             CREATE TABLE IF NOT EXISTS PrivatePlans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -453,6 +479,8 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
         )
         _seed_challenge_puzzles(conn)
         _ensure_column(conn, "Agents", "model_id", "TEXT NOT NULL DEFAULT ''")
+        # a voter's guess at who each other voter thinks it is voting for
+        _ensure_column(conn, "Votes", "expected_of_me", "TEXT")
         # a pact left openly in a talk (a clean exit, not a betrayal)
         _ensure_column(conn, "AllianceMemberships", "left_round", "INTEGER")
         _ensure_column(conn, "Agents", "archetype_source", "TEXT NOT NULL DEFAULT 'seeded'")
@@ -555,6 +583,8 @@ def seed_demo(
         conn.execute("DELETE FROM Confessionals")
         conn.execute("DELETE FROM Feelings")
         conn.execute("DELETE FROM Strategies")
+        conn.execute("DELETE FROM RoundThoughts")
+        conn.execute("DELETE FROM Lies")
         conn.execute("DELETE FROM StrategyRatings")
         conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
@@ -643,6 +673,8 @@ def _database_ready() -> bool:
             "Feelings",
             "Strategies",
             "StrategyRatings",
+            "RoundThoughts",
+            "Lies",
         }
         tables = {
             row["name"]
@@ -654,7 +686,7 @@ def _database_ready() -> bool:
             return False
         # newer columns too: an older database gets them from init_database
         # (_ensure_column, additive) without a reseed
-        for table, column in (("AllianceMemberships", "left_round"),):
+        for table, column in (("AllianceMemberships", "left_round"), ("Votes", "expected_of_me")):
             if column not in {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}:
                 return False
         game = conn.execute("SELECT 1 FROM GameState WHERE season_id = 1").fetchone()

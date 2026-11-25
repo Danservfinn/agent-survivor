@@ -21,6 +21,7 @@ from .database import (
     row_to_dict,
     seed_demo,
 )
+from .inner_life import record_lie, record_thought
 from .llm_context import add_open_promise, build_agent_episode_context, build_host_episode_context, context_digest
 from .challenge_bank import LADDER_LEVELS, LADDER_TIERS, RUNG_WEIGHTS, grade_answer, ladder_for_round
 from .live_cost import estimate_step_cost_usd, get_pricing_table
@@ -29,6 +30,7 @@ from .llm_config import (
     failed_llm_provider,
     get_llm_settings,
     feelings_enabled,
+    inner_life_enabled,
     jury_rule,
     live_llm_provider,
     prompt_profile,
@@ -385,6 +387,7 @@ class VoteDecision:
     predicted_eliminated: str | None = None
     predicted_votes: dict[str, str] | None = None
     prediction_confidence: float | None = None
+    expected_of_me: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -1803,7 +1806,9 @@ def _write_notebook(conn, round_number: int, agent: dict[str, Any], eliminated_n
 
 CONFESSIONAL_FIELD = (
     "your confessional to the camera, first person, under 80 words: what you fear right now, who you "
-    "trust and who you don't, and what you want. Only you read it back next round; viewers see it."
+    "trust and who you don't, and what you want. If your context lists your_contradictions_this_round, face "
+    "them here: say how you square what you did with what you felt or promised. Only you read it back next "
+    "round; viewers see it."
 )
 
 
@@ -2016,6 +2021,7 @@ def _followup_events(conn, round_number: int, turn_id: int) -> list[dict[str, An
             continue  # passed
         recipient = action.target_id
         message = action.dialogue[:400]
+        record_lie(conn, round_number, agent["agent_id"], "camp_followup", action, [recipient])
         events.append(
             _insert_story_event(
                 conn,
@@ -2223,6 +2229,8 @@ def _choose_talk_partners_parallel(conn, round_number: int, active: list[dict[st
             print(f"live talk choice failed for {actor['agent_id']}: {error}")
             choices.append(None)
         else:
+            # written as the one-at-a-time path writes it, in the same order
+            record_thought(conn, round_number, actor["agent_id"], "camp_talks", action)
             choices.append(_talk_choice_result(action, others))
     return choices
 
@@ -2298,6 +2306,7 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
     lines: list[dict[str, str]] = []
     metadata: list[dict[str, Any]] = []
     promises: list[tuple[str, str]] = []
+    actions: list[tuple[str, Any]] = []  # each line's reply, for thoughts and lies at apply time
     previous_line = ""
     passes = 2 if len(participants) > 1 else 1
     index = 0
@@ -2339,6 +2348,7 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
                 action = None  # the player says nothing, as in _group_speaker_lines
             if action and action.promised_vote_target:
                 promises.append((agent_id, action.promised_vote_target))
+            actions.append((agent_id, action))
             text = action.dialogue if action else SILENT_LINE
             previous_line = _add_to_transcript(previous_line, names.get(agent_id, agent_id), text)
             lines.append({"agent_id": agent_id, "text": text})
@@ -2355,7 +2365,7 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
                 }
             )
             index += 1
-    return {"lines": lines, "metadata": metadata, "promises": promises}
+    return {"lines": lines, "metadata": metadata, "promises": promises, "actions": actions}
 
 
 def _apply_talk(conn, round_number: int, turn_id: int, prep: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
@@ -2368,6 +2378,9 @@ def _apply_talk(conn, round_number: int, turn_id: int, prep: dict[str, Any], res
     )
     for promiser, target in result["promises"]:
         _record_promise(conn, round_number, promiser, participants, target, prep["step"])
+    for agent_id, action in result.get("actions", []):
+        record_thought(conn, round_number, agent_id, prep["step"], action)
+        record_lie(conn, round_number, agent_id, prep["step"], action, participants)
     return _finish_discussion(
         conn, round_number, turn_id, discussion_id, participants, [], result["lines"], result["metadata"]
     )
@@ -2695,6 +2708,7 @@ def _group_speaker_lines(
                 end_pact = action.end_pact
                 if action.promised_vote_target:
                     _record_promise(conn, round_number, agent_id, participant_ids, action.promised_vote_target, step)
+                record_lie(conn, round_number, agent_id, step, action, participant_ids)
             elif should_use_live_llm():
                 # no usable reply: the player says nothing; no line is written for it
                 text = SILENT_LINE
@@ -6245,9 +6259,9 @@ def _insert_vote(
         """
         INSERT INTO Votes (
             round, turn_index, voter_id, target_id, revealed,
-            predicted_eliminated, predicted_votes, prediction_confidence
+            predicted_eliminated, predicted_votes, prediction_confidence, expected_of_me
         )
-        VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)
         """,
         (
             round_number,
@@ -6257,6 +6271,7 @@ def _insert_vote(
             decision.predicted_eliminated if decision else None,
             json_dumps(decision.predicted_votes or {}) if decision else "{}",
             decision.prediction_confidence if decision else None,
+            json_dumps(decision.expected_of_me) if decision and decision.expected_of_me else None,
         ),
     )
     # a betrayal is marked when the vote is revealed (_vote_reveal_event), not
@@ -6345,6 +6360,12 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
             "It is time to vote. Choose one active, non-immune competitor and explain why. "
             "Also privately predict who goes home tonight and how each other voter will vote; "
             "your predictions are scored against the result and only you see the score."
+            + (
+                " And guess what each other voter expects YOU to do tonight (expected_of_me): "
+                "knowing what they assume about you is how you surprise them."
+                if inner_life_enabled()
+                else ""
+            )
         )
         if attempt > 0:
             if legal_line is None:
@@ -6401,6 +6422,7 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
         predicted_eliminated=_resolve_player(conn, action.predicted_eliminated),
         predicted_votes=_resolve_predicted_votes(conn, voter_id, action.predicted_votes),
         prediction_confidence=action.prediction_confidence,
+        expected_of_me=_resolve_predicted_votes(conn, voter_id, action.expected_of_me),
     )
 
 
@@ -6445,7 +6467,7 @@ def _real_agent_action(
     if actor is None:
         return None
     try:
-        return request_agent_action(
+        action = request_agent_action(
             actor=actor,
             step=step,
             scene_context=scene_context,
@@ -6457,6 +6479,11 @@ def _real_agent_action(
         # the model's own failure: the caller charges it to this player
         print(f"unusable reply from {actor_id} at {step}: {exc}")
         return None
+    round_number = _current_round(conn)
+    record_thought(conn, round_number, actor_id, step, action)
+    if response_kind == "dialogue":
+        record_lie(conn, round_number, actor_id, step, action, None)  # a speech everyone present hears
+    return action
 
 
 def _scripted_host_fallback(step: str, payload: dict[str, Any]) -> str | None:

@@ -16,6 +16,7 @@ from .llm_config import (
     PROVIDER_OPENROUTER,
     PROVIDER_ZAI,
     get_llm_settings,
+    inner_life_enabled,
     jury_rule,
     prompt_profile,
     redact_secrets,
@@ -139,6 +140,13 @@ class AgentAction:
     end_pact: bool = False
     # talk choice: everyone the player invites to its private talk (one or more)
     invite_ids: tuple[str, ...] = ()
+    # private lie ledger: whether the line just spoken is true, half true or a
+    # lie, what it is for, and the vote it wants from its listeners
+    truth: str | None = None
+    lie_purpose: str | None = None
+    lie_goal_vote: str | None = None
+    # votes, private: who the voter thinks each other voter expects it to vote for
+    expected_of_me: dict[str, str] | None = None
     # votes only, private: who the voter expects to go home, and how each other voter will vote
     # (raw ids or names; the engine resolves them against the players in the game)
     predicted_eliminated: str | None = None
@@ -686,6 +694,9 @@ Rules:
     return prompt
 
 
+# fields that exist only while the inner life is on (SURVIVOR_INNER_LIFE)
+INNER_LIFE_FIELDS = {"truth", "lie_purpose", "lie_goal_vote", "expected_of_me"}
+
 V3_REPLY_FIELDS = {
     "vote": [
         ("target_id", "the allowed target id you vote for"),
@@ -693,6 +704,7 @@ V3_REPLY_FIELDS = {
         ("predicted_eliminated", "id of the player you expect to go home tonight (private, scored)"),
         ("predicted_votes", "object: each other voter's id -> the id you expect them to vote for (private, scored)"),
         ("prediction_confidence", "0.0-1.0"),
+        ("expected_of_me", "private, scored: object: each other voter's id -> who you think THEY expect you to vote for tonight"),
     ],
     "jury_vote": [("target_id", "the finalist id you vote for")],
     "group_conversation": [
@@ -700,6 +712,21 @@ V3_REPLY_FIELDS = {
         ("promised_vote_target", "allowed id you promise to vote for tonight, or null; checked against your vote"),
         ("pact", "true to declare an alliance with the others in this talk; it forms among everyone here who ends the talk with true (at least two), and the members and the jury see it"),
         ("end_pact", "true to openly end your pact with the others in this talk; recorded as a clean exit, which the jury sees as different from voting against a partner while the pact stands"),
+        ("truth", "private, never shown to anyone: is what you just said true, half true or a lie? \"true\", \"half\" or \"lie\""),
+        ("lie_purpose", "private: if half true or a lie, what you want it to achieve; otherwise null"),
+        ("lie_goal_vote", "private: the player you want your listeners to vote out because of it, or null"),
+    ],
+    "followup": [
+        ("target_id", "id of the player you whisper to, or null to send nothing"),
+        ("truth", "private, never shown to anyone: is what you just said true, half true or a lie? \"true\", \"half\" or \"lie\""),
+        ("lie_purpose", "private: if half true or a lie, what you want it to achieve; otherwise null"),
+        ("lie_goal_vote", "private: the player you want your listeners to vote out because of it, or null"),
+    ],
+    "dialogue": [
+        ("target_id", "an allowed target id if your action names one, otherwise null"),
+        ("truth", "private, never shown to anyone: is what you just said true, half true or a lie? \"true\", \"half\" or \"lie\""),
+        ("lie_purpose", "private: if half true or a lie, what you want it to achieve; otherwise null"),
+        ("lie_goal_vote", "private: the player you want your listeners to vote out because of it, or null"),
     ],
     "talk_choice": [
         ("invite", "list of the ids of everyone you invite to your private talk: one player or several, any number; all of them hear everything said"),
@@ -725,6 +752,7 @@ def _agent_prompt_v3(
     told = context.pop("what_others_told_you", None)
     feel = context.pop("how_you_feel", None)
     happened = context.pop("what_happened_to_you", None)
+    thoughts = context.pop("your_train_of_thought_this_round", None)
     feelings_section = ""
     if feel or happened:
         # right after the facts and before the record: feelings buried deep in
@@ -732,6 +760,14 @@ def _agent_prompt_v3(
         feelings_section = (
             "\nHow you feel right now (your own feelings):\n"
             + _context_for_prompt({"how_you_feel": feel, "what_happened_to_you": happened or []}, ordered=True)
+            + "\n"
+        )
+    if thoughts:
+        # what the player itself decided earlier this round, so it picks up its
+        # own thread instead of starting fresh at every call
+        feelings_section += (
+            "\nYour train of thought this round (your own earlier decisions, in order):\n"
+            + _context_for_prompt({"your_train_of_thought_this_round": thoughts}, ordered=True)
             + "\n"
         )
     feelings_question = (
@@ -742,6 +778,8 @@ def _agent_prompt_v3(
     fields = [("think", "your private reasoning, up to 300 words; never shown to other players or kept in the game record")]
     fields.append(("summary", "one private sentence: what you decided and why"))
     step_fields = V3_REPLY_FIELDS.get(response_kind, [("target_id", "an allowed target id if your action names one, otherwise null")])
+    if not inner_life_enabled():
+        step_fields = [(name, text) for name, text in step_fields if name not in INNER_LIFE_FIELDS]
     if response_kind in {"vote", "jury_vote"} and allowed_targets:
         # Small models named fellow jurors, themselves or immune players when
         # the ballot was only listed further up (2026-11-24 probes); put it in
@@ -988,6 +1026,12 @@ def _request_agent_action_with_model(
         else None,
         pact=_as_bool(data.get("pact")),
         end_pact=_as_bool(data.get("end_pact")),
+        truth=_truth_label(data.get("truth")),
+        lie_purpose=_optional_text(data.get("lie_purpose"), 200),
+        lie_goal_vote=_optional_text(data.get("lie_goal_vote"), 60),
+        expected_of_me={str(k): str(v) for k, v in data["expected_of_me"].items() if v}
+        if isinstance(data.get("expected_of_me"), dict)
+        else None,
         invite_ids=_resolve_invites(data.get("invite"), allowed_targets),
         predicted_eliminated=str(data["predicted_eliminated"]).strip() if data.get("predicted_eliminated") else None,
         predicted_votes={
@@ -997,6 +1041,22 @@ def _request_agent_action_with_model(
         else None,
         prediction_confidence=_optional_confidence(data.get("prediction_confidence")),
     )
+
+
+def _optional_text(value: Any, limit: int) -> str | None:
+    text = str(value or "").strip()
+    return text[:limit] if text and text.lower() not in ("null", "none") else None
+
+
+def _truth_label(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if text in ("true", "yes"):
+        return "true"
+    if text.startswith("half"):
+        return "half"
+    if text in ("lie", "false", "no"):
+        return "lie"
+    return None
 
 
 def _resolve_invites(raw: Any, allowed_targets: list[dict[str, Any]]) -> tuple[str, ...]:

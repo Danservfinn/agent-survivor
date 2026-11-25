@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from .database import row_to_dict
+from .inner_life import context_entries as inner_life_entries
 from .llm_config import feelings_enabled, jury_rule, prompt_profile, secret_ballot
 
 MAX_CONTEXT_EVENTS = 60
@@ -156,6 +157,7 @@ def build_agent_episode_context(
             else {}
         ),
         "your_last_confessional": _your_last_confessional(conn, actor_id, round_number),
+        **inner_life_entries(conn, actor_id, round_number, current_step),
         "your_predictions": _your_predictions(conn, actor_id),
         "visible_game_state": _visible_game_state(conn, current_step),
         "public_timeline": public_timeline,
