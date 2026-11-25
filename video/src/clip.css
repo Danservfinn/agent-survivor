@@ -21,6 +21,9 @@
 .clip-link-talk { opacity: .8; }
 .clip-link-vote, .clip-link-jury { opacity: .8; }
 .clip-link-broken { stroke-width: 3.5; }
+.clip-speak-ring { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.clip-chat { fill: #fff; stroke: var(--border-strong); stroke-width: 1.5; }
+.clip-chat-dot { fill: var(--muted); }
 .clip-badge { fill: var(--ink); }
 .clip-badge.won { fill: var(--live); }
 .clip-badge-t { fill: #fff; font-family: var(--mono); font-size: 13px; font-weight: 700; text-anchor: middle; }
