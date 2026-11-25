@@ -92,6 +92,11 @@ LAB_MIX_OPENROUTER_MODELS = [
     {"model_id": "deepseek/deepseek-v4.1-flash-1017", "display_name": "DeepSeek V4.1 Flash", "status": "lab_mix"},
     {"model_id": "moonshotai/kimi-k3.1-pro", "display_name": "Kimi K3.1 Pro", "status": "lab_mix"},
     {"model_id": "z-ai/glm-5.3", "display_name": "GLM-5.3", "status": "lab_mix"},
+    # tenth seat (Danny, 2026-11-25). A router: it picks a model and reasoning
+    # effort per request; OpenRouter lists its price as variable. It answered a
+    # vote, a talk line, a strategy pick and a level-3 ladder (5/5) correctly
+    # through the engine's call path for $0.07 in total before it was added.
+    {"model_id": "typesafe/jev-router", "display_name": "Jev Router", "status": "lab_mix"},
 ]
 
 

@@ -99,18 +99,20 @@ _ACTIVE_TABLE: dict[str, dict[str, Any]] = {}
 # token made every estimate hugely negative, which switched cost caps off.
 # They are priced at a frontier-flagship rate instead and marked variable.
 VARIABLE_PRICE_PER_M = (15.0, 75.0)
+# Routers we have measured get their own rate, so cost caps do not stop a
+# season early. Jev Router: four real game calls (a vote, a talk line, a
+# strategy pick, a level-3 ladder) cost $0.068 on 2026-11-25, about $0.017 a
+# call; these rates make our estimate about 2.5 times that. Re-measure after
+# a season.
+MEASURED_VARIABLE_PRICES_PER_M = {"typesafe/jev-router": (1.25, 5.0)}
 
 
 def _sanitize(table: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
     clean = {}
     for model_id, entry in table.items():
         if entry.get("prompt_per_m", 0) < 0 or entry.get("completion_per_m", 0) < 0:
-            entry = {
-                **entry,
-                "prompt_per_m": VARIABLE_PRICE_PER_M[0],
-                "completion_per_m": VARIABLE_PRICE_PER_M[1],
-                "variable": True,
-            }
+            prompt, completion = MEASURED_VARIABLE_PRICES_PER_M.get(model_id, VARIABLE_PRICE_PER_M)
+            entry = {**entry, "prompt_per_m": prompt, "completion_per_m": completion, "variable": True}
         clean[model_id] = entry
     return clean
 

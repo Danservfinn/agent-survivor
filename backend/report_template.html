@@ -371,7 +371,7 @@ var COMP_COLOR = ["var(--p1)", "var(--p2)", "var(--p3)", "var(--p4)", "var(--p5)
 /* one color per maker, as on LiveBench; makers it does not list get the last four, anything else the grey */
 var ORG_COLOR = { OpenAI: "#10A37F", Google: "#EA4335", Anthropic: "#CC785C", DeepSeek: "#7C3AED", Alibaba: "#F59E0B", "Moonshot AI": "#EC4899",
   xAI: "var(--ink)", Meta: "#4267B2", Mistral: "#FF7000", Cohere: "#39C5BB", "Z.AI": "#0EA5E9", MiniMax: "#DB2777", NVIDIA: "#76B900", Microsoft: "#0078D4",
-  Amazon: "#146EB4", IBM: "#0D9488", Reka: "#BE185D", Tencent: "#BE185D", "Inclusion AI": "#65A30D" };
+  Amazon: "#146EB4", IBM: "#0D9488", Reka: "#BE185D", Tencent: "#BE185D", "Inclusion AI": "#65A30D", TypeSafe: "#0F766E" };
 function orgColor(org) { return ORG_COLOR[org] || "#7A8AA8"; }
 function mdot(m) { return h("span", { class: "mdot", style: "background:" + orgColor(m.org), "data-tip": m.org || null }); }
 var SVGNS = "http://www.w3.org/2000/svg";

@@ -43,6 +43,7 @@ const ORG_COLOR: Record<string, string> = {
   rekaai: "#BE185D",
   inclusionai: "#65A30D",
   tencent: "#2563EB",
+  typesafe: "#0F766E",
 };
 
 export function orgColor(modelId?: string | null): string {

@@ -120,6 +120,16 @@ CHANGES: list[dict[str, Any]] = [
         ],
         "fingerprint": "dc129eea356782f9",
     },
+    {
+        "version": 9,
+        "since": "2026-11-25T15:59",
+        "title": "A tenth seat: Jev Router",
+        "changes": [
+            "The frontier roster has ten models: Jev Router (TypeSafe) joins the nine. It is a router that picks a model and reasoning effort for each request.",
+            "With ten players a season has one more round and a jury of seven; the auction comes when seven players remain, and strategy rounds pick from 1 to 20.",
+        ],
+        "fingerprint": "0a960fd93cd1a3d6",
+    },
 ]
 
 

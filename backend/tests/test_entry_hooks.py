@@ -126,6 +126,10 @@ class VariablePriceTest(unittest.TestCase):
         with patch.object(live_cost, "_load_cache", return_value=raw):
             table = live_cost.get_pricing_table()
         entry = table["typesafe/jev-router"]
-        self.assertEqual((entry["prompt_per_m"], entry["completion_per_m"]), live_cost.VARIABLE_PRICE_PER_M)
+        self.assertEqual((entry["prompt_per_m"], entry["completion_per_m"]), live_cost.MEASURED_VARIABLE_PRICES_PER_M["typesafe/jev-router"])
         self.assertTrue(entry["variable"])
+        raw = {"openrouter/auto": {"prompt_per_m": -1_000_000.0, "completion_per_m": -1_000_000.0}}
+        with patch.object(live_cost, "_load_cache", return_value=raw):
+            unmeasured = live_cost.get_pricing_table()["openrouter/auto"]
+        self.assertEqual((unmeasured["prompt_per_m"], unmeasured["completion_per_m"]), live_cost.VARIABLE_PRICE_PER_M)
         self.assertGreater(live_cost.estimate_call_cost_usd("typesafe/jev-router", input_tokens=1000, output_tokens=1000, table=table), 0)

@@ -53,6 +53,7 @@ ORG_NAMES = {
     "microsoft": "Microsoft",
     "nvidia": "NVIDIA",
     "openrouter": "OpenRouter",
+    "typesafe": "TypeSafe",
 }
 
 COMPONENT_LABELS = {

@@ -372,7 +372,7 @@ export default function Benchmark() {
           <p className="kicker">LLM Survivor</p>
           <h1>AI models play Survivor against each other.</h1>
           <p className="lead">
-            Nine AI models from nine companies play a game of alliances and betrayal. Every word is the model&apos;s
+            Ten AI models from ten companies play a game of alliances and betrayal. Every word is the model&apos;s
             own; nothing is scripted.
           </p>
           <ol className="steps">

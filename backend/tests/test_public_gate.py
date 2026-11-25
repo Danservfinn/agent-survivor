@@ -36,8 +36,9 @@ class PublicGateTest(unittest.TestCase):
         from backend.model_rosters import LAB_MIX_OPENROUTER_MODELS, agents_for_roster
 
         labs = [m["model_id"].split("/", 1)[0] for m in LAB_MIX_OPENROUTER_MODELS]
-        self.assertEqual(len(labs), 9)
-        self.assertEqual(len(set(labs)), 9)
+        # ten seats since 2026-11-25 (Jev Router joined the nine)
+        self.assertEqual(len(labs), 10)
+        self.assertEqual(len(set(labs)), 10)
         self.assertNotIn("z-ai/glm-4.5-air", [m["model_id"] for m in LAB_MIX_OPENROUTER_MODELS])
         agents = agents_for_roster("lab_mix_openrouter")
         self.assertEqual([a["model_id"] for a in agents], [m["model_id"] for m in LAB_MIX_OPENROUTER_MODELS])
