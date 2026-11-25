@@ -65,8 +65,12 @@ class OneGroupSeasonTest(unittest.TestCase):
         rows = self.conn.execute("SELECT challenge_type, immunity_agent_ids FROM ChallengeResults").fetchall()
         self.assertTrue(rows)
         for row in rows:
-            self.assertEqual(row["challenge_type"], "individual")
-            self.assertEqual(len(json.loads(row["immunity_agent_ids"])), 1)
+            # puzzle rounds always crown one winner; a strategy round (lowest
+            # unique number) can end with nobody immune
+            self.assertIn(row["challenge_type"], ("individual", "lowest_unique"))
+            immune = len(json.loads(row["immunity_agent_ids"]))
+            self.assertEqual(immune, 1) if row["challenge_type"] == "individual" else self.assertLessEqual(immune, 1)
+        self.assertIn("lowest_unique", {row["challenge_type"] for row in rows})
 
     def test_idols_come_only_from_the_first_two_challenges_and_expire(self) -> None:
         first_round = self.conn.execute("SELECT MIN(round) FROM Turns").fetchone()[0]

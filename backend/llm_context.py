@@ -5,6 +5,7 @@ from typing import Any
 
 from .database import row_to_dict
 from .advantages import receipt_id
+from .strategy_challenge import rules_line as strategy_rules_line, strategy_challenges_enabled
 from .inner_life import context_entries as inner_life_entries
 from .llm_config import advantages_enabled, feelings_enabled, host_questions_enabled, inner_life_enabled, jury_rule, prompt_profile, secret_ballot
 
@@ -72,6 +73,8 @@ def game_rules() -> list[str]:
     (SURVIVOR_JURY_RULE) in force."""
     rules = list(GAME_RULES)
     rules.insert(5, _BALLOT_RULE[secret_ballot()])
+    if strategy_challenges_enabled():
+        rules.insert(2, strategy_rules_line())
     if host_questions_enabled():
         rules.append(HOST_QUESTION_RULE)
     if advantages_enabled():
@@ -570,6 +573,20 @@ def _challenge_history(conn) -> list[dict[str, Any]]:
             result = json.loads(row["result_payload"] or "{}")
         except (TypeError, ValueError):
             immune_ids, result = [], {}
+        if row["challenge_type"] == "lowest_unique":
+            # a strategy round: every pick is public once the result is read
+            history.append(
+                {
+                    "round": row["round"],
+                    "challenge": "lowest unique number",
+                    "winner": names.get(row["winning_agent_id"], row["winning_agent_id"]) if row["winning_agent_id"] else None,
+                    "immune": [names.get(agent_id, agent_id) for agent_id in immune_ids],
+                    "picks": {names.get(agent_id, agent_id): number for agent_id, number in (result.get("picks") or {}).items()},
+                    "winning_number": result.get("winning_number"),
+                    "idol_given_by_winner": row["round"] in idol_rounds,
+                }
+            )
+            continue
         unfinished = set(result.get("did_not_finish") or [])
         scores = {
             names.get(agent_id, agent_id): "did not finish" if agent_id in unfinished else score.get("correct", 0)

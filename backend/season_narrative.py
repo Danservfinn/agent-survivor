@@ -136,6 +136,26 @@ def season_narrative(season_id: str) -> dict[str, Any]:
                         payload = json.loads(e["payload"] or "{}")
                         winners = payload.get("immunity_agent_ids") or []
                         immunity = [names.get(w, w) for w in winners]
+                        if payload.get("challenge_type") == "lowest_unique":
+                            # a strategy round: everyone's sealed number, lowest unique wins
+                            winner_id = payload.get("winning_agent_id")
+                            challenge = {
+                                "type": "lowest_unique",
+                                "winner": names.get(winner_id, winner_id) if winner_id else None,
+                                "winner_id": winner_id or "",
+                                "immunity": immunity,
+                                "picks": [
+                                    {"who": _swap_names(str(name), aliases), "pick": number}
+                                    for name, number in (payload.get("picks") or {}).items()
+                                ],
+                                "winning_number": payload.get("winning_number"),
+                                "idol_given": any(
+                                    (_payload(g) or {}).get("idol_given")
+                                    for g in events
+                                    if g["kind"] == "challenge_gift"
+                                ),
+                            }
+                            break
                         if payload.get("standings") is not None:
                             # ladder seasons (2026-11-24 on): every player's score, no timing
                             winner_id = payload.get("winning_agent_id")
@@ -177,7 +197,7 @@ def season_narrative(season_id: str) -> dict[str, Any]:
                     break
 
             # older seasons: every attempt, who tried, how fast, who solved first
-            if challenge is not None and challenge.get("type") != "ladder":
+            if challenge is not None and challenge.get("type") not in ("ladder", "lowest_unique"):
                 attempts = conn.execute(
                     """
                     SELECT a.agent_id, a.is_correct, a.response_ms, a.answer,

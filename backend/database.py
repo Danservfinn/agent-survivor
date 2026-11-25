@@ -298,6 +298,17 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- a strategy-round challenge: each player's sealed pick
+            CREATE TABLE IF NOT EXISTS StrategyPicks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                agent_id TEXT NOT NULL,
+                pick INTEGER,
+                why TEXT NOT NULL DEFAULT '',
+                provider TEXT NOT NULL DEFAULT 'deterministic',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- each player's private plan for a round, written before the challenge
             CREATE TABLE IF NOT EXISTS PrivatePlans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -635,6 +646,7 @@ def seed_demo(
         conn.execute("DELETE FROM IdolSearches")
         conn.execute("DELETE FROM AuctionBids")
         conn.execute("DELETE FROM Advantages")
+        conn.execute("DELETE FROM StrategyPicks")
         conn.execute("DELETE FROM StrategyRatings")
         conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
@@ -729,6 +741,7 @@ def _database_ready() -> bool:
             "IdolSearches",
             "AuctionBids",
             "Advantages",
+            "StrategyPicks",
         }
         tables = {
             row["name"]

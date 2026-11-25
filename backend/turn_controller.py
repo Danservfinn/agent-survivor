@@ -21,6 +21,7 @@ from .database import (
     row_to_dict,
     seed_demo,
 )
+from .strategy_challenge import LOWEST_UNIQUE, PICK_FIELDS, clean_pick, highest_pick, is_strategy_round, lowest_unique_winner, pick_task
 from .auction import ITEMS as AUCTION_ITEMS, auction_due, bids_json, clean_bids, extra_votes_for_round, holds as holds_advantage, tokens as auction_tokens, winners as auction_winners
 from .advantages import find_talk, line_stamps, overheard_text, receipts_for, spy_caught, with_stamps
 from .inner_life import record_lie, record_thought
@@ -3066,7 +3067,224 @@ def _stable_index(seed: str, modulo: int) -> int:
     return int(digest[:10], 16) % modulo
 
 
+def _strategy_round(conn, round_number: int) -> bool:
+    return is_strategy_round(round_number, _season_first_round(conn))
+
+
+def _strategy_host_line(conn, round_number: int, step: str, intent: str, facts: dict[str, Any]) -> Any:
+    """The host's wording for a strategy round, or None (the plain line stands)."""
+    if not should_use_live_llm():
+        return None
+    host_context = build_host_episode_context(conn, round_number=round_number, current_step=step)
+    return _real_host_event_text(step=step, beat_context={"intent": intent, **facts}, episode_context=host_context)
+
+
+def _strategy_intro_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
+    players = _active_agent_rows(conn)
+    top = highest_pick(len(players))
+    stakes = (
+        f"Strategy challenge: every player secretly picks a whole number from 1 to {top}. The lowest number that "
+        "exactly one player picks wins immunity; if no number is unique, nobody is immune."
+    )
+    if _idol_gift_round(conn, round_number):
+        stakes += " This round the winner also gives a hidden idol to another player."
+    dialogue = f"Round {round_number} challenge. {stakes}"
+    subtitle = "Competing: " + ", ".join(agent["pseudonym"] for agent in players)
+    payload: dict[str, Any] = {"challenge_type": LOWEST_UNIQUE, "highest_pick": top, "host_narration": stakes, "llm_provider": "deterministic"}
+    host_text = _strategy_host_line(
+        conn, round_number, "challenge_intro",
+        "Introduce this round's strategy challenge (lowest unique number), how it is won, and what the winner gets.",
+        {"stakes": stakes},
+    )
+    if host_text:
+        dialogue, subtitle = host_text.dialogue, host_text.subtitle
+        payload.update(host_narration=host_text.host_narration, llm_provider=live_llm_provider(), llm_model_id=host_text.model_id)
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="challenge",
+        kind="challenge_intro",
+        scene="challenge",
+        shot="wide_setup",
+        actor_ids=["host"],
+        target_ids=[agent["agent_id"] for agent in players],
+        visibility="audience",
+        title=f"Round {round_number} Challenge",
+        dialogue=dialogue,
+        subtitle=subtitle,
+        duration_ms=11000,
+        animation="challenge_setup",
+        payload=payload,
+    )
+
+
+def _strategy_attempt_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
+    """Sealed picks from every player at once: no pick can see another."""
+    players = _active_agent_rows(conn)
+    top = highest_pick(len(players))
+    if not conn.execute("SELECT 1 FROM StrategyPicks WHERE round = ?", (round_number,)).fetchone():
+        if should_use_live_llm():
+            contexts = {
+                agent["agent_id"]: build_agent_episode_context(
+                    conn, actor_id=agent["agent_id"], round_number=round_number, current_step="challenge_attempts"
+                )
+                for agent in players
+            }
+            task = pick_task(top, len(players))
+            jobs = [
+                (lambda agent=agent: request_private_writing(
+                    actor=agent, task=task, fields=PICK_FIELDS, episode_context=contexts[agent["agent_id"]], max_tokens=400
+                ))
+                for agent in players
+            ]
+            results = _run_parallel(jobs) if _parallel_enabled() else [_call_or_error(job) for job in jobs]
+            rows = []
+            for agent, (reply, error) in zip(players, results):
+                if error is not None:
+                    print(f"live strategy pick failed for {agent['agent_id']}: {error}")
+                reply = reply or {}
+                rows.append(
+                    (agent["agent_id"], clean_pick(reply.get("pick"), top), str(reply.get("why") or "")[:300],
+                     live_llm_provider() if error is None else "failed")
+                )
+        else:
+            # no model: picks rotate so a different player wins each such round
+            rows = [
+                (agent["agent_id"], (index + round_number) % len(players) + 1, "", "deterministic")
+                for index, agent in enumerate(players)
+            ]
+        conn.executemany(
+            "INSERT INTO StrategyPicks (round, agent_id, pick, why, provider) VALUES (?, ?, ?, ?, ?)",
+            [(round_number, *row) for row in rows],
+        )
+    picked = sum(
+        1 for row in conn.execute("SELECT pick FROM StrategyPicks WHERE round = ?", (round_number,)) if row["pick"] is not None
+    )
+    return [
+        _insert_story_event(
+            conn,
+            turn_id=turn_id,
+            round_number=round_number,
+            phase="challenge",
+            kind="challenge_attempts",
+            scene="challenge",
+            shot="attempt_montage",
+            actor_ids=["host"],
+            target_ids=[agent["agent_id"] for agent in players],
+            visibility="audience",
+            title="Sealed Picks",
+            dialogue=f"{picked} of {len(players)} players have sealed a number. Picks stay hidden until the result.",
+            subtitle="Lowest unique number",
+            duration_ms=9000,
+            animation="montage",
+            payload={"challenge_type": LOWEST_UNIQUE, "picked": picked, "llm_provider": live_llm_provider() if should_use_live_llm() else "deterministic"},
+        )
+    ]
+
+
+def _strategy_result(conn, round_number: int) -> dict[str, Any]:
+    """Score the strategy round and store it as the round's challenge result.
+    The puzzle ladder's level is carried through unchanged."""
+    picks = {
+        row["agent_id"]: row["pick"]
+        for row in conn.execute("SELECT agent_id, pick FROM StrategyPicks WHERE round = ? ORDER BY id", (round_number,))
+        if row["pick"] is not None
+    }
+    winner, number = lowest_unique_winner(picks)
+    conn.execute("UPDATE Agents SET has_immunity = 0 WHERE status = 'active'")
+    if winner:
+        conn.execute("UPDATE Agents SET has_immunity = 1 WHERE agent_id = ?", (winner,))
+    puzzle_id = f"{LOWEST_UNIQUE}-r{round_number}"
+    top = highest_pick(len(_active_agent_rows(conn)))
+    _persist_puzzles(
+        conn,
+        [{"puzzle_id": puzzle_id, "prompt": pick_task(top, len(_active_agent_rows(conn))), "examples": [], "answer": None,
+          "difficulty": "strategy"}],
+    )
+    cursor = conn.execute(
+        """
+        INSERT INTO ChallengeResults (
+            round, puzzle_id, challenge_type, winning_agent_id, winning_tribe_id,
+            immunity_agent_ids, status, result_payload
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
+        """,
+        (
+            round_number,
+            puzzle_id,
+            LOWEST_UNIQUE,
+            winner,
+            json_dumps([winner] if winner else []),
+            (live_llm_provider() if should_use_live_llm() else "deterministic") if winner else "no_winner",
+            json_dumps(
+                {
+                    "challenge": LOWEST_UNIQUE,
+                    "picks": picks,
+                    "highest_pick": top,
+                    "winning_number": number,
+                    # the ladder's level carries over to the next puzzle round
+                    "ladder_level": _ladder_level(conn, round_number),
+                    "scores": {},
+                }
+            ),
+        ),
+    )
+    return row_to_dict(conn.execute("SELECT * FROM ChallengeResults WHERE id = ?", (cursor.lastrowid,)).fetchone())
+
+
+def _strategy_result_event(conn, round_number: int, turn_id: int, result: dict[str, Any]) -> dict[str, Any]:
+    payload_in = result.get("result_payload") or {}
+    picks = payload_in.get("picks") or {}
+    winner = result["winning_agent_id"]
+    by_number = sorted(picks.items(), key=lambda item: (item[1], _agent_name(conn, item[0])))
+    pick_line = ", ".join(f"{_agent_name(conn, agent_id)} {number}" for agent_id, number in by_number)
+    if winner:
+        dialogue = f"{_agent_name(conn, winner)} wins immunity with {payload_in.get('winning_number')}, the lowest number nobody else picked. Picks: {pick_line}."
+    else:
+        dialogue = f"Every number was picked more than once, so nobody is immune this round. Picks: {pick_line}."
+    payload = {
+        "challenge_type": LOWEST_UNIQUE,
+        "winning_agent_id": winner,
+        "winning_agent_name": _agent_name(conn, winner) if winner else None,
+        "immunity_agent_ids": result["immunity_agent_ids"],
+        "immunity_agent_names": [_agent_name(conn, agent_id) for agent_id in result["immunity_agent_ids"]],
+        "picks": {_agent_name(conn, agent_id): number for agent_id, number in by_number},
+        "winning_number": payload_in.get("winning_number"),
+        "result_status": result["status"],
+        "host_narration": dialogue,
+        "llm_provider": "deterministic",
+    }
+    host_text = _strategy_host_line(
+        conn, round_number, "challenge_result",
+        "Announce every player's number, who won immunity with the lowest unique number (or that nobody did), and what it means for the vote.",
+        {"result": payload},
+    )
+    if host_text:
+        dialogue = host_text.dialogue
+        payload.update(host_narration=host_text.host_narration, llm_provider=live_llm_provider(), llm_model_id=host_text.model_id)
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="challenge",
+        kind="challenge_result",
+        scene="challenge",
+        shot="result_closeup",
+        actor_ids=["host"],
+        target_ids=result["immunity_agent_ids"],
+        visibility="audience",
+        title="Challenge Result",
+        dialogue=dialogue,
+        subtitle=f"Picks: {pick_line}",
+        duration_ms=11000,
+        animation="immunity_award",
+        payload=payload,
+    )
+
+
 def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
+    if _strategy_round(conn, round_number):
+        return _strategy_intro_event(conn, round_number, turn_id)
     ladder = _round_ladder(conn, round_number)
     active_names = ", ".join(agent["pseudonym"] for agent in _active_agent_rows(conn))
     stakes = (
@@ -3128,6 +3346,8 @@ def _challenge_intro_event(conn, round_number: int, turn_id: int) -> dict[str, A
 
 
 def _challenge_attempt_events(conn, round_number: int, turn_id: int) -> list[dict[str, Any]]:
+    if _strategy_round(conn, round_number):
+        return _strategy_attempt_events(conn, round_number, turn_id)
     existing = conn.execute(
         "SELECT COUNT(*) AS count FROM ChallengeAttempts WHERE round = ?",
         (round_number,),
@@ -3256,6 +3476,8 @@ def _challenge_standings(conn, result: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     result = _ensure_challenge_result(conn, round_number)
+    if result.get("challenge_type") == LOWEST_UNIQUE:
+        return _strategy_result_event(conn, round_number, turn_id, result)
     winner_id = result["winning_agent_id"]
     winner_name = _agent_name(conn, winner_id) if winner_id else None
     standings = _challenge_standings(conn, result)
@@ -3344,6 +3566,32 @@ def _challenge_result_event(conn, round_number: int, turn_id: int) -> dict[str, 
 def _challenge_solver_spotlight_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     result = _ensure_challenge_result(conn, round_number)
     winner_id = result["winning_agent_id"]
+    if result.get("challenge_type") == LOWEST_UNIQUE:
+        # a strategy round has no puzzle to spotlight: name the winning number
+        number = (result.get("result_payload") or {}).get("winning_number")
+        line = (
+            f"{_agent_name(conn, winner_id)} took immunity with {number}, a number nobody else dared to pick."
+            if winner_id
+            else "Every number collided: nobody leaves this challenge safe."
+        )
+        return _insert_story_event(
+            conn,
+            turn_id=turn_id,
+            round_number=round_number,
+            phase="challenge",
+            kind="challenge_solver_spotlight",
+            scene="challenge",
+            shot="result_closeup",
+            actor_ids=["host", *([winner_id] if winner_id else [])],
+            target_ids=[winner_id] if winner_id else [],
+            visibility="audience",
+            title="Strategy Spotlight",
+            dialogue=line,
+            subtitle="Lowest unique number",
+            duration_ms=7000,
+            animation="immunity_award",
+            payload={"challenge_type": LOWEST_UNIQUE, "winning_number": number, "host_narration": line, "llm_provider": "deterministic"},
+        )
     standings = _challenge_standings(conn, result)
     if winner_id:
         winner_name = _agent_name(conn, winner_id)
@@ -4124,6 +4372,8 @@ def _ensure_challenge_result(conn, round_number: int) -> dict[str, Any]:
     )
     if existing:
         return existing
+    if _strategy_round(conn, round_number):
+        return _strategy_result(conn, round_number)
 
     ladder = _round_ladder(conn, round_number)
     rungs = len(LADDER_TIERS)

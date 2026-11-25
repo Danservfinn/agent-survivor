@@ -223,7 +223,21 @@ def _build_rounds(data: dict[str, Any], names: dict[str, str]) -> list[dict[str,
         challenge: dict[str, Any] | None = None
         result = next((r for r in reversed(data["results"]) if r["round"] == rn), None)
         attempts = [a for a in data["attempts"] if a["round"] == rn]
-        if result or attempts:
+        strategy = _json((result or {}).get("result_payload"), {}) if result else {}
+        if strategy.get("challenge") == "lowest_unique":
+            # a strategy round: sealed number picks, the lowest unique one wins
+            challenge = {
+                "type": "lowest_unique",
+                "picks": [{"agent_id": aid, "pick": n} for aid, n in sorted((strategy.get("picks") or {}).items(), key=lambda kv: (kv[1], kv[0]))],
+                "winning_number": strategy.get("winning_number"),
+                "highest_pick": strategy.get("highest_pick"),
+                "difficulties": [],
+                "standings": [],
+                "winner_id": result.get("winning_agent_id"),
+                "immunity_ids": _json(result.get("immunity_agent_ids"), []),
+                "status": result.get("status"),
+            }
+        elif result or attempts:
             payload = _json((result or {}).get("result_payload"), {})
             scores = payload.get("scores") or {}
             ladder = any(a.get("rung_index") is not None for a in attempts)

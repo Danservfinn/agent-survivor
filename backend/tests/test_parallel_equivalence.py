@@ -139,6 +139,8 @@ class _Stub:
             "mood": ("confident", "cornered")[h % 2],
             # the auction: sealed bids (some over budget, so void)
             "bids": {"extra_vote": h % 7, "idol": (h >> 3) % 6, "vote_peek": (h >> 6) % 5},
+            # strategy rounds: a sealed number (some collide, so some rounds have no winner)
+            "pick": 1 + h % 6,
         }
 
     def host_text(self, **kwargs) -> HostEventText:
@@ -232,6 +234,7 @@ class ParallelEquivalenceTest(unittest.TestCase):
         self.assertTrue(sequential_dump["IdolSearches"])
         self.assertTrue(sequential_dump["AuctionBids"])
         self.assertTrue(sequential_dump["Advantages"])
+        self.assertTrue(sequential_dump["StrategyPicks"])
         self.assertTrue(any('"stamped"' in str(cell) for row in sequential_dump["StoryEvents"] for cell in row))
         # group talks of three or more happened (column 5 is target_size, the talk's size)
         self.assertTrue(any(row[5] > 2 for row in sequential_dump["GroupDiscussions"]))

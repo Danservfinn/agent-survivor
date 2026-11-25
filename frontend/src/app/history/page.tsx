@@ -37,6 +37,9 @@ type LadderStanding = {
 
 type Challenge = {
   type: string;
+  // strategy rounds (2026-11-25 on): every sealed number; the lowest unique one won
+  picks?: { who: string; pick: number }[];
+  winning_number?: number | null;
   // ladder seasons (2026-11-24 on) carry standings; older seasons carry timed attempts
   standings?: LadderStanding[];
   // the tiebreak guessing game (seasons from 2026-11-24 on)
@@ -190,8 +193,37 @@ function LadderBlock({ challenge, onName }: { challenge: Challenge; onName?: (n:
   );
 }
 
+function PicksBlock({ challenge, onName }: { challenge: Challenge; onName?: (n: string) => void }) {
+  const picks = [...(challenge.picks ?? [])].sort((a, b) => a.pick - b.pick);
+  return (
+    <div className="narrative-block">
+      <h4 className="narrative-label">challenge result</h4>
+      <p className="narrative-summary">
+        Strategy round: lowest unique number.{" "}
+        {challenge.winner ? (
+          <>
+            {onName ? (
+              <button className="narrative-who-btn" onClick={() => onName(challenge.winner as string)}>
+                <strong>{challenge.winner}</strong>
+              </button>
+            ) : (
+              <strong>{challenge.winner}</strong>
+            )}{" "}
+            won immunity with {challenge.winning_number}, a number nobody else picked.
+          </>
+        ) : (
+          "No number was picked by only one player, so nobody was immune."
+        )}
+        {challenge.idol_given ? " The winner gave a hidden idol to another player." : ""}
+      </p>
+      <p className="narrative-summary">{picks.map((row) => `${row.who} ${row.pick}`).join(" · ")}</p>
+    </div>
+  );
+}
+
 function ChallengeBlock({ challenge, onName }: { challenge: Challenge; onName?: (n: string) => void }) {
   const [open, setOpen] = useState(false);
+  if (challenge.picks) return <PicksBlock challenge={challenge} onName={onName} />;
   if (challenge.standings) return <LadderBlock challenge={challenge} onName={onName} />;
   return (
     <div className="narrative-block">

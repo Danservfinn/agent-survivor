@@ -109,6 +109,17 @@ CHANGES: list[dict[str, Any]] = [
         ],
         "fingerprint": "709ecff32281d456",
     },
+    {
+        "version": 8,
+        "since": "2026-11-25T15:43",
+        "title": "Strategy rounds: lowest unique number",
+        "changes": [
+            "Every second round, starting with round 2, the immunity challenge is a strategy game instead of the puzzle ladder: each player secretly picks a whole number from 1 to twice the number of players, and the lowest number picked by exactly one player wins immunity. If no number is unique, nobody is immune. Every pick is public afterwards.",
+            "The puzzle ladder's difficulty carries over a strategy round unchanged. Back-to-back immunity is still allowed.",
+            "Why: the strongest model solved the puzzle ladder in seconds and could win immunity every round; in a test with the frontier roster, three strategy rounds had two different winners.",
+        ],
+        "fingerprint": "dc129eea356782f9",
+    },
 ]
 
 
@@ -161,12 +172,14 @@ def _default_switches() -> Iterator[None]:
 def switches_in_force() -> dict[str, Any]:
     """The switches as this process reads them (a season may run with one turned off)."""
     from . import llm_config as c
+    from .strategy_challenge import strategy_challenges_enabled
 
     return {
         "secret_ballot": c.secret_ballot(),
         "inner_life": c.inner_life_enabled(),
         "advantages": c.advantages_enabled(),
         "host_questions": c.host_questions_enabled(),
+        "strategy_challenges": strategy_challenges_enabled(),
         "feelings": c.feelings_enabled(),
         "jury_rule": c.jury_rule(),
         "prompt_profile": c.prompt_profile(),
@@ -180,7 +193,7 @@ def default_switches() -> dict[str, Any]:
 
 def rule_material() -> dict[str, Any]:
     """Everything that decides how the game plays, in one comparable structure."""
-    from . import advantages, auction, benchmark_scoring, challenge_bank, llm_context, model_rosters, openrouter_client, public_gate
+    from . import advantages, auction, benchmark_scoring, challenge_bank, llm_context, model_rosters, openrouter_client, public_gate, strategy_challenge
     from . import turn_controller as tc
 
     with _default_switches():
@@ -205,6 +218,11 @@ def rule_material() -> dict[str, Any]:
             "first_level_by_roster": tc.FIRST_LEVEL_BY_ROSTER,
             "scoring": code_hash(tc._ensure_challenge_result, tc._ladder_level),
         },
+        "strategy_challenge": [
+            strategy_challenge.STRATEGY_EVERY,
+            code_hash(strategy_challenge.is_strategy_round, strategy_challenge.highest_pick, strategy_challenge.lowest_unique_winner, strategy_challenge.clean_pick),
+            code_hash(tc._strategy_result),
+        ],
         "idols": [tc.IDOL_GIFT_ROUNDS, tc.IDOL_EXPIRES_AT, tc.IDOL_SEARCH_FROM_ROUND, tc.IDOL_HIDDEN_CHANCE],
         "advantages": [advantages.SPY_CAUGHT_CHANCE, auction.TOKENS_PER_ROUND, auction.PLAYERS_GONE_BEFORE_AUCTION],
         "talks": [tc.PRIVATE_TALKS_PER_ROUND, tc.NOTEBOOK_MAX_CHARS],

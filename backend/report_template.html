@@ -733,7 +733,7 @@ function radar() {
 function ladder() {
   var rounds = D.rounds.filter(function (r) { return r.challenge; });
   var card = h("div", { class: "card card-pad" }, h("h3", { text: "Challenge record" }),
-    h("p", { class: "card-sub", text: "Puzzles answered right in each round's challenge. A dark outline marks the immunity winner; a red underline marks the round a model was voted out." }));
+    h("p", { class: "card-sub", text: "Puzzles answered right in each round's challenge; in a strategy round (#), the number the model picked, where the lowest number nobody else picked won. A dark outline marks the immunity winner; a red underline marks the round a model was voted out." }));
   if (!rounds.length) return add(card, [h("div", { class: "empty", text: "No challenge was recorded." })]);
   var order = M.slice().sort(function (a, b) { return a.place - b.place; });
   var table = h("table", { class: "heat" }, h("thead", null, h("tr", null, h("th"), rounds.map(function (r) { return h("th", { text: "R" + r.round }); }), h("th", { text: "all" }))));
@@ -741,6 +741,15 @@ function ladder() {
   order.forEach(function (m) {
     var tr = h("tr", null, h("th", { text: m.model }));
     rounds.forEach(function (r) {
+      if (r.challenge.type === "lowest_unique") {
+        var pk = (r.challenge.picks || []).filter(function (x) { return x.agent_id === m.agent_id; })[0];
+        if (!pk) { tr.appendChild(h("td", { class: "off" })); return; }
+        var won = r.challenge.immunity_ids.indexOf(m.agent_id) >= 0, gone = r.eliminated_id === m.agent_id;
+        tr.appendChild(h("td", { class: (won ? "imm " : "") + (gone ? "out" : ""), tabindex: "0",
+          "data-tip": m.model + ", round " + r.round + "\nStrategy round: picked " + pk.pick + (won ? "\nLowest unique number: won immunity" : "") + (gone ? "\nVoted out this round" : ""),
+          text: "#" + pk.pick }));
+        return;
+      }
       var st = r.challenge.standings.filter(function (x) { return x.agent_id === m.agent_id; })[0];
       if (!st) { tr.appendChild(h("td", { class: "off" })); return; }
       var share = st.of ? st.correct / st.of : 0;
@@ -923,7 +932,15 @@ function roundCard(r, open) {
   var imm = r.challenge && r.challenge.immunity_ids.length ? "Immunity: " + r.challenge.immunity_ids.map(nm).join(", ") : (r.challenge ? "No immunity" : "");
   var body = h("div", { class: "round-b" });
 
-  if (r.challenge) {
+  if (r.challenge && r.challenge.type === "lowest_unique") {
+    var lu = h("div", null, h("p", { class: "sub-l", text: "Challenge · lowest unique number (1 to " + (r.challenge.highest_pick || "?") + ")" }));
+    r.challenge.picks.forEach(function (pk) {
+      var immune = r.challenge.immunity_ids.indexOf(pk.agent_id) >= 0;
+      lu.appendChild(h("div", { class: "ch-row" }, h("span", null, who(pk.agent_id), immune ? h("span", { class: "badge", text: "immune" }) : null), h("span"), h("span", { class: "sc", text: "#" + pk.pick })));
+    });
+    if (!r.challenge.winner_id) lu.appendChild(h("p", { class: "note", style: "margin-top:8px", text: "No number was picked by only one player, so nobody was immune." }));
+    body.appendChild(lu);
+  } else if (r.challenge) {
     var ch = h("div", null, h("p", { class: "sub-l", text: r.challenge.type === "ladder" ? "Challenge · five-puzzle ladder" : "Challenge" }));
     r.challenge.standings.forEach(function (st) {
       var immune = r.challenge.immunity_ids.indexOf(st.agent_id) >= 0;

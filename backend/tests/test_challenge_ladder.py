@@ -110,6 +110,7 @@ class LadderScoringTest(_SeasonDb):
         self.assertEqual(result["result_payload"]["tied"], sorted([a, b]))
         self.assertEqual(self._immune(), [])
 
+    @patch.dict(os.environ, {"SURVIVOR_STRATEGY_CHALLENGES": "0"})  # round 2 is a puzzle round here
     def test_last_rounds_winner_can_win_again(self) -> None:
         a, b, *_ = self.players
         self.conn.execute(
