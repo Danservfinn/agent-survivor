@@ -114,6 +114,13 @@ def advantages_enabled() -> bool:
     return os.environ.get("SURVIVOR_ADVANTAGES", "1").strip() != "0"
 
 
+def host_questions_enabled() -> bool:
+    """At tribal council the host questions a few players in front of everyone,
+    from the public record only (2026-11-25). SURVIVOR_HOST_QUESTIONS=0 turns
+    it off."""
+    return os.environ.get("SURVIVOR_HOST_QUESTIONS", "1").strip() != "0"
+
+
 def feelings_enabled() -> bool:
     """Players record their own feelings after each council and carry them
     forward (default since 2026-11-25). SURVIVOR_FEELINGS=0 turns it off, to

@@ -145,6 +145,14 @@ class _Stub:
         h = self._record("host_text", kwargs)
         return HostEventText(f"host {h % 991}", "sub", "narr", "stub/host")
 
+    def host_questions(self, **kwargs) -> list[dict]:
+        h = self._record("host_questions", kwargs)
+        players = kwargs["players"]
+        # three questions, one to a player not at council, so filtering is compared too
+        return [{"to": players[(h >> k) % len(players)], "question": f"q{(h >> k) % 97}"} for k in (0, 5, 10)] + [
+            {"to": "Nobody", "question": "x"}
+        ]
+
     def host_narration(self, **kwargs) -> HostNarration:
         h = self._record("host_narration", kwargs)
         return HostNarration(f"narr {h % 991}", "stub/host")
@@ -166,6 +174,8 @@ def _play_season(parallel: bool, delay: float = 0.0) -> tuple[list[str], dict[st
     ), patch.object(tc, "request_private_writing", side_effect=stub.private), patch.object(
         tc, "request_host_event_text", side_effect=stub.host_text
     ), patch.object(tc, "request_host_narration", side_effect=stub.host_narration), patch.object(
+        tc, "request_host_questions", side_effect=stub.host_questions
+    ), patch.object(
         tc, "get_pricing_table", return_value=None
     ), patch.object(tc, "_assert_live_roster_compatible", return_value=None), patch(
         "builtins.print"
@@ -226,6 +236,7 @@ class ParallelEquivalenceTest(unittest.TestCase):
         # group talks of three or more happened (column 5 is target_size, the talk's size)
         self.assertTrue(any(row[5] > 2 for row in sequential_dump["GroupDiscussions"]))
         self.assertIn("(says nothing)", json.dumps(sequential_dump["StoryEvents"]))
+        self.assertTrue(any(row[5] == "host_questioning" for row in sequential_dump["StoryEvents"]))
 
 
 class ParallelSpeedTest(unittest.TestCase):

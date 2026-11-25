@@ -328,6 +328,49 @@ Return strict JSON only:
         return _parse_json_content(_message_content(_post_chat_completion(retry, api_key)))
 
 
+HOST_QUESTION_BRIEF = """
+You are the host of a Survivor-style social strategy game, at tribal council, questioning the players the
+way the host of the TV show does: short, pointed, specific questions that put a player on the spot in front
+of everyone. Press on what the public record shows: who met whom, who won or threw the challenge, who handed
+immunity away, who said one thing at a past council and where the votes then went, shown ballots, idol plays,
+the auction, who is on the outside. Make a player commit, defend a move, or answer for a contradiction. Ask a
+different player each question, and favour the players with the most to answer for.
+
+You know ONLY the public record below. Never claim to know what was said in private or how anyone secretly
+voted; ask about it instead ("Fir, you walked off with Ash today. What was that about?").
+""".strip()
+
+
+def request_host_questions(*, public_record: dict[str, Any], players: list[str], count: int) -> list[dict[str, str]]:
+    """The host's questions for tonight's council: [{"to": player name, "question": text}]."""
+    settings = get_llm_settings()
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if settings.provider == PROVIDER_OPENROUTER and not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is required for real OpenRouter calls")
+    prompt = (
+        f"{HOST_QUESTION_BRIEF}\n\nPlayers at council: {', '.join(players)}\n\nPublic record:\n"
+        f"{_context_for_prompt(public_record)}\n\n"
+        f"Ask {count} questions, each to a different player. Return strict JSON only: "
+        '{"questions": [{"to": "player name", "question": "your question, under 30 words"}]}'
+    )
+    payload: dict[str, Any] = {
+        "model": _host_model_id(settings),
+        "messages": [
+            {"role": "system", "content": "Return only valid JSON with the requested keys."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.6,
+        "max_tokens": 600,
+    }
+    reply = _parse_json_content(_message_content(_post_chat_completion(payload, api_key)))
+    questions = reply.get("questions") if isinstance(reply, dict) else None
+    return [
+        {"to": str(q.get("to") or ""), "question": str(q.get("question") or "").strip()[:300]}
+        for q in (questions or [])
+        if isinstance(q, dict) and q.get("question")
+    ]
+
+
 def request_host_narration(
     *,
     step: str,

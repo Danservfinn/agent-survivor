@@ -6,7 +6,7 @@ from typing import Any
 from .database import row_to_dict
 from .advantages import receipt_id
 from .inner_life import context_entries as inner_life_entries
-from .llm_config import advantages_enabled, feelings_enabled, inner_life_enabled, jury_rule, prompt_profile, secret_ballot
+from .llm_config import advantages_enabled, feelings_enabled, host_questions_enabled, inner_life_enabled, jury_rule, prompt_profile, secret_ballot
 
 MAX_CONTEXT_EVENTS = 60
 # Upper bound on a serialized contestant context. When over it, the oldest
@@ -53,6 +53,11 @@ ADVANTAGE_RULES = [
     "Immunity: the challenge winner may keep immunity or hand it to another player for that night. Everyone sees it.",
     "Auction: once, when three players are gone, everyone bids tokens in a sealed auction for an extra vote (counts your ballot twice at one later council), a hidden idol, and a private look at who voted for whom at the last council. You earn 3 tokens a round and 1 per puzzle solved (your situation brief).",
 ]
+HOST_QUESTION_RULE = (
+    "At tribal council, before the speeches, the host questions a few players in front of everyone. The host "
+    "knows only what is public (meetings, challenge scores, tallies, speeches, shown proof) and presses on it; "
+    "your answer is public and may be true or not."
+)
 # a player's private inner life (SURVIVOR_INNER_LIFE)
 INNER_LIFE_RULE = (
     "Your private record: after each step you keep a one-line summary, read back to you for the rest of the round. "
@@ -67,6 +72,8 @@ def game_rules() -> list[str]:
     (SURVIVOR_JURY_RULE) in force."""
     rules = list(GAME_RULES)
     rules.insert(5, _BALLOT_RULE[secret_ballot()])
+    if host_questions_enabled():
+        rules.append(HOST_QUESTION_RULE)
     if advantages_enabled():
         rules += ADVANTAGE_RULES
     if inner_life_enabled():
@@ -99,6 +106,10 @@ AGENT_PUBLIC_KINDS = {
     "tribal_council",
     "camp_meetings",
     "parting_words",
+    # public moves (SURVIVOR_ADVANTAGES) and the host's questions at council
+    "immunity_given",
+    "auction",
+    "host_questioning",
     "revote_tally",
     "deadlock_call",
     "deadlock_discussion",
@@ -287,6 +298,7 @@ def _agent_public_event(event: dict[str, Any]) -> dict[str, Any]:
 
 
 FINALE_SPOKEN_KINDS = {
+    "host_questioning",
     "finale_crossfire",
     "jury_questions",
     "finale_rebuttal",
@@ -294,6 +306,45 @@ FINALE_SPOKEN_KINDS = {
     "deadlock_discussion",
     "tribal_council",
 }
+
+
+def public_record(conn, round_number: int, rounds_back: int = 2) -> dict[str, Any]:
+    """What every player can see, for the host's questions: this round's and
+    the last few rounds' public events, and the public standings. Nothing
+    private and no secret ballot."""
+    names = _names_by_id(conn)
+    events = []
+    for event in _prior_events(conn, round_number):
+        if event["round"] < round_number - rounds_back or not _is_public_event(event):
+            continue
+        if event["kind"] in LOW_VALUE_PUBLIC_KINDS or event["kind"] in ("vote_reveal", "conversation"):
+            continue  # a tally per round is enough; a private talk is never public
+        entry: dict[str, Any] = {"round": event["round"], "what": event["title"], "detail": str(event["dialogue"] or "")[:300]}
+        lines = (event.get("payload") or {}).get("speaker_lines") or []
+        if lines and event["kind"] in FINALE_SPOKEN_KINDS | {"parting_words"}:
+            entry["said"] = [
+                f"{names.get(line.get('agent_id'), 'Host')}: {str(line.get('text') or '')[:200]}"
+                for line in lines
+                if isinstance(line, dict) and line.get("text")
+            ]
+        events.append(entry)
+    tallies: dict[int, dict[str, int]] = {}
+    for row in conn.execute(
+        "SELECT round, target_id FROM Votes WHERE revealed = 1 AND voter_id != 'host' AND round >= ?",
+        (round_number - rounds_back,),
+    ):
+        tally = tallies.setdefault(row["round"], {})
+        name = names.get(row["target_id"], row["target_id"])
+        tally[name] = tally.get(name, 0) + 1
+    active = [row for row in conn.execute("SELECT agent_id, has_immunity FROM Agents WHERE status = 'active' ORDER BY agent_id")]
+    return {
+        "round": round_number,
+        "players_left": [names[row["agent_id"]] for row in active],
+        "immune_tonight": [names[row["agent_id"]] for row in active if row["has_immunity"]],
+        "jury": [names[row["agent_id"]] for row in conn.execute("SELECT agent_id FROM Agents WHERE status = 'eliminated' ORDER BY elimination_round")],
+        "vote_tallies": [{"round": rnd, "tally": tally} for rnd, tally in sorted(tallies.items())],
+        "events": events[-40:],
+    }
 
 
 def _is_public_event(event: dict[str, Any]) -> bool:

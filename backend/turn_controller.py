@@ -24,7 +24,7 @@ from .database import (
 from .auction import ITEMS as AUCTION_ITEMS, auction_due, bids_json, clean_bids, extra_votes_for_round, holds as holds_advantage, tokens as auction_tokens, winners as auction_winners
 from .advantages import find_talk, line_stamps, overheard_text, receipts_for, spy_caught, with_stamps
 from .inner_life import record_lie, record_thought
-from .llm_context import add_open_promise, build_agent_episode_context, build_host_episode_context, context_digest
+from .llm_context import add_open_promise, build_agent_episode_context, build_host_episode_context, context_digest, public_record
 from .challenge_bank import LADDER_LEVELS, LADDER_TIERS, RUNG_WEIGHTS, grade_answer, ladder_for_round
 from .live_cost import estimate_step_cost_usd, get_pricing_table
 from .llm_config import (
@@ -33,6 +33,7 @@ from .llm_config import (
     advantages_enabled,
     get_llm_settings,
     feelings_enabled,
+    host_questions_enabled,
     inner_life_enabled,
     jury_rule,
     live_llm_provider,
@@ -51,6 +52,7 @@ from .openrouter_client import (
     request_agent_archetype,
     request_challenge_solution,
     request_host_narration,
+    request_host_questions,
     request_private_writing,
 )
 from .viewer_state import viewer_state_summary
@@ -1076,6 +1078,10 @@ def _apply_step(
         event = _tribal_council_event(conn, round_number, turn_id)
         return [event], {"tribal_council": True}, event["title"]
 
+    if step == "host_questioning":
+        event = _host_questioning_event(conn, round_number, turn_id)
+        return ([event] if event else []), {"host_questioning": bool(event)}, event["title"] if event else "No questions"
+
     if step == "parting_words":
         event = _parting_words_event(conn, round_number, turn_id)
         return ([event] if event else []), {"parting_words": bool(event)}, "Parting words" if event else "Nobody left"
@@ -1199,6 +1205,8 @@ def _phase_steps(conn, state: dict[str, Any]) -> list[str]:
             # every conversation in a round is one a player chose to have
             "camp_talks",
             "tribal_vote_call",
+            # the host questions a few players in front of everyone
+            *(["host_questioning"] if host_questions_enabled() else []),
             # everyone speaks once in front of everyone before the vote
             "tribal_council",
             # then one last private whisper, after hearing the speeches
@@ -6000,6 +6008,73 @@ def _seeded_order(agent_ids: list[str], label: str, round_number: int) -> list[s
     return order
 
 
+HOST_QUESTIONS = 3
+
+
+def _host_questioning_event(conn, round_number: int, turn_id: int) -> dict[str, Any] | None:
+    """The host questions a few players at council, from the public record
+    only. Each answers in front of everyone and hears the answers before it."""
+    if not should_use_live_llm():
+        return None
+    active = _active_agent_rows(conn)
+    names = [agent["pseudonym"] for agent in active]
+    try:
+        asked = request_host_questions(
+            public_record=public_record(conn, round_number), players=names, count=min(HOST_QUESTIONS, len(active))
+        )
+    except Exception as exc:  # the council goes on without questions
+        print(f"live host questions failed: {exc}")
+        return None
+    legal = {agent["agent_id"] for agent in active}
+    lines: list[dict[str, Any]] = []
+    done: set[str] = set()
+    for entry in asked:
+        target = _resolve_player(conn, entry["to"])
+        if target not in legal or target in done or len(done) >= HOST_QUESTIONS:
+            continue
+        done.add(target)
+        question = entry["question"]
+        lines.append({"agent_id": "host", "text": question, "question_to": target})
+        said = " | ".join(f"{_agent_name(conn, line['agent_id'])}: {line['text']}" for line in lines[:-1])
+        context = build_agent_episode_context(conn, actor_id=target, round_number=round_number, current_step="host_questioning")
+        action = _real_agent_action(
+            conn,
+            actor_id=target,
+            step="host_questioning",
+            scene_context=(
+                f"Tribal council. In front of everyone, the host asks you: \"{question}\" Answer in under 60 words. "
+                "Everyone hears it; you may deflect, bluff, come clean or turn it on someone else. "
+                f"Said so far tonight: {said or '(nothing yet)'}"
+            ),
+            response_kind="dialogue",
+            episode_context=context,
+            allowed_targets=[],
+        )
+        answer = action.dialogue if action and action.dialogue else SILENT_LINE
+        lines.append({"agent_id": target, "text": answer, "answer_to": "host"})
+    if not lines:
+        return None
+    transcript = " | ".join(f"{_agent_name(conn, line['agent_id'])}: {line['text']}" for line in lines)
+    return _insert_story_event(
+        conn,
+        turn_id=turn_id,
+        round_number=round_number,
+        phase="tribal",
+        kind="host_questioning",
+        scene="tribal",
+        shot="host_closeup",
+        actor_ids=["host", *[line["agent_id"] for line in lines if line["agent_id"] != "host"]],
+        target_ids=sorted(done),
+        visibility="audience",
+        title="The Host's Questions",
+        dialogue=transcript[:2000],
+        subtitle=f"{len(done)} player{'s' if len(done) != 1 else ''} questioned",
+        duration_ms=9000 + 4000 * len(done),
+        animation="tribal_council",
+        payload={"speaker_lines": lines, "host_narration": "The host puts them on the spot."},
+    )
+
+
 def _tribal_council_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     """Before the vote everyone speaks once, in front of everyone: to signal,
     bluff, call someone out or make a last pitch for votes."""
@@ -7241,6 +7316,8 @@ def _estimated_live_calls_for_step(conn, game: dict[str, Any], step: str) -> int
         return len(_active_agent_rows(conn))
     if step == "parting_words":
         return 1
+    if step == "host_questioning":
+        return 1 + min(HOST_QUESTIONS, len(_active_agent_rows(conn)))
     if step == "jury_deliberation":
         return conn.execute("SELECT COUNT(*) AS n FROM Agents WHERE status = 'eliminated'").fetchone()["n"]
     if step == "challenge_attempts":
@@ -7289,6 +7366,7 @@ _STEP_RESPONSE_KIND = {
     "tribal_council": "conversation",
     "game_plan": "conversation",
     "parting_words": "conversation",
+    "host_questioning": "conversation",
     "jury_deliberation": "conversation",
     "winner_declared": "host",
     "challenge_intro": "host",
