@@ -22,8 +22,9 @@ from typing import Any
 # lab). The cap is checked against the runner's own estimate, which is scaled
 # to the real OpenRouter bill (live_cost.BILL_FACTOR): the first full season,
 # 2026-11-24, billed about $10.5 and the newer prompt is a little dearer, so the
-# cap leaves room for a season to finish.
-PUBLIC_RUN_MAX_COST_CENTS = 1500  # $15 of real spend (estimates are scaled to the bill by live_cost.BILL_FACTOR)
+# cap leaves room for a season to finish. Raised to $25 on 2026-11-25 when
+# every call moved to medium reasoning (estimate about $11-12 a season).
+PUBLIC_RUN_MAX_COST_CENTS = 2500  # $25 of real spend (estimates are scaled to the bill by live_cost.BILL_FACTOR)
 PUBLIC_ROSTER = "lab_mix_openrouter"
 
 _LEDGER_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "public_live_ledger.json"

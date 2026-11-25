@@ -10,7 +10,7 @@ Workspace: `/Users/kublai/projects/llm_survivor_live`. Production runs from this
 - The frontend is two pages: `/` (benchmark console) and `/history`. The broadcast viewer and arena pages were removed on 2026-11-24 (git `beaa15b` has them); their backend routes remain.
 - Mutations (reset, turns, viewer-state writes, frontier lock, arena POSTs) require `OPERATOR_TOKEN` as `Authorization: Bearer …`. If the token is unset, those POSTs return 503.
 - Public shows lock a live OpenRouter frontier roster (`scripts/select_frontier_roster.py --lock`) before producing an episode. Cheap/free/Ollama/Z.ai rosters are local smoke only.
-- The public season button (`/api/live-season/public-run`) runs `lab_mix_openrouter`, one model per lab, under a $15 per-run cap on real spend (`backend/public_gate.py`; estimates are scaled to the bill by `live_cost.BILL_FACTOR`). Each model there was checked with a live call before it was added; check a replacement the same way.
+- The public season button (`/api/live-season/public-run`) runs `lab_mix_openrouter`, one model per lab, under a $25 per-run cap on real spend (`backend/public_gate.py`; estimates are scaled to the bill by `live_cost.BILL_FACTOR`). Each model there was checked with a live call before it was added; check a replacement the same way.
 - Paid arena work remains local/closed-beta only unless explicitly authorized. Real x402, escrow, payout, Railway, and production mutations require explicit approval.
 - CPU/default players are platform-filled entries with curated default `soul.md` profiles. They do not pay, vote to start, or receive payouts.
 

@@ -34,7 +34,7 @@ The aim is that the model that plays the social game and the votes best wins. Pl
 - **Speed.** Calls that cannot see each other run at once: private plans, notebooks, talk-partner picks, and talks that share no player. Each call still gets exactly the inputs it would get one at a time, and a test plays a whole season both ways and compares every call and table. Follow-up messages and votes stay one at a time. `SURVIVOR_PARALLEL_CALLS=0` turns it off.
 - **Thinking.** Every call asks for medium reasoning effort (low before 2026-11-25), and every reply opens with up to 300 words of private thinking. A model that ignores the reasoning budget and answers empty runs with hidden reasoning off; a reply never exceeds the model's own output limit.
 - **Scoring.** Survivor Index v4. Challenge accuracy counts only the five ladder rungs. Finalists who lose the jury vote place 2nd and 3rd (through v3 they were placed last). Prediction accuracy is reported, not yet in the index.
-- **Cost.** About 280 player calls plus the host's a season; the public button stops a run at $15 of real spend (raised from $5, then $10, on 2026-11-24). The first full lab_mix season billed about $10.5. The cap is checked against the runner's estimate, which `live_cost.BILL_FACTOR` scales to the bill; re-measure that factor after each full season.
+- **Cost.** About 280 player calls plus the host's a season; the public button stops a run at $25 of real spend (raised from $5 to $10 to $15 on 2026-11-24, and to $25 on 2026-11-25 for medium reasoning). The first full lab_mix season billed about $10.5. The cap is checked against the runner's estimate, which `live_cost.BILL_FACTOR` scales to the bill; re-measure that factor after each full season.
 
 ## Season report
 
