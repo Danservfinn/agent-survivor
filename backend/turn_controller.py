@@ -27,6 +27,7 @@ from .llm_config import (
     PROVIDER_OLLAMA,
     failed_llm_provider,
     get_llm_settings,
+    jury_rule,
     live_llm_provider,
     prompt_profile,
     should_use_live_llm,
@@ -36,6 +37,7 @@ from .openrouter_client import (
     ChallengeSolution,
     HostNarration,
     SeasonInterrupted,
+    InvalidModelReply,
     request_host_event_text,
     request_agent_action,
     request_agent_archetype,
@@ -359,7 +361,8 @@ class StepInterrupted(RuntimeError):
 
 @dataclass(frozen=True)
 class VoteDecision:
-    target_id: str
+    # None: a spoiled vote (no legal target after every retry); it counts for no one
+    target_id: str | None
     explanation: str
     provider: str
     model_id: str | None = None
@@ -1098,7 +1101,10 @@ def _apply_step(
             # sole remaining non-immune player: no council needed, they are out
             return [], {"vote_skipped_walkover": voter_id}, "Walkover: no council"
         decision = _resolve_vote_decision(conn, voter_id, step)
-        _insert_vote(conn, round_number, turn_index, voter_id, decision.target_id, decision)
+        if decision.target_id is None:
+            _record_spoiled_vote(conn, round_number, voter_id, "vote", decision.explanation)
+        else:
+            _insert_vote(conn, round_number, turn_index, voter_id, decision.target_id, decision)
         event = _vote_booth_event(conn, round_number, turn_id, voter_id, decision)
         return [event], {"vote_cast_by": voter_id}, f"{_agent_name(conn, voter_id)} cast a vote"
 
@@ -1114,7 +1120,7 @@ def _apply_step(
 
     if step == "elimination":
         event = _elimination_event(conn, round_number, turn_id)
-        return [event], {"eliminated_id": event["target_ids"][0]}, event["title"]
+        return [event], {"eliminated_id": (event["target_ids"] or [None])[0]}, event["title"]
 
     if step == "exit_confessional":
         event = _exit_confessional_event(conn, round_number, turn_id)
@@ -1996,6 +2002,10 @@ def _prepare_talk(conn, round_number: int, number: int, pair: list[str], asks: d
     }
 
 
+# written in place of a talk line when a model's reply is unusable after every retry
+SILENT_LINE = "(says nothing)"
+
+
 def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
     """Generate one talk's lines in a worker thread, with no database access.
     Mirrors _group_speaker_lines for a live two-person talk. A promise made in
@@ -2028,37 +2038,36 @@ def _talk_lines(prep: dict[str, Any]) -> dict[str, Any]:
                         },
                         made_by_you=agent_id == promiser,
                     )
-            action = request_agent_action(
-                actor=prep["actors"][agent_id],
-                step=prep["step"],
-                scene_context=_finish_dialogue_context(
-                    prep["scene_base"],
-                    previous_line,
-                    pass_no,
-                    ask=prep["asks"].get(agent_id),
-                    last_turn=pass_no == passes - 1,
-                ),
-                allowed_targets=prep["targets"][agent_id],
-                response_kind="group_conversation",
-                episode_context=context,
-            )
-            if not action:
-                raise RuntimeError(
-                    f"Live group-dialogue generation failed for {names.get(agent_id, agent_id)} at step "
-                    f"{prep['step']}; no scripted group line was inserted."
+            try:
+                action = request_agent_action(
+                    actor=prep["actors"][agent_id],
+                    step=prep["step"],
+                    scene_context=_finish_dialogue_context(
+                        prep["scene_base"],
+                        previous_line,
+                        pass_no,
+                        ask=prep["asks"].get(agent_id),
+                        last_turn=pass_no == passes - 1,
+                    ),
+                    allowed_targets=prep["targets"][agent_id],
+                    response_kind="group_conversation",
+                    episode_context=context,
                 )
-            if action.promised_vote_target:
+            except InvalidModelReply:
+                action = None  # the player says nothing, as in _group_speaker_lines
+            if action and action.promised_vote_target:
                 promises.append((agent_id, action.promised_vote_target))
-            previous_line = action.dialogue
-            lines.append({"agent_id": agent_id, "text": action.dialogue})
+            text = action.dialogue if action else SILENT_LINE
+            previous_line = text
+            lines.append({"agent_id": agent_id, "text": text})
             metadata.append(
                 {
                     "agent_id": agent_id,
                     "line_index": index,
                     "pass_no": pass_no,
-                    "llm_provider": live_llm_provider(),
-                    "model_id": action.model_id,
-                    "join_intent": _join_intent(action),
+                    "llm_provider": live_llm_provider() if action else "silent",
+                    "model_id": action.model_id if action else prep["actors"][agent_id].get("model_id"),
+                    "join_intent": _join_intent(action) if action else "none",
                     "llm_context_digest": context_digest(context),
                 }
             )
@@ -2136,7 +2145,11 @@ def promise_record(conn, agent_id: str, *, as_listener: bool = False) -> list[di
         SELECT p.round, p.promiser_id, p.listener_id, p.target_id,
                (SELECT v.target_id FROM Votes v
                 WHERE v.round = p.round AND v.voter_id = p.promiser_id AND v.revealed = 1
-                ORDER BY v.id LIMIT 1) AS voted_for
+                ORDER BY v.id LIMIT 1) AS voted_for,
+               -- a spoiled vote breaks the promise, shown once that round's votes are read
+               EXISTS (SELECT 1 FROM SpoiledVotes s
+                       WHERE s.round = p.round AND s.voter_id = p.promiser_id AND s.ballot = 'vote')
+               AND EXISTS (SELECT 1 FROM Votes v2 WHERE v2.round = p.round AND v2.revealed = 1) AS spoiled
         FROM Promises p
         WHERE p.{column} = ?
         ORDER BY p.round, p.id
@@ -2146,14 +2159,19 @@ def promise_record(conn, agent_id: str, *, as_listener: bool = False) -> list[di
     record = []
     for row in rows:
         voted_for = row["voted_for"]
+        if voted_for is None and row["spoiled"]:
+            status, actual = "broken", "a spoiled vote"
+        else:
+            status = "open" if voted_for is None else ("kept" if voted_for == row["target_id"] else "broken")
+            actual = _agent_name(conn, voted_for) if voted_for else None
         record.append(
             {
                 "round": row["round"],
                 "promised_by": _agent_name(conn, row["promiser_id"]),
                 "promised_to": _agent_name(conn, row["listener_id"]),
                 "promised_vote": _agent_name(conn, row["target_id"]),
-                "actual_vote": _agent_name(conn, voted_for) if voted_for else None,
-                "status": "open" if voted_for is None else ("kept" if voted_for == row["target_id"] else "broken"),
+                "actual_vote": actual,
+                "status": status,
             }
         )
     return record
@@ -2333,14 +2351,15 @@ def _group_speaker_lines(
                 join_intent = _join_intent(action)
                 if action.promised_vote_target:
                     _record_promise(conn, round_number, agent_id, participant_ids, action.promised_vote_target, step)
+            elif should_use_live_llm():
+                # no usable reply: the player says nothing; no line is written for it
+                text = SILENT_LINE
+                provider = "silent"
+                model_id = agent.get("model_id") if agent else None
+                join_intent = "none"
             else:
-                if should_use_live_llm():
-                    raise RuntimeError(
-                        f"Live group-dialogue generation failed for {_agent_name(conn, agent_id)} at step {step}; "
-                        "no scripted group line was inserted."
-                    )
                 text = _deterministic_group_line(conn, agent_id, participant_ids, declined_ids, stage, previous_line)
-                provider = failed_llm_provider() if should_use_live_llm() else "deterministic"
+                provider = "deterministic"
                 model_id = agent.get("model_id") if agent else None
                 # no model: a simulated pact, half the time (both sides must declare one)
                 join_intent = "reinforce" if _stable_index(f"{step}:{agent_id}:reinforce", 2) == 0 else "none"
@@ -3513,8 +3532,11 @@ def _finale_pitch_event(
             payload["llm_model_id"] = action.model_id
             _add_agent_action_metadata(payload, action)
         else:
-            payload["llm_provider"] = failed_llm_provider()
-            payload["llm_model_id"] = None
+            # no usable reply: the finalist gives no pitch; none is written for it
+            dialogue = f"{finalist['pseudonym']} gives no pitch."
+            inner_thought = ""
+            payload["llm_provider"] = "silent"
+            payload["llm_model_id"] = finalist.get("model_id")
         _add_context_digest(payload, "agent", context_digest(agent_context))
     payload["host_narration"] = f"{finalist['pseudonym']} now has to turn the season into a winning argument."
     return _insert_story_event(
@@ -3598,7 +3620,7 @@ def _jury_questions_event(conn, round_number: int, turn_id: int) -> dict[str, An
 # received, and the first frontier jury voted 6-0 for the cleanest record.
 # Players then avoided every risk to protect it. The standard now asks
 # whether moves worked.
-JURY_STANDARD = (
+_STRATEGIC_JURY_STANDARD = (
     "Vote for the finalist who played the best strategic game, judged on the verified record in front of "
     "you: who first committed to the votes that decided eliminations, who voted with the result, who read "
     "the table best (prediction accuracy), and whose risky moves, including broken promises and betrayals, "
@@ -3606,6 +3628,15 @@ JURY_STANDARD = (
     "playing well, and a broken promise that won a vote can be good play. Do not vote on the final pitch "
     "alone, and do not vote against someone only because they voted you out."
 )
+_OWN_JUDGMENT_JURY_STANDARD = (
+    "Vote for the finalist you believe deserves to win, by your own judgment. The verified record in front "
+    "of you is accurate; what matters in it is your call. Judge the whole season, not the final pitch alone."
+)
+
+
+def jury_standard() -> str:
+    """What jurors are told to reward (SURVIVOR_JURY_RULE)."""
+    return _OWN_JUDGMENT_JURY_STANDARD if jury_rule() == "own_judgment" else _STRATEGIC_JURY_STANDARD
 
 
 def _finalist_dossier(conn, finalist_id: str) -> dict[str, Any]:
@@ -3754,9 +3785,14 @@ def _real_jury_question(
         step="jury_questions",
         scene_context=(
             "You were eliminated and now sit on the jury. Below is each finalist's verified record. "
-            "Pick the one finalist you most want to question (target_id) and ask ONE pointed question that "
-            "tests whether they controlled their game. Name a specific vote, promise or move from the record. "
-            f"{JURY_STANDARD} Finalist records: {_dossiers_text(conn, finalists)}"
+            "Pick the one finalist you most want to question (target_id) and ask ONE pointed question "
+            + (
+                "about whatever matters most to your vote. "
+                if jury_rule() == "own_judgment"
+                else "that tests whether they controlled their game. "
+            )
+            + "Name a specific vote, promise or move from the record. "
+            f"{jury_standard()} Finalist records: {_dossiers_text(conn, finalists)}"
         ),
         response_kind="dialogue",
         episode_context=episode_context,
@@ -3817,7 +3853,7 @@ def _resolve_jury_decision(conn, juror_id: str, step: str) -> JuryDecision:
     for attempt in range(3):
         scene = (
             "You are on the jury for the final vote of the entire competition. This vote decides the winner. "
-            f"{JURY_STANDARD} Finalist records: {_dossiers_text(conn, finalist_rows)}"
+            f"{jury_standard()} Finalist records: {_dossiers_text(conn, finalist_rows)}"
         )
         if attempt > 0:
             scene = (
@@ -4592,10 +4628,13 @@ def _vote_booth_event(
 ) -> dict[str, Any]:
     voter = _agent_name(conn, voter_id)
     target_id = decision.target_id
-    target_name = _agent_name(conn, target_id)
+    target_name = _agent_name(conn, target_id) if target_id else "no one"
     explanation = decision.explanation
     if decision.provider.endswith("_failed"):
         raise RuntimeError(f"Refusing to create vote booth event for failed live vote from {voter}.")
+    elif target_id is None:
+        dialogue = f"{voter} did not name a legal target in three tries, so the vote is spoiled and counts for no one."
+        visible_explanation = explanation
     else:
         dialogue = f"I am voting for {target_name}. {explanation}"
         visible_explanation = explanation
@@ -4749,6 +4788,28 @@ def _maybe_run_revote(
             if not allowed:
                 continue
         decision = _resolve_revote_decision(conn, voter_id, round_number, tied, allowed)
+        if decision.target_id is None:
+            _record_spoiled_vote(conn, round_number, voter_id, "revote", decision.explanation)
+            _insert_story_event(
+                conn,
+                turn_id=turn_id,
+                round_number=round_number,
+                phase="tribal",
+                kind="revote_booth",
+                scene="tribal",
+                shot="vote_booth",
+                actor_ids=[voter_id],
+                target_ids=[],
+                visibility="audience",
+                title=f"{_agent_name(conn, voter_id)} Revotes",
+                dialogue=f"{_agent_name(conn, voter_id)} did not name a legal target; the revote is spoiled.",
+                subtitle="Revote: spoiled",
+                duration_ms=8000,
+                animation="vote_booth",
+                spoiler_group="vote_intent",
+                payload={"revote": True, "spoiled": True, "llm_provider": "spoiled", "llm_model_id": decision.model_id},
+            )
+            continue
         revote_counts[decision.target_id] += 1
         _insert_story_event(
             conn,
@@ -4796,8 +4857,11 @@ def _maybe_run_revote(
         payload={"revote_tally": dict(revote_counts), "tied_ids": tied},
     )
 
-    top2 = max(revote_counts.values())
-    still_tied = sorted(k for k, v in revote_counts.items() if v == top2)
+    if revote_counts:
+        top2 = max(revote_counts.values())
+        still_tied = sorted(k for k, v in revote_counts.items() if v == top2)
+    else:
+        still_tied = list(tied)  # every revote spoiled: still deadlocked
     if len(still_tied) < 2:
         return revote_counts
     # Second deadlock: firemaking-style tiebreak, deterministic and public.
@@ -4897,9 +4961,11 @@ def _resolve_revote_decision(
             break
         print(f"live revote attempt {attempt + 1} failed for {voter_id}: {last_error or 'no legal target_id'}")
     if not action or not action.target_id:
-        raise RuntimeError(
-            f"Live revote for {voter_id} failed after 3 real-time retries "
-            f"(last error: {last_error or 'no legal target_id'}); no fallback votes."
+        return VoteDecision(
+            None,
+            f"No legal revote after 3 tries ({last_error or 'no legal target_id'}).",
+            "spoiled",
+            action.model_id if action else None,
         )
     return VoteDecision(
         action.target_id,
@@ -4939,7 +5005,8 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
     # tied candidates only (tied voters must switch; others revote freely).
     # A second deadlock builds a firemaking-style deterministic tiebreak on
     # season-long challenge wins, then votes received, then agent id.
-    counts = _maybe_run_revote(conn, round_number, turn_id, counts)
+    if counts:  # every vote spoiled: nobody leaves
+        counts = _maybe_run_revote(conn, round_number, turn_id, counts)
     if counts:
         eliminated_id, _elim_votes = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0]
     else:
@@ -4978,7 +5045,7 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
                 "and the remaining models now inherit the consequences of this move."
             )
             if eliminated_id
-            else "An idol cancels every vote that counted. Nobody leaves tonight."
+            else "No vote against anyone counted. Nobody leaves tonight."
         ),
     }
     if should_use_live_llm():
@@ -5014,7 +5081,7 @@ def _elimination_event(conn, round_number: int, turn_id: int) -> dict[str, Any]:
         visibility="audience",
         title=f"{eliminated_name} Leaves the Game" if eliminated_name else "Nobody Leaves",
         dialogue=(
-            f"{eliminated_name}, your run ends here." if eliminated_name else "An idol cancels every vote that counted. Nobody leaves tonight."
+            f"{eliminated_name}, your run ends here." if eliminated_name else "No vote against anyone counted. Nobody leaves tonight."
         )
         + (
             f" {', '.join(_agent_name(conn, holder_id) for holder_id in idol_plays)} played a hidden idol."
@@ -5288,9 +5355,13 @@ def _resolve_vote_decision(conn, voter_id: str, step: str) -> VoteDecision:
             break
         print(f"live vote attempt {attempt + 1} failed for {voter_id}: {last_error or 'no legal target_id'}")
     if not action or not action.target_id:
-        raise RuntimeError(
-            f"Live vote for {voter_id} failed after 3 real-time retries "
-            f"(last error: {last_error or 'no legal target_id'}); refusing to cast a fallback vote."
+        # The model's own failure: its vote is spoiled. No vote is invented.
+        # Provider outages never reach here (they end the run as SeasonInterrupted).
+        return VoteDecision(
+            None,
+            f"No legal vote after 3 tries ({last_error or 'no legal target_id'}).",
+            "spoiled",
+            action.model_id if action else None,
         )
     _maybe_store_action_archetype(conn, voter_id, round_number, action)
     return VoteDecision(
@@ -5358,14 +5429,19 @@ def _real_agent_action(
     actor = _agent_row(conn, actor_id)
     if actor is None:
         return None
-    return request_agent_action(
-        actor=actor,
-        step=step,
-        scene_context=scene_context,
-        allowed_targets=allowed_targets if allowed_targets is not None else _eligible_targets(conn, actor_id),
-        response_kind=response_kind,
-        episode_context=episode_context,
-    )
+    try:
+        return request_agent_action(
+            actor=actor,
+            step=step,
+            scene_context=scene_context,
+            allowed_targets=allowed_targets if allowed_targets is not None else _eligible_targets(conn, actor_id),
+            response_kind=response_kind,
+            episode_context=episode_context,
+        )
+    except InvalidModelReply as exc:
+        # the model's own failure: the caller charges it to this player
+        print(f"unusable reply from {actor_id} at {step}: {exc}")
+        return None
 
 
 def _scripted_host_fallback(step: str, payload: dict[str, Any]) -> str | None:
@@ -5621,7 +5697,17 @@ def _total_votes_for_round(conn, round_number: int) -> int:
         (round_number,),
     ).fetchone()["count"]
     eligible_now = len(_round_voter_ids(conn, round_number))
-    return max(int(vote_count), eligible_now) if eligible_now else int(vote_count)
+    spoiled = conn.execute(
+        "SELECT COUNT(*) AS n FROM SpoiledVotes WHERE round = ? AND ballot = 'vote'", (round_number,)
+    ).fetchone()["n"]
+    return max(int(vote_count), eligible_now - int(spoiled)) if eligible_now else int(vote_count)
+
+
+def _record_spoiled_vote(conn, round_number: int, voter_id: str, ballot: str, reason: str) -> None:
+    conn.execute(
+        "INSERT INTO SpoiledVotes (round, voter_id, ballot, reason) VALUES (?, ?, ?, ?)",
+        (round_number, voter_id, ballot, reason[:300]),
+    )
 
 
 def _next_step(conn, state: dict[str, Any], step: str) -> str:

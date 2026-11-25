@@ -165,6 +165,17 @@ def init_database(reset: bool = False, path: Path | str | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- a vote the player never cast legally: no legal target after every
+            -- retry. It counts for no one; the round is decided by the votes cast.
+            CREATE TABLE IF NOT EXISTS SpoiledVotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round INTEGER NOT NULL,
+                voter_id TEXT NOT NULL,
+                ballot TEXT NOT NULL DEFAULT 'vote',
+                reason TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- each player's private plan for a round, written before the challenge
             CREATE TABLE IF NOT EXISTS PrivatePlans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -483,6 +494,7 @@ def seed_demo(
         conn.execute("DELETE FROM NextRoundPreloads")
         conn.execute("DELETE FROM ViewerState")
         conn.execute("DELETE FROM Promises")
+        conn.execute("DELETE FROM SpoiledVotes")
         conn.execute("DELETE FROM PrivatePlans")
         conn.execute("DELETE FROM AllianceMemberships")
         conn.execute("DELETE FROM Alliances")

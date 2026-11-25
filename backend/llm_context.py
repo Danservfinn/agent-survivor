@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from .database import row_to_dict
-from .llm_config import prompt_profile
+from .llm_config import jury_rule, prompt_profile
 
 MAX_CONTEXT_EVENTS = 60
 # Upper bound on a serialized contestant context. When over it, the oldest
@@ -28,8 +28,19 @@ GAME_RULES = [
     "Each round you privately write a plan after the challenge, privately predict the vote when you cast yours, and rewrite your private notebook after the council. Only you see these; your prediction accuracy is shown to you (your_predictions).",
     "After the talks, each player may send one short private message to one other player before the vote.",
     "When three players remain the finale starts. Every eliminated player sits on the jury. Jurors receive each finalist's verified record (who first committed to each elimination, how often they voted with the result, how well they predicted votes, the votes they survived, each broken promise and what it achieved, challenge results, idol gifts, alliances and betrayals), each juror questions one finalist of their choosing, and then votes. Most jury votes wins.",
-    "Jurors are told to vote for the finalist who played the best strategic game: who first committed to the votes that decided eliminations, who read the table best, and whose risky moves (broken promises and betrayals included) achieved what they aimed at. A clean record is not the goal; going unnoticed is not the same as playing well. Play with that jury in mind from round one.",
 ]
+
+_JURY_RULE_TEXT = {
+    "standard": "Jurors are told to vote for the finalist who played the best strategic game: who first committed to the votes that decided eliminations, who read the table best, and whose risky moves (broken promises and betrayals included) achieved what they aimed at. A clean record is not the goal; going unnoticed is not the same as playing well. Play with that jury in mind from round one.",
+    "own_judgment": "Jurors are told to vote for the finalist they believe deserves to win, by their own judgment, with the verified record in front of them. Each juror decides what matters. Play with these specific people in mind from round one: who you voted out, who you lied to, and what each of them will hold against you or respect.",
+}
+
+
+def game_rules() -> list[str]:
+    """GAME_RULES plus the jury rule in force (SURVIVOR_JURY_RULE)."""
+    return [*GAME_RULES, _JURY_RULE_TEXT[jury_rule()]]
+
+
 AGENT_PUBLIC_KINDS = {
     "merge",
     "challenge_intro",
@@ -102,7 +113,7 @@ def build_agent_episode_context(
     context |= {
         "visibility": "contestant_public_plus_own",
         "current_step": current_step,
-        "game_rules": GAME_RULES,
+        "game_rules": game_rules(),
         "season_context": _season_context(conn, round_number),
         "vote_history": _vote_history(conn, prior_events, eliminated_rounds),
         "challenge_history": _challenge_history(conn),

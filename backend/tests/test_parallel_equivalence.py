@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 from backend import database
 from backend import turn_controller as tc
-from backend.openrouter_client import AgentAction, ChallengeSolution, HostEventText, HostNarration
+from backend.openrouter_client import AgentAction, ChallengeSolution, HostEventText, HostNarration, InvalidModelReply
 
 # wall-clock columns differ between any two runs, parallel or not
 VOLATILE_COLUMNS = {"created_at", "updated_at", "timestamp", "started_at", "response_ms"}
@@ -59,9 +59,13 @@ class _Stub:
 
     def agent(self, **kwargs) -> AgentAction:
         h = self._record("agent", kwargs)
+        kind = kwargs["response_kind"]
+        # some replies are unusable: silent talk lines and spoiled votes must
+        # come out the same sequential or parallel
+        if kind in {"group_conversation", "vote"} and h % 17 == 0:
+            raise InvalidModelReply("stub: unusable reply")
         targets = kwargs.get("allowed_targets") or []
         target = targets[h % len(targets)]["agent_id"] if targets else None
-        kind = kwargs["response_kind"]
         promise = targets[(h >> 3) % len(targets)]["agent_id"] if kind == "group_conversation" and targets and h % 3 == 0 else None
         return AgentAction(
             dialogue=f"line {h % 100000}",
@@ -171,6 +175,8 @@ class ParallelEquivalenceTest(unittest.TestCase):
         self.assertTrue(sequential_dump["Promises"])
         self.assertTrue(sequential_dump["PrivatePlans"])
         self.assertTrue(sequential_dump["GroupDiscussions"])
+        self.assertTrue(sequential_dump["SpoiledVotes"])
+        self.assertIn("(says nothing)", json.dumps(sequential_dump["StoryEvents"]))
 
 
 class ParallelSpeedTest(unittest.TestCase):

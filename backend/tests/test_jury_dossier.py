@@ -136,6 +136,33 @@ class JuryDossierTest(unittest.TestCase):
         for finalist in self.finalists:
             self.assertIn(f'"agent_id":"{finalist}"', seen[0])
 
+    def test_own_judgment_rule_drops_the_prescribed_standard_everywhere(self) -> None:
+        from backend.llm_context import build_agent_episode_context
+        from backend.openrouter_client import _strategy_priorities
+
+        seen: list[str] = []
+
+        def action(**kwargs):
+            seen.append(kwargs["scene_context"])
+            return AgentAction(dialogue="My vote.", inner_thought="", model_id="m", target_id=self.finalists[0])
+
+        with patch.dict(os.environ, {"SURVIVOR_JURY_RULE": "own_judgment"}), patch.object(
+            tc, "should_use_live_llm", return_value=True
+        ), patch.object(tc, "live_llm_provider", return_value="openrouter"), patch.object(
+            tc, "build_agent_episode_context", return_value={}
+        ), patch.object(tc, "request_agent_action", side_effect=action):
+            tc._resolve_jury_decision(self.conn, self.jury[0], f"jury_vote_{self.jury[0]}")
+            rules = " ".join(build_agent_episode_context(self.conn, actor_id=self.finalists[0], round_number=9, current_step="x")["game_rules"])
+            priorities = _strategy_priorities("jury_vote")
+        for text in (seen[0], rules, priorities):
+            self.assertIn("by their own judgment" if text is rules else "by your own judgment", text)
+            self.assertNotIn("best strategic game", text)
+            self.assertNotIn("clean record", text)
+        # the verified record is still in front of the juror
+        self.assertIn('"first_to_commit_to_the_elimination_in_rounds"', seen[0])
+        # default stays the strategic standard
+        self.assertIn("best strategic game", tc.jury_standard())
+
     def test_juror_questions_the_finalist_it_names(self) -> None:
         chosen = self.finalists[2]
         asked: list[tuple[str, str]] = []

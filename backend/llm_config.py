@@ -79,6 +79,18 @@ def get_llm_settings() -> LLMSettings:
 PROMPT_PROFILES = ("v2", "v3")
 
 
+# How jurors are told to vote. "standard": the best strategic game, judged on
+# whether moves worked (default). "own_judgment": whoever the juror believes
+# deserves to win, by their own standard; the verified record is still shown.
+# Kept as a switch so the two can be compared on the same seed.
+JURY_RULES = ("standard", "own_judgment")
+
+
+def jury_rule() -> str:
+    value = os.environ.get("SURVIVOR_JURY_RULE", "standard").strip().lower()
+    return value if value in JURY_RULES else "standard"
+
+
 def prompt_profile() -> str:
     value = os.environ.get("SURVIVOR_PROMPT_PROFILE", "v3").strip().lower()
     return value if value in PROMPT_PROFILES else "v3"

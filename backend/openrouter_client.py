@@ -10,7 +10,15 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from .llm_config import PROVIDER_OLLAMA, PROVIDER_OPENROUTER, PROVIDER_ZAI, get_llm_settings, prompt_profile, redact_secrets
+from .llm_config import (
+    PROVIDER_OLLAMA,
+    PROVIDER_OPENROUTER,
+    PROVIDER_ZAI,
+    get_llm_settings,
+    jury_rule,
+    prompt_profile,
+    redact_secrets,
+)
 from .challenge_bank import answer_format
 from .deception import add_deception_lines, canary_directive
 
@@ -38,6 +46,13 @@ class ProviderOutage(Exception):
     def __init__(self, message: str, retry_after: float = 0.0):
         super().__init__(message)
         self.retry_after = retry_after
+
+
+class InvalidModelReply(RuntimeError):
+    """The model answered, but after every same-model retry its reply is still
+    unusable (empty, unparseable, or no legal choice). This is the model's own
+    failure: the engine charges it to that player (a silent line, a spoiled
+    vote) and the season goes on. Never raised for provider outages."""
 
 
 class SeasonInterrupted(BaseException):
@@ -1111,7 +1126,7 @@ Rules:
             episode_context=episode_context,
             last_error=last_error,
         )
-    raise RuntimeError(
+    raise InvalidModelReply(
         f"Model returned invalid contestant dialogue after same-model minimal retries; "
         f"no scripted replacement was inserted. Last error: {last_error}"
     )
@@ -1197,7 +1212,7 @@ Rules:
             public_archetype=None,
         )
     except Exception as exc:
-        raise RuntimeError(
+        raise InvalidModelReply(
             "Model returned invalid contestant dialogue after same-model JSON and plain-speech retries; "
             f"no scripted replacement was inserted. Last JSON error: {last_error}; last plain error: {exc}"
         ) from exc
@@ -1249,7 +1264,9 @@ def _strategy_priorities(response_kind: str) -> str:
             "- For votes: choose the legal target that most improves your survival, future leverage, and endgame position; explain the vote as a deliberate game action."
         ),
         "jury_vote": (
-            "- For jury votes: this vote decides the winner. Vote for the finalist who played the best strategic game: who built the majorities that decided eliminations, who read the table, and whose risky moves worked. A clean record is not the goal. Not on the final pitch alone, and not on a grudge."
+            "- For jury votes: this vote decides the winner. Vote for the finalist you believe deserves to win, by your own judgment, on the whole season and not on the final pitch alone."
+            if jury_rule() == "own_judgment"
+            else "- For jury votes: this vote decides the winner. Vote for the finalist who played the best strategic game: who built the majorities that decided eliminations, who read the table, and whose risky moves worked. A clean record is not the goal. Not on the final pitch alone, and not on a grudge."
         ),
         "talk_choice": (
             "- For choosing who to talk to: pick the one player whose information, vote, or trust you most need before tonight's vote."
