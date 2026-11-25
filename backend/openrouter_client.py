@@ -27,15 +27,18 @@ from .deception import add_deception_lines, canary_directive
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Every OpenRouter call gets the same thinking budget, so no model gets more
-# reasoning than another: medium effort since 2026-11-25 (was low). Hidden
+# reasoning than another: high effort since 2026-11-25 (low, then medium earlier
+# that day; raised once a full cheap-roster season on medium billed under $1). Hidden
 # reasoning is turned off only for a model that ignores the budget and answers
 # empty (see _post_chat_completion). "exclude" keeps the reasoning text out of
 # the reply (it is still used and billed).
-REASONING_SETTINGS = {"effort": "medium", "exclude": True}
-# Reasoning tokens count against max_tokens (medium is about half of it), so
-# each call's visible-reply budget gets this much extra room on top. Capped at
-# the model's own output limit (Command R7B allows 4,000, Nova Micro 5,120).
-REASONING_TOKEN_HEADROOM = 4000
+REASONING_SETTINGS = {"effort": "high", "exclude": True}
+# Reasoning tokens count against max_tokens (high is about 80% of it, medium
+# about half), so each call's visible-reply budget gets this much extra room on
+# top: enough that a 1,500-token challenge reply still fits beside high
+# reasoning. Capped at the model's own output limit (Command R7B allows 4,000,
+# Nova Micro 5,120). Was 4,000 at medium.
+REASONING_TOKEN_HEADROOM = 8000
 
 # OpenRouter spreads a model's calls across providers whose speed differs
 # several-fold (a Gemma 4 26B call took 14 s on one, 87 s on another, and one
@@ -1006,7 +1009,8 @@ def _resolve_target_id(raw: Any, allowed_targets: list[dict[str, Any]]) -> str |
     if raw is None:
         return None
     raw_str = str(raw).strip()
-    if not raw_str or raw_str.lower() in {"null", "none"}:
+    if not raw_str or raw_str.lower() in {"null", "none"} or not allowed_targets:
+        # no targets on offer (speeches, rebuttals): a named target means nothing
         return None
     lowered = raw_str.lower()
     for target in allowed_targets:

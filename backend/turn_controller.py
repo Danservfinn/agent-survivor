@@ -1564,7 +1564,7 @@ def _run_parallel(jobs: list[Any]) -> list[tuple[Any, Exception | None]]:
 NOTEBOOK_MAX_CHARS = 1200
 # the round plan gets the same effort as every other call since 2026-11-25
 # (it was one level above the old "low" default)
-ROUND_PLAN_EFFORT = "medium"
+ROUND_PLAN_EFFORT = "high"
 
 
 ROUND_PLAN_TASK = (

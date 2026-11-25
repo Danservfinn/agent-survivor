@@ -161,7 +161,7 @@ TOKEN_BUDGETS = {
 # doubles real reasoning (DeepSeek V4 Flash used 900-3,400 tokens at low), so
 # this is set 3x the old value until a full season re-measures it. Reasoning
 # tokens are billed as output.
-ESTIMATED_REASONING_TOKENS = 1200
+ESTIMATED_REASONING_TOKENS = 2400  # high since 2026-11-25 (1200 at medium); re-measure after a season
 
 # The estimate ran about 1.7x under the real OpenRouter bill: a full lab_mix
 # season (old prompt, 2026-11-24) was estimated at $6.34 and billed about $10.5.
